@@ -2,6 +2,7 @@
 Backend service for fetching and analyzing stock quotes.
 
 <!-- Badges -->
+![CI](https://github.com/rluetken-dev/portfolio-analytics-backend/actions/workflows/ci.yml/badge.svg?branch=main)
 ![.NET](https://img.shields.io/badge/.NET-8.0-blue)
 ![License](https://img.shields.io/badge/License-MIT-green)
 <!-- Optional: add CI badge once GitHub Actions is configured -->
