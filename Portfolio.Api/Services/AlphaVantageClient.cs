@@ -33,7 +33,7 @@ namespace Portfolio.Api.Services
             _log = log;
 
             _baseUrl = cfg["AlphaVantage:BaseUrl"] ?? "https://www.alphavantage.co";
-            _apiKey  = cfg["AlphaVantage:ApiKey"]
+            _apiKey = cfg["AlphaVantage:ApiKey"]
                        ?? throw new InvalidOperationException("AlphaVantage:ApiKey is missing. Configure via user-secrets.");
         }
 
@@ -58,7 +58,8 @@ namespace Portfolio.Api.Services
         public async IAsyncEnumerable<(DateOnly date, decimal close)> GetDailyAdjustedAsync(
             string symbol,
             int days,
-            [EnumeratorCancellation] CancellationToken ct = default) 
+            [EnumeratorCancellation] CancellationToken ct = default,
+            bool fullHistory = false)
         {
             if (string.IsNullOrWhiteSpace(symbol))
                 throw new ArgumentException("symbol is required", nameof(symbol));
@@ -71,6 +72,7 @@ namespace Portfolio.Api.Services
                       $"?function=TIME_SERIES_DAILY" +
                       $"&symbol={Uri.EscapeDataString(symbol)}" +
                       $"&outputsize=compact" +
+                      $"&outputsize={(fullHistory ? "full" : "compact")}" + 
                       $"&apikey={_apiKey}";
 
             using var resp = await _http.GetAsync(url, ct);
@@ -82,7 +84,7 @@ namespace Portfolio.Api.Services
             await using var stream = await resp.Content.ReadAsStreamAsync(ct);
             using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: ct);
             var root = doc.RootElement;
-           
+
             // Detect Alpha Vantage error/limit responses:
             if (root.TryGetProperty("Error Message", out var err))
             {
@@ -134,6 +136,52 @@ namespace Portfolio.Api.Services
                 yield return (date, close);
                 count++;
             }
+        }
+
+        /// <summary>
+        /// Fetches the most recent quote for a single symbol using GLOBAL_QUOTE.
+        /// </summary>
+        /// <param name="symbol">Ticker (e.g., AAPL)</param>
+        /// <param name="ct">Cancellation token</param>
+        /// <returns>Tuple: (symbol, price, latestTradingDay) or null if not available</returns>
+        public async Task<(string Symbol, decimal Price, DateOnly LatestTradingDay)?> GetLatestPriceAsync(
+            string symbol,
+            CancellationToken ct = default)
+        {
+            if (string.IsNullOrWhiteSpace(symbol))
+                throw new ArgumentException("symbol is required", nameof(symbol));
+
+            var url = $"{_baseUrl}/query" +
+                      $"?function=GLOBAL_QUOTE" +
+                      $"&symbol={Uri.EscapeDataString(symbol)}" +
+                      $"&apikey={_apiKey}";
+
+            using var resp = await _http.GetAsync(url, ct);
+            resp.EnsureSuccessStatusCode();
+
+            await using var stream = await resp.Content.ReadAsStreamAsync(ct);
+            using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: ct);
+
+            var root = doc.RootElement;
+
+            if (!root.TryGetProperty("Global Quote", out var quote))
+            {
+                _log.LogWarning("Unexpected payload for {Symbol}: {Payload}", symbol, root.ToString());
+                return null;
+            }
+
+            var sym = quote.GetProperty("01. symbol").GetString() ?? symbol;
+            var priceStr = quote.GetProperty("05. price").GetString();
+            var dateStr = quote.GetProperty("07. latest trading day").GetString();
+
+            if (!decimal.TryParse(priceStr, System.Globalization.NumberStyles.Any,
+                    System.Globalization.CultureInfo.InvariantCulture, out var price))
+                return null;
+
+            if (!DateOnly.TryParse(dateStr, out var latestDay))
+                latestDay = DateOnly.FromDateTime(DateTime.UtcNow);
+
+            return (sym, price, latestDay);
         }
     }
 }
