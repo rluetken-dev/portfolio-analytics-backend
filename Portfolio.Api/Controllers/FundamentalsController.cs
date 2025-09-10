@@ -111,30 +111,28 @@ namespace Portfolio.Api.Controllers
 
         /// <summary>
         /// Fetches Income Statement rows from FMP's /stable API (most recent first).
-        /// Example: GET /api/fundamentals/{symbol}/income-statement/stable?limit=5
+        /// Example: GET /api/fundamentals/{symbol}/income-statement/stable?period=quarter&amp;limit=5
         /// </summary>
         /// <param name="symbol">Ticker, e.g., "AAPL".</param>
+        /// <param name="period">"annual" or "quarter" (plan-dependent).</param>
         /// <param name="limit">Max rows to return (typical 1–20).</param>
         /// <param name="ct">Cancellation token.</param>
-        /// <returns>Envelope with Symbol, Count, and Items.</returns>
+        /// <returns>Envelope with Symbol, Period, Count, Items.</returns>
         /// <response code="200">Success.</response>
         [HttpGet("{symbol}/income-statement/stable")]
         public async Task<IActionResult> GetIncomeStatementStable(
             string symbol,
+            string period = "annual",
             int limit = 5,
             CancellationToken ct = default)
         {
-            // INFO (English):
-            // - Calls our new /stable endpoint wrapper in FmpClient.
-            // - Returns a small envelope (symbol, count, items) to ease debugging in clients.
-            // - `limit` controls how many most-recent rows we fetch.
-            // - Add or remove fields from the DTO in FmpClient if you need more columns later.
-
-            var rows = await _fmp.GetIncomeStatementStableAsync(symbol, limit, ct);
+            // WHY: Pass `period` through so quarterly works; include it in the envelope for clarity.
+            var rows = await _fmp.GetIncomeStatementStableAsync(symbol, limit, period, ct);
 
             return Ok(new
             {
                 Symbol = symbol,
+                Period = period,
                 Count = rows?.Count ?? 0,
                 Items = rows
             });
@@ -233,9 +231,10 @@ namespace Portfolio.Api.Controllers
         /// <summary>
         /// Returns a compact fundamentals snapshot (Income, Balance, Cash, Metrics) via FMP's /stable API.
         /// Example: GET /api/fundamentals/{symbol}/snapshot/stable?period=annual&amp;limit=3
+        /// NOTE: `period` applies to Income, Balance and Cash (Metrics are TTM and ignore `period`).
         /// </summary>
         /// <param name="symbol">Ticker, e.g., "AAPL".</param>
-        /// <param name="period">"annual" or "quarter" for Balance/Cash (plan-dependent).</param>
+        /// <param name="period">"annual" or "quarter" (plan-dependent).</param>
         /// <param name="limit">Max rows per statement (typical 1–20).</param>
         /// <param name="ct">Cancellation token.</param>
         /// <returns>Envelope with Symbol, Period, and sections: Income, Balance, Cash, Metrics.</returns>
@@ -248,22 +247,36 @@ namespace Portfolio.Api.Controllers
             int limit = 3,
             CancellationToken ct = default)
         {
-            // English: Ask each source; failures are logged and do not break the response.
+            // WHY: Fetch each part independently; failures shouldn't break the whole snapshot.
             List<Portfolio.Api.Services.FmpClient.IncomeStatementStableRow>? income = null;
             List<Portfolio.Api.Services.FmpClient.BalanceSheetStableRow>? balance = null;
             List<Portfolio.Api.Services.FmpClient.CashFlowStableRow>? cash = null;
             Portfolio.Api.Services.FmpClient.KeyMetricsTtm? metrics = null;
 
-            try { income = await _fmp.GetIncomeStatementStableAsync(symbol, limit, ct); }
+            try
+            {
+                // FIX: pass `period` through so Income respects annual/quarter choice.
+                income = await _fmp.GetIncomeStatementStableAsync(symbol, limit, period, ct);
+            }
             catch (Exception ex) { _log.LogWarning(ex, "Income fetch failed for {Symbol}", symbol); }
 
-            try { balance = await _fmp.GetBalanceSheetStableAsync(symbol, limit, period, ct); }
+            try
+            {
+                balance = await _fmp.GetBalanceSheetStableAsync(symbol, limit, period, ct);
+            }
             catch (Exception ex) { _log.LogWarning(ex, "Balance fetch failed for {Symbol}", symbol); }
 
-            try { cash = await _fmp.GetCashFlowStableAsync(symbol, limit, period, ct); }
+            try
+            {
+                cash = await _fmp.GetCashFlowStableAsync(symbol, limit, period, ct);
+            }
             catch (Exception ex) { _log.LogWarning(ex, "Cash flow fetch failed for {Symbol}", symbol); }
 
-            try { metrics = await _fmp.GetKeyMetricsTtmAsync(symbol, ct); }
+            try
+            {
+                // NOTE: TTM metrics are period-agnostic.
+                metrics = await _fmp.GetKeyMetricsTtmAsync(symbol, ct);
+            }
             catch (Exception ex) { _log.LogWarning(ex, "Metrics fetch failed for {Symbol}", symbol); }
 
             return Ok(new
