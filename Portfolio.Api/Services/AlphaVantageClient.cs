@@ -236,5 +236,35 @@ namespace Portfolio.Api.Services
 
             return (sym, price, latestDay);
         }
+
+        // NOTE (English):
+        // Temporary stub to unblock the build. The controller currently calls
+        // AlphaVantageClient.GetQuarterlyRevenueAvAsync(...) as a last-resort fallback.
+        // Until we implement the real Alpha Vantage fetch, we return an empty list.
+
+        /// <summary>
+        /// Lightweight revenue data point for the Alpha Vantage fallback.
+        /// </summary>
+        /// <param name="PeriodEnd">Quarter end date (ISO yyyy-MM-dd).</param>
+        /// <param name="Revenue">Revenue value as a raw decimal (reported currency).</param>
+        /// <param name="Currency">Optional ISO currency code, e.g., "USD".</param>
+        public record AvRevenuePoint(DateOnly PeriodEnd, decimal Revenue, string? Currency);
+
+        /// <summary>
+        /// Temporary stub: returns an empty list for quarterly revenue via Alpha Vantage.
+        /// Replace with the real Alpha Vantage implementation later.
+        /// </summary>
+        /// <param name="symbol">Ticker symbol, e.g., "AAPL".</param>
+        /// <param name="limit">Max rows requested (ignored for now).</param>
+        /// <param name="ct">Cancellation token.</param>
+        public Task<IReadOnlyList<AvRevenuePoint>> GetQuarterlyRevenueAvAsync(
+            string symbol,
+            int limit = 8,
+            CancellationToken ct = default)
+        {
+            // NOTE (English): This stub unblocks the build by satisfying the controller call.
+            // It deliberately returns no data until the real AV integration is implemented.
+            return Task.FromResult<IReadOnlyList<AvRevenuePoint>>(Array.Empty<AvRevenuePoint>());
+        }
     }
 }

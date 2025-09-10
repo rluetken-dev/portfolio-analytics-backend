@@ -32,8 +32,26 @@ builder.Services.AddSwaggerGen(c =>
     if (File.Exists(xmlPath))
         c.IncludeXmlComments(xmlPath);
 });
+
 // Register maintenance utilities for admin endpoints (DI).
 builder.Services.AddScoped<Portfolio.Api.Services.MaintenanceService>();
+
+// Use the root base address so we can call /stable/... endpoints cleanly.
+// IMPORTANT: Leave the trailing slash to avoid bad relative-URL joins.
+builder.Services.AddHttpClient<Portfolio.Api.Services.FmpClient>(client =>
+{
+    client.BaseAddress = new Uri("https://financialmodelingprep.com/");
+});
+
+// Registers the ingest service used to upsert income statements into the DB.
+// English: Scoped lifetime is fine (1 per request).
+builder.Services.AddScoped<IncomeIngestService>();
+
+// Registers the balance-sheet ingest service (scoped = one per request).
+builder.Services.AddScoped<BalanceSheetIngestService>();
+
+// Registers the cash-flow ingest service (scoped = one per request).
+builder.Services.AddScoped<CashFlowIngestService>();
 
 var app = builder.Build();
 
