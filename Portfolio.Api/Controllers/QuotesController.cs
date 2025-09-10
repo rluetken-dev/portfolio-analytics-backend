@@ -82,30 +82,59 @@ namespace Portfolio.Api.Controllers
             {
                 try
                 {
-                    // NOTE: This calls your AlphaVantageClient.
-                    // Method name still says "Adjusted" but implementation uses TIME_SERIES_DAILY (free).
-                    // Optional: rename to GetDailyAsync in the service for clarity and update here.
-                    await foreach (var (date, close) in _alpha.GetDailyAdjustedAsync(sym, days, ct, fullHistory))
+                    // Fetch and persist daily OHLCV + adjusted close using TIME_SERIES_DAILY_ADJUSTED.
+                    // NOTE: We resolve the ticker once (outside the loop) to avoid repeated DB lookups per row.
+                    var ticker = await _db.Tickers.FirstOrDefaultAsync(t => t.Symbol == sym, ct);
+                    if (ticker is null)
                     {
-                        var exists = await _db.Prices.AnyAsync(p =>
-                            p.Symbol == sym && p.AsOfDate == date, ct);
-
-                        if (exists) { skipped++; continue; }
-
-                        _db.Prices.Add(new Price
-                        {
-                            Symbol = sym,
-                            AsOfDate = date,
-                            Close = close,
-                            Source = "alpha_vantage",
-                            RetrievedAt = DateTime.UtcNow
-                        });
-                        inserted++;
+                        ticker = new Ticker { Symbol = sym };
+                        _db.Tickers.Add(ticker);
+                        await _db.SaveChangesAsync(ct);
                     }
 
+                    await foreach (var (date, open, high, low, close, adjClose, volume) in _alpha.GetDailyAdjustedAsync(sym, days, ct, fullHistory))
+                    {
+                        // Idempotent upsert: update if row exists, otherwise insert a new one.
+                        var row = await _db.Prices.FirstOrDefaultAsync(
+                            p => p.TickerId == ticker.Id && p.TradingDate == date, ct);
+
+                        if (row is null)
+                        {
+                            // Insert new row
+                            _db.Prices.Add(new Price
+                            {
+                                TickerId = ticker.Id,
+                                TradingDate = date,
+                                Open = open,
+                                High = high,
+                                Low = low,
+                                Close = close,
+                                AdjustedClose = adjClose,
+                                Volume = volume,
+                                Source = "alpha_vantage",
+                                CreatedUtc = DateTime.UtcNow
+                            });
+                            inserted++;
+                        }
+                        else
+                        {
+                            // Update existing row (fill/refresh full OHLCV payload)
+                            row.Open = open;
+                            row.High = high;
+                            row.Low = low;
+                            row.Close = close;
+                            row.AdjustedClose = adjClose;
+                            row.Volume = volume;
+                            row.Source = "alpha_vantage";
+                            row.UpdatedUtc = DateTime.UtcNow;
+                            skipped++; // we touched an existing row; counting as "skipped/new=0" keeps totals simple
+                        }
+                    }
+
+                    // Persist batched inserts once (keeps transaction short and efficient).
                     await _db.SaveChangesAsync(ct);
 
-                    // Free-tier friendly delay (~5 req/min on Alpha Vantage)
+                    // Free-tier friendly delay (~5 req/min on Alpha Vantage).
                     await Task.Delay(1500, ct);
                 }
                 catch (OperationCanceledException) { throw; }
@@ -151,8 +180,8 @@ namespace Portfolio.Api.Controllers
             take = Math.Clamp(take, 1, 50);
 
             var rows = await _db.Prices
-                .Where(p => p.Symbol == symbol.ToUpperInvariant())
-                .OrderByDescending(p => p.AsOfDate)
+                .Where(p => p.Ticker.Symbol == symbol.ToUpperInvariant())
+                .OrderByDescending(p => p.TradingDate)
                 .Take(take)
                 .ToListAsync(ct);
 
@@ -212,24 +241,25 @@ namespace Portfolio.Api.Controllers
             take = Math.Clamp(take, 1, 40);
             var sym = symbol.ToUpperInvariant();
 
-            // 1) Hole alle Preise des Symbols (für DBs mit viel Historie kann man hier filtern)
+            // 1) Fetch all price records for the given symbol.
+            //    Note: For very large histories, you might want to add an explicit date filter here.
             var list = await _db.Prices
-                .Where(p => p.Symbol == sym)
+                .Where(p => p.Ticker.Symbol == sym)
                 .ToListAsync(ct);
 
-            // 2) Gruppiere in Quartale (Y-Q) und berechne Durchschnitts-Close
+            // 2) Group records by quarter (Year + Quarter) and calculate average closing price.
             var quarterly = list
                 .GroupBy(p => new
                 {
-                    p.AsOfDate.Year,
-                    Quarter = (p.AsOfDate.Month - 1) / 3 + 1
+                    p.TradingDate.Year,
+                    Quarter = (p.TradingDate.Month - 1) / 3 + 1
                 })
                 .Select(g => new
                 {
                     g.Key.Year,
                     g.Key.Quarter,
-                    From = g.Min(x => x.AsOfDate),
-                    To = g.Max(x => x.AsOfDate),
+                    From = g.Min(x => x.TradingDate),
+                    To = g.Max(x => x.TradingDate),
                     AvgClose = Math.Round(g.Average(x => x.Close), 4)
                 })
                 .OrderByDescending(x => x.Year)
@@ -289,10 +319,12 @@ namespace Portfolio.Api.Controllers
                 return BadRequest(new { error = $"date range too large (> {maxSpanDays} days)" });
 
             // ----- Query DB and project to lightweight DTO -----
+            // Fetch all price records for the given ticker symbol within the date range.
+            // Note: Symbol now comes from the Ticker entity, and AsOfDate is replaced by TradingDate.
             var data = await _db.Prices
-                .Where(p => p.Symbol == sym && p.AsOfDate >= fromDate && p.AsOfDate <= toDate)
-                .OrderBy(p => p.AsOfDate)
-                .Select(p => new TimeseriesPoint { Date = p.AsOfDate, Close = p.Close })
+                .Where(p => p.Ticker.Symbol == sym && p.TradingDate >= fromDate && p.TradingDate <= toDate)
+                .OrderBy(p => p.TradingDate)
+                .Select(p => new TimeseriesPoint { Date = p.TradingDate, Close = p.Close })
                 .ToListAsync(ct);
 
             return Ok(data);

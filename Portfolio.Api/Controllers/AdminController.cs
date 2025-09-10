@@ -120,16 +120,17 @@ public class AdminController : ControllerBase
                             ?? "(no connection string)";
         }
 
-        // Counts & Range aus Prices
+        // Counts & ranges from Prices table.
+        // Group by ticker symbol (via navigation property) and compute row counts + min/max dates.
         var total = await db.Prices.CountAsync(ct);
         var perSymbol = await db.Prices
-            .GroupBy(p => p.Symbol)
+            .GroupBy(p => p.Ticker.Symbol)
             .Select(g => new
             {
                 symbol = g.Key,
                 count = g.Count(),
-                minDate = g.Min(x => x.AsOfDate),
-                maxDate = g.Max(x => x.AsOfDate)
+                minDate = g.Min(x => x.TradingDate),
+                maxDate = g.Max(x => x.TradingDate)
             })
             .OrderByDescending(x => x.count)
             .ToListAsync(ct);

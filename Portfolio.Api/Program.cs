@@ -32,6 +32,8 @@ builder.Services.AddSwaggerGen(c =>
     if (File.Exists(xmlPath))
         c.IncludeXmlComments(xmlPath);
 });
+// Register maintenance utilities for admin endpoints (DI).
+builder.Services.AddScoped<Portfolio.Api.Services.MaintenanceService>();
 
 var app = builder.Build();
 

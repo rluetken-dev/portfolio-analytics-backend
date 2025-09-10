@@ -38,105 +38,157 @@ namespace Portfolio.Api.Services
         }
 
         /// <summary>
-        /// Fetches daily adjusted time series for a given symbol and returns
-        /// up to <paramref name="days"/> most recent items as (date, close).
+        /// Fetches Alpha Vantage TIME_SERIES_DAILY_ADJUSTED and yields the most recent items
+        /// as a stream of tuples: (date, open, high, low, close, adjustedClose, volume).
         /// 
-        /// Rationale:
-        /// - TIME_SERIES_DAILY_ADJUSTED includes splits/dividends in "adjusted close",
-        ///   but we read the plain "4. close" here for simplicity. You can switch to
-        ///   "5. adjusted close" later if your analytics require it.
-        /// 
-        /// Error handling:
-        /// - Alpha Vantage returns JSON with keys like "Error Message" or "Note" (rate limit).
-        /// - We detect those and throw informative exceptions.
-        /// - Callers decide how to proceed (e.g., partial import).
+        /// Notes:
+        /// - Uses <c>outputsize=compact</c> (~100 days) by default; set <paramref name="fullHistory"/> to true for full history.
+        /// - Parses values using invariant culture to avoid locale-specific decimal issues.
+        /// - If Alpha Vantage returns a throttling "Note" or an "Error Message", we stop yielding data.
         /// </summary>
         /// <param name="symbol">Ticker (e.g., AAPL). Uppercase recommended.</param>
-        /// <param name="days">How many most-recent days to return (1..100 typical for MVP).</param>
-        /// <param name="ct">Cancellation token for request cancellation.</param>
+        /// <param name="days">Max number of most-recent days to return (ignored if <paramref name="fullHistory"/> is true).</param>
+        /// <param name="ct">Cancellation token.</param>
         /// <param name="fullHistory">If true, fetch the complete history instead of limiting by <paramref name="days"/>.</param>
-        /// <returns>IAsyncEnumerable of (date, close) newest-first.</returns>
-        public async IAsyncEnumerable<(DateOnly date, decimal close)> GetDailyAdjustedAsync(
-            string symbol,
-            int days,
-            [EnumeratorCancellation] CancellationToken ct = default,
-            bool fullHistory = false)
+        /// <returns>IAsyncEnumerable of (date, open, high, low, close, adjustedClose, volume), newest first.</returns>
+        public async IAsyncEnumerable<(DateOnly date, decimal open, decimal high, decimal low, decimal close, decimal adjustedClose, long volume)>
+            GetDailyAdjustedAsync(
+                string symbol,
+                int days,
+                [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default,
+                bool fullHistory = false)
         {
             if (string.IsNullOrWhiteSpace(symbol))
                 throw new ArgumentException("symbol is required", nameof(symbol));
 
-            days = Math.Clamp(days, 1, 200);
+            // Clamp to a reasonable range when not requesting full history.
+            days = fullHistory ? days : Math.Clamp(days, 1, 500);
 
-            // Build request URL.
-            // We use outputsize=compact (last ~100 days). For longer history, use "full".
+            var outputSize = fullHistory ? "full" : "compact";
             var url = $"{_baseUrl}/query" +
-                      $"?function=TIME_SERIES_DAILY" +
+                      $"?function=TIME_SERIES_DAILY_ADJUSTED" +
                       $"&symbol={Uri.EscapeDataString(symbol)}" +
-                      $"&outputsize=compact" +
-                      $"&outputsize={(fullHistory ? "full" : "compact")}" +
+                      $"&outputsize={outputSize}" +
+                      $"&datatype=json" +
                       $"&apikey={_apiKey}";
 
             using var resp = await _http.GetAsync(url, ct);
             resp.EnsureSuccessStatusCode();
 
-            // We parse manually with JsonDocument:
-            // - lower allocations than dynamic
-            // - explicit error checks
             await using var stream = await resp.Content.ReadAsStreamAsync(ct);
             using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: ct);
+
+            // Parse root
             var root = doc.RootElement;
 
-            // Detect Alpha Vantage error/limit responses:
-            if (root.TryGetProperty("Error Message", out var err))
+            // If Alpha Vantage returns an "Information" message, log it so we see the reason.
+            if (root.TryGetProperty("Information", out var infoMsg))
             {
-                var msg = err.GetString() ?? "Unknown Alpha Vantage error.";
-                throw new InvalidOperationException($"Alpha Vantage error for {symbol}: {msg}");
-            }
-            if (root.TryGetProperty("Note", out var note))
-            {
-                var msg = note.GetString() ?? "Alpha Vantage rate limit reached.";
-                throw new InvalidOperationException($"Alpha Vantage note for {symbol}: {msg}");
-            }
-            if (!root.TryGetProperty("Time Series (Daily)", out var timeSeries))
-            {
-                // Some responses return "Information" or other keys; log full payload for diagnostics.
-                _log.LogWarning("Unexpected Alpha Vantage payload for {Symbol}: keys = {Keys}",
-                    symbol, string.Join(", ", root.EnumerateObject().Select(p => p.Name)));
-                throw new InvalidOperationException($"Unexpected Alpha Vantage payload for {symbol} (no 'Time Series (Daily)').");
+                // Premium endpoint notice: we'll fall back to non-adjusted DAILY below.
+                _log.LogWarning("Alpha Vantage 'Information' for {Symbol}: {Message} — falling back to TIME_SERIES_DAILY", symbol, infoMsg.GetString());
+                // Do not break here; the missing series will trigger the DAILY fallback below.
             }
 
-            // Enumerate properties: each property name is a date string "yyyy-MM-dd".
-            // The API returns newest first. We yield up to 'days' items.
-            var count = 0;
-            foreach (var dayEntry in timeSeries.EnumerateObject())
+            // Handle Alpha Vantage error responses early.
+            if (root.TryGetProperty("Error Message", out _))
             {
-                if (count >= days) yield break;
+                _log.LogWarning("Alpha Vantage returned 'Error Message' for {Symbol}", symbol);
+                yield break;
+            }
+            if (root.TryGetProperty("Note", out _))
+            {
+                _log.LogWarning("Alpha Vantage returned 'Note' (rate limit) for {Symbol}", symbol);
+                yield break;
+            }
 
-                var dateStr = dayEntry.Name; // e.g., "2025-09-05"
-                if (!DateOnly.TryParse(dateStr, out var date))
+            // Try adjusted series first; if missing, fall back to non-adjusted DAILY.
+            JsonElement series;
+            bool adjustedPayload = true;
+            JsonDocument? altDoc = null; // keep fallback document alive across enumeration
+
+            if (!root.TryGetProperty("Time Series (Daily)", out series))
+            {
+                var urlDaily = $"{_baseUrl}/query" +
+                               $"?function=TIME_SERIES_DAILY" +
+                               $"&symbol={Uri.EscapeDataString(symbol)}" +
+                               $"&outputsize={(fullHistory ? "full" : "compact")}" +
+                               $"&datatype=json" +
+                               $"&apikey={_apiKey}";
+
+                using var resp2 = await _http.GetAsync(urlDaily, ct);
+                resp2.EnsureSuccessStatusCode();
+
+                await using var stream2 = await resp2.Content.ReadAsStreamAsync(ct);
+                altDoc = await JsonDocument.ParseAsync(stream2, cancellationToken: ct);
+                var root2 = altDoc.RootElement;
+
+                if (!root2.TryGetProperty("Time Series (Daily)", out series))
                 {
-                    _log.LogWarning("Skipping malformed date '{Date}' in payload for {Symbol}", dateStr, symbol);
-                    continue;
+                    var keys2 = string.Join(", ", root2.EnumerateObject().Select(p => p.Name));
+                    _log.LogWarning("Alpha Vantage payload (fallback DAILY) for {Symbol}: top-level keys = {Keys}", symbol, keys2);
+                    altDoc.Dispose(); // safe to dispose here because we're not enumerating
+                    yield break;
                 }
 
-                // We read "4. close". If you prefer adjusted closes, use "5. adjusted close".
-                if (!dayEntry.Value.TryGetProperty("4. close", out var closeEl))
-                {
-                    _log.LogWarning("Missing '4. close' for {Symbol} on {Date}", symbol, dateStr);
-                    continue;
-                }
-
-                var closeStr = closeEl.GetString();
-                if (string.IsNullOrWhiteSpace(closeStr) ||
-                    !decimal.TryParse(closeStr, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var close))
-                {
-                    _log.LogWarning("Invalid close value '{Close}' for {Symbol} on {Date}", closeStr, symbol, dateStr);
-                    continue;
-                }
-
-                yield return (date, close);
-                count++;
+                adjustedPayload = false;
             }
+
+            // Parse numbers using invariant culture and keep count of yielded items.
+            var culture = System.Globalization.CultureInfo.InvariantCulture;
+            int yielded = 0;
+
+            // Ensure the fallback document (if any) stays alive while iterating.
+            try
+            {
+                // Iterate newest-first
+                foreach (var day in series.EnumerateObject().OrderByDescending(p => p.Name))
+                {
+                    if (ct.IsCancellationRequested) yield break;
+
+                    if (!DateOnly.TryParse(day.Name, out var date))
+                        continue;
+
+                    var o = day.Value;
+
+                    // Mandatory fields present in both endpoints
+                    if (!o.TryGetProperty("1. open", out var openEl)) continue;
+                    if (!o.TryGetProperty("2. high", out var highEl)) continue;
+                    if (!o.TryGetProperty("3. low", out var lowEl)) continue;
+                    if (!o.TryGetProperty("4. close", out var closeEl)) continue;
+
+                    if (!decimal.TryParse(openEl.GetString(), System.Globalization.NumberStyles.Any, culture, out var open)) continue;
+                    if (!decimal.TryParse(highEl.GetString(), System.Globalization.NumberStyles.Any, culture, out var high)) continue;
+                    if (!decimal.TryParse(lowEl.GetString(), System.Globalization.NumberStyles.Any, culture, out var low)) continue;
+                    if (!decimal.TryParse(closeEl.GetString(), System.Globalization.NumberStyles.Any, culture, out var close)) continue;
+
+                    // Adjusted close exists only in ADJUSTED payload; otherwise use close.
+                    decimal adjClose = close;
+                    if (adjustedPayload && o.TryGetProperty("5. adjusted close", out var adjEl))
+                    {
+                        if (!decimal.TryParse(adjEl.GetString(), System.Globalization.NumberStyles.Any, culture, out adjClose))
+                            adjClose = close;
+                    }
+
+                    // Volume index differs: ADJUSTED -> "6. volume", DAILY -> "5. volume"
+                    long volume = 0;
+                    var volField = adjustedPayload ? "6. volume" : "5. volume";
+                    if (o.TryGetProperty(volField, out var volEl))
+                    {
+                        long.TryParse(volEl.GetString(), System.Globalization.NumberStyles.Any, culture, out volume);
+                    }
+
+                    yield return (date, open, high, low, close, adjClose, volume);
+
+                    yielded++;
+                    if (!fullHistory && yielded >= days)
+                        yield break;
+                }
+            }
+            finally
+            {
+                altDoc?.Dispose(); // dispose fallback document after enumeration completes
+            }
+
         }
 
         /// <summary>

@@ -1,76 +1,84 @@
 using Microsoft.EntityFrameworkCore;
 using Portfolio.Api.Models;
 
-namespace Portfolio.Api.Data
+namespace Portfolio.Api.Data;
+
+/// <summary>
+/// Entity Framework Core DbContext:
+/// - Manages access to the database.
+/// - Exposes DbSet&lt;T&gt; for each table (aggregate root).
+/// - Configures schema (indexes, constraints, conversions) in OnModelCreating.
+/// </summary>
+public class AppDbContext : DbContext
 {
+    public AppDbContext(DbContextOptions<AppDbContext> options) : base(options) { }
+
     /// <summary>
-    /// Entity Framework Core DbContext:
-    /// - Acts as the application's gateway to the database.
-    /// - Exposes DbSet&lt;T&gt; for each aggregate/table we want to persist.
-    /// - Configures schema details (indexes, precision, constraints) in OnModelCreating.
-    ///
-    /// Why a dedicated DbContext?
-    /// - Keeps database concerns centralized and explicit.
-    /// - Enables migrations (schema versioning) and testability (swap providers, e.g., InMemory).
+    /// Table of tradable instruments (tickers).
     /// </summary>
-    public class AppDbContext : DbContext
+    public DbSet<Ticker> Tickers => Set<Ticker>();
+
+    /// <summary>
+    /// Table of daily OHLCV price records.
+    /// </summary>
+    public DbSet<Price> Prices => Set<Price>();
+
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
-        /// <summary>
-        /// Standard constructor used by ASP.NET Core's dependency injection.
-        /// Options (provider, connection string, etc.) are configured in Program.cs.
-        /// </summary>
-        public AppDbContext(DbContextOptions<AppDbContext> options) : base(options)
-        {
-        }
+        base.OnModelCreating(modelBuilder);
 
-        /// <summary>
-        /// Table for end-of-day prices.
-        /// </summary>
-        public DbSet<Price> Prices => Set<Price>();
+        // --- Ticker configuration ---
+        modelBuilder.Entity<Ticker>()
+            .HasIndex(t => t.Symbol)
+            .IsUnique(); // Prevent duplicate ticker symbols
 
-        /// <summary>
-        /// Fluent model configuration:
-        /// - Unique index on (Symbol, AsOfDate) to prevent duplicates (idempotent imports).
-        /// - Precision for monetary values (Close) as decimal(18,6).
-        /// - Optional: string length hints to keep the schema tight and queries fast.
-        /// 
-        /// Notes on SQLite:
-        /// - SQLite is type-flexible; EF will still honor precision/scale as a convention.
-        /// - DateOnly is stored as TEXT by default; EF handles conversion behind the scenes.
-        /// </summary>
-        protected override void OnModelCreating(ModelBuilder modelBuilder)
-        {
-            var price = modelBuilder.Entity<Price>();
+        modelBuilder.Entity<Ticker>()
+            .Property(t => t.Symbol)
+            .IsRequired()
+            .HasMaxLength(16);
 
-            // Ensure Symbol + AsOfDate is unique (same symbol/day must not be inserted twice).
-            price
-                .HasIndex(p => new { p.Symbol, p.AsOfDate })
-                .IsUnique();
+        modelBuilder.Entity<Ticker>()
+            .Property(t => t.Name)
+            .HasMaxLength(128);
 
-            // Monetary precision: 18 total digits, 6 after the decimal point.
-            // This is a common choice for currency-like values (avoids floating errors).
-            price
-                .Property(p => p.Close)
-                .HasColumnType("decimal(18,6)");
+        // --- Price configuration ---
+        modelBuilder.Entity<Price>()
+            .HasIndex(p => new { p.TickerId, p.TradingDate })
+            .IsUnique(); // Only one record per ticker per day
 
-            // Keep symbols reasonably short to aid indexing and reduce storage.
-            price
-                .Property(p => p.Symbol)
-                .IsRequired()
-                .HasMaxLength(16);
+        // Monetary precision: 18 digits total, 6 decimals
+        modelBuilder.Entity<Price>()
+            .Property(p => p.Close)
+            .HasColumnType("decimal(18,6)");
 
-            // Source is optional to change but has a sensible default ("alpha_vantage").
-            price
-                .Property(p => p.Source)
-                .IsRequired()
-                .HasMaxLength(64);
+        modelBuilder.Entity<Price>()
+            .Property(p => p.AdjustedClose)
+            .HasColumnType("decimal(18,6)");
 
-            // RetrievedAt should always be present; default is set in the entity.
-            price
-                .Property(p => p.RetrievedAt)
-                .IsRequired();
+        modelBuilder.Entity<Price>()
+            .Property(p => p.Open)
+            .HasColumnType("decimal(18,6)");
 
-            base.OnModelCreating(modelBuilder);
-        }
+        modelBuilder.Entity<Price>()
+            .Property(p => p.High)
+            .HasColumnType("decimal(18,6)");
+
+        modelBuilder.Entity<Price>()
+            .Property(p => p.Low)
+            .HasColumnType("decimal(18,6)");
+
+        // Provider/source info
+        modelBuilder.Entity<Price>()
+            .Property(p => p.Source)
+            .IsRequired()
+            .HasMaxLength(64);
+
+        // Map DateOnly <-> DateTime for SQLite
+        modelBuilder.Entity<Price>()
+            .Property(p => p.TradingDate)
+            .HasConversion(
+                d => d.ToDateTime(TimeOnly.MinValue),
+                dt => DateOnly.FromDateTime(DateTime.SpecifyKind(dt, DateTimeKind.Utc))
+            );
     }
 }
