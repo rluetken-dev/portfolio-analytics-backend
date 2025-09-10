@@ -13,19 +13,6 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddDbContext<AppDbContext>(opt =>
     opt.UseSqlite(builder.Configuration.GetConnectionString("Default")));
 
-// === NEW: HttpClient with a simple transient error retry policy ===
-static IAsyncPolicy<HttpResponseMessage> RetryPolicy() =>
-    HttpPolicyExtensions
-        .HandleTransientHttpError()             // 5xx, 408, network errors
-        .WaitAndRetryAsync(                     // simple backoff
-            new[]
-            {
-                TimeSpan.FromMilliseconds(250),
-                TimeSpan.FromMilliseconds(500),
-                TimeSpan.FromSeconds(1)
-            }
-        );
-
 builder.Services.AddHttpClient<AlphaVantageClient>(client =>
 {
     client.Timeout = TimeSpan.FromSeconds(10); // keep calls bounded

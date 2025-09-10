@@ -6,7 +6,7 @@ namespace Portfolio.Api.Models
     /// Represents one end-of-day price record for a tradable instrument (e.g., stock or ETF).
     /// 
     /// Why store daily closes?
-    /// - They are stable reference points for charts, performance, and P&L calculations.
+    /// - They are stable reference points for charts, performance, P&amp;L calculations.
     /// - Daily data is small enough to persist locally (SQLite) yet useful for most analytics.
     /// 
     /// Notes:

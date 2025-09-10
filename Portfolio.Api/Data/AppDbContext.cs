@@ -6,9 +6,9 @@ namespace Portfolio.Api.Data
     /// <summary>
     /// Entity Framework Core DbContext:
     /// - Acts as the application's gateway to the database.
-    /// - Exposes DbSet<T> for each aggregate/table we want to persist.
+    /// - Exposes DbSet&lt;T&gt; for each aggregate/table we want to persist.
     /// - Configures schema details (indexes, precision, constraints) in OnModelCreating.
-    /// 
+    ///
     /// Why a dedicated DbContext?
     /// - Keeps database concerns centralized and explicit.
     /// - Enables migrations (schema versioning) and testability (swap providers, e.g., InMemory).

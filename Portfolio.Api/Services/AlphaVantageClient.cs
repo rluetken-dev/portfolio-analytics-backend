@@ -54,6 +54,7 @@ namespace Portfolio.Api.Services
         /// <param name="symbol">Ticker (e.g., AAPL). Uppercase recommended.</param>
         /// <param name="days">How many most-recent days to return (1..100 typical for MVP).</param>
         /// <param name="ct">Cancellation token for request cancellation.</param>
+        /// <param name="fullHistory">If true, fetch the complete history instead of limiting by <paramref name="days"/>.</param>
         /// <returns>IAsyncEnumerable of (date, close) newest-first.</returns>
         public async IAsyncEnumerable<(DateOnly date, decimal close)> GetDailyAdjustedAsync(
             string symbol,

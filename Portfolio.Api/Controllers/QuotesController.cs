@@ -51,8 +51,7 @@ namespace Portfolio.Api.Controllers
         [ProducesResponseType(typeof(RefreshResponse), StatusCodes.Status200OK)]
         [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
         public async Task<IActionResult> Refresh(
-            [FromQuery, Required] string symbols,
-            /// <summary>Format: <c>Nd</c> (days). Allowed: 1..100. Default: 30d.</summary>
+            [FromQuery, Required] string symbols,           
             [FromQuery] string range = "30d",
             CancellationToken ct = default)
         {
@@ -142,8 +141,7 @@ namespace Portfolio.Api.Controllers
         [ProducesResponseType(typeof(IEnumerable<Price>), StatusCodes.Status200OK)]
         [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
         public async Task<IActionResult> Latest(
-            [FromQuery, Required] string symbol,
-            /// <summary>How many rows to return (1..50). Default: 5.</summary>
+            [FromQuery, Required] string symbol,            
             [FromQuery] int take = 5,
             CancellationToken ct = default)
         {
@@ -204,8 +202,7 @@ namespace Portfolio.Api.Controllers
         [ProducesResponseType(typeof(IEnumerable<object>), StatusCodes.Status200OK)]
         [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
         public async Task<IActionResult> Quarters(
-            [FromQuery, Required] string symbol,
-            /// <summary>How many quarters to return (1..40). Default: 8.</summary>
+            [FromQuery, Required] string symbol,           
             [FromQuery] int take = 8,
             CancellationToken ct = default)
         {
@@ -260,9 +257,7 @@ namespace Portfolio.Api.Controllers
         [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
         public async Task<IActionResult> Timeseries(
             [FromQuery, Required] string symbol,
-            /// <summary>Inclusive start date (yyyy-MM-dd). Defaults to today - 365 days.</summary>
             [FromQuery] string? from = null,
-            /// <summary>Inclusive end date (yyyy-MM-dd). Defaults to today.</summary>
             [FromQuery] string? to = null,
             CancellationToken ct = default)
         {
@@ -301,7 +296,7 @@ namespace Portfolio.Api.Controllers
                 .ToListAsync(ct);
 
             return Ok(data);
-        }
+        }  
 
         // ---- helpers ----
 

@@ -46,10 +46,10 @@ public class MaintenanceService
             // Use ROW_NUMBER window function to rank rows per symbol by date (newest first).
             // Delete rows whose rank > keepPerSymbol.
             var cap = keepPerSymbol.Value;
-            totalDeleted += await _db.Database.ExecuteSqlRawAsync($@"
+            totalDeleted += await _db.Database.ExecuteSqlInterpolatedAsync($@"
                 WITH ranked AS (
                     SELECT Id,
-                           ROW_NUMBER() OVER (PARTITION BY Symbol ORDER BY AsOfDate DESC) AS rn
+                        ROW_NUMBER() OVER (PARTITION BY Symbol ORDER BY AsOfDate DESC) AS rn
                     FROM Prices
                 )
                 DELETE FROM Prices
@@ -76,5 +76,15 @@ public class MaintenanceService
         using var cmd = _db.Database.GetDbConnection().CreateCommand();
         cmd.CommandText = "VACUUM; ANALYZE;";
         await cmd.ExecuteNonQueryAsync(ct);
+    }
+
+    /// <summary>
+    /// Deletes all rows from the Prices table (hard reset).
+    /// Use with caution – this wipes the database contents.
+    /// </summary>
+    public async Task<int> TruncateAllAsync(CancellationToken ct = default)
+    {
+        var deleted = await _db.Database.ExecuteSqlRawAsync("DELETE FROM Prices;", ct);
+        return deleted;
     }
 }
