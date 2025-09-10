@@ -10,17 +10,29 @@ using Swashbuckle.AspNetCore.Annotations;
 namespace Portfolio.Api.Controllers
 {
     /// <summary>
-    /// Handles quote-related endpoints:
-    /// - <c>POST /api/quotes/refresh</c>: fetch N recent daily closes for given symbols and store to SQLite
-    /// - <c>GET /api/quotes/latest</c>: read back a few most recent cached closes for a symbol
+    /// Price ingestion &amp; read API.
+    /// 
+    /// Pipeline overview:
+    /// 1) <c>POST /api/quotes/refresh</c>
+    ///    - Calls Alpha Vantage (tries DAILY_ADJUSTED, falls back to DAILY).
+    ///    - Upserts daily OHLCV (+ adjusted close when available) into SQLite.
+    ///    - Enforces idempotency via UNIQUE index on (TickerId, TradingDate).
+    /// 2) <c>GET /api/quotes/latest</c>
+    ///    - Returns the N most recent rows for a symbol (quick checks/monitoring).
+    /// 3) <c>GET /api/quotes/timeseries</c>
+    ///    - Returns daily closes for a symbol in a date range (charting/analytics).
+    /// 4) <c>GET /api/quotes/quarters</c>
+    ///    - Aggregates per quarter (average close) for lightweight KPI views.
+    /// 
+    /// Data model:
+    /// - <see cref="Ticker"/>: master list of instruments (Symbol, optional Name).
+    /// - <see cref="Price"/>: daily records (TradingDate, OHLCV, AdjustedClose, Volume, Source, audit).
+    /// 
+    /// Resilience:
+    /// - Premium-guarded endpoints return an 'Information' message → we fall back to DAILY.
+    /// - Partial failures are logged per symbol; loop continues for others.
+    /// - Free-tier friendly throttling: small delay between symbols.
     /// </summary>
-    /// <remarks>
-    /// <list type="bullet">
-    /// <item><b>Idempotency:</b> UNIQUE index on (Symbol, AsOfDate) prevents duplicates.</item>
-    /// <item><b>Validation:</b> Light validation on symbols and range.</item>
-    /// <item><b>Resilience:</b> External errors are logged per symbol; processing continues.</item>
-    /// </list>
-    /// </remarks>
     [ApiController]
     [Route("api/[controller]")]
     public class QuotesController : ControllerBase
@@ -179,10 +191,28 @@ namespace Portfolio.Api.Controllers
 
             take = Math.Clamp(take, 1, 50);
 
+            // Load recent rows including the Ticker navigation and project to a lean DTO.
+            // NOTE: We avoid returning EF entities directly and include the symbol to prevent nulls.
+            var sym = symbol.ToUpperInvariant();
+
             var rows = await _db.Prices
-                .Where(p => p.Ticker.Symbol == symbol.ToUpperInvariant())
-                .OrderByDescending(p => p.TradingDate)
+                .AsNoTracking()                         // read-only query: faster, no tracking overhead
+                .Include(p => p.Ticker)                 // ensure navigation is populated
+                .Where(p => p.Ticker.Symbol == sym)     // filter by symbol via navigation
+                .OrderByDescending(p => p.TradingDate)  // newest first
                 .Take(take)
+                .Select(p => new
+                {
+                    symbol = p.Ticker.Symbol,
+                    date = p.TradingDate,
+                    open = p.Open,
+                    high = p.High,
+                    low = p.Low,
+                    close = p.Close,
+                    adjustedClose = p.AdjustedClose,
+                    volume = p.Volume,
+                    source = p.Source
+                })
                 .ToListAsync(ct);
 
             return Ok(rows);
