@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Portfolio.Api.Data;
 
@@ -10,101 +11,14 @@ using Portfolio.Api.Data;
 namespace Portfolio.Api.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20250910144452_AddIncomeStatements")]
+    partial class AddIncomeStatements
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "8.0.20");
-
-            modelBuilder.Entity("Portfolio.Api.Data.Entities.BalanceSheetEntity", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("INTEGER");
-
-                    b.Property<long?>("CashAndCashEquivalents")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<DateTime>("Date")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Frequency")
-                        .IsRequired()
-                        .HasMaxLength(10)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("ReportedCurrency")
-                        .HasMaxLength(8)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Symbol")
-                        .IsRequired()
-                        .HasMaxLength(20)
-                        .HasColumnType("TEXT");
-
-                    b.Property<long?>("TotalAssets")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<long?>("TotalLiabilities")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<long?>("TotalStockholdersEquity")
-                        .HasColumnType("INTEGER");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("Symbol", "Date", "Frequency")
-                        .IsUnique();
-
-                    b.ToTable("balance_sheets", (string)null);
-                });
-
-            modelBuilder.Entity("Portfolio.Api.Data.Entities.CashFlowEntity", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("INTEGER");
-
-                    b.Property<long?>("CapitalExpenditure")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<DateTime>("Date")
-                        .HasColumnType("TEXT");
-
-                    b.Property<long?>("DepreciationAndAmortization")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<long?>("FreeCashFlow")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<string>("Frequency")
-                        .IsRequired()
-                        .HasMaxLength(10)
-                        .HasColumnType("TEXT");
-
-                    b.Property<long?>("NetIncome")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<long?>("OperatingCashFlow")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<string>("ReportedCurrency")
-                        .HasMaxLength(8)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Symbol")
-                        .IsRequired()
-                        .HasMaxLength(20)
-                        .HasColumnType("TEXT");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("Symbol", "Date", "Frequency")
-                        .IsUnique();
-
-                    b.ToTable("cash_flows", (string)null);
-                });
 
             modelBuilder.Entity("Portfolio.Api.Data.Entities.IncomeStatementEntity", b =>
                 {
