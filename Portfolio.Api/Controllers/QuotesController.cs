@@ -51,7 +51,7 @@ namespace Portfolio.Api.Controllers
         [ProducesResponseType(typeof(RefreshResponse), StatusCodes.Status200OK)]
         [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
         public async Task<IActionResult> Refresh(
-            [FromQuery, Required] string symbols,           
+            [FromQuery, Required] string symbols,
             [FromQuery] string range = "30d",
             CancellationToken ct = default)
         {
@@ -141,7 +141,7 @@ namespace Portfolio.Api.Controllers
         [ProducesResponseType(typeof(IEnumerable<Price>), StatusCodes.Status200OK)]
         [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
         public async Task<IActionResult> Latest(
-            [FromQuery, Required] string symbol,            
+            [FromQuery, Required] string symbol,
             [FromQuery] int take = 5,
             CancellationToken ct = default)
         {
@@ -202,7 +202,7 @@ namespace Portfolio.Api.Controllers
         [ProducesResponseType(typeof(IEnumerable<object>), StatusCodes.Status200OK)]
         [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
         public async Task<IActionResult> Quarters(
-            [FromQuery, Required] string symbol,           
+            [FromQuery, Required] string symbol,
             [FromQuery] int take = 8,
             CancellationToken ct = default)
         {
@@ -296,7 +296,7 @@ namespace Portfolio.Api.Controllers
                 .ToListAsync(ct);
 
             return Ok(data);
-        }  
+        }
 
         // ---- helpers ----
 

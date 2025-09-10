@@ -73,7 +73,7 @@ namespace Portfolio.Api.Services
                       $"?function=TIME_SERIES_DAILY" +
                       $"&symbol={Uri.EscapeDataString(symbol)}" +
                       $"&outputsize=compact" +
-                      $"&outputsize={(fullHistory ? "full" : "compact")}" + 
+                      $"&outputsize={(fullHistory ? "full" : "compact")}" +
                       $"&apikey={_apiKey}";
 
             using var resp = await _http.GetAsync(url, ct);
