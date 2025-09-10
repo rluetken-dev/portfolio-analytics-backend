@@ -10,13 +10,13 @@ Computed **TTM (Trailing Twelve Months)** metrics are derived **from your stored
 
 ---
 
-## ✨ Highlights (2025‑09‑10)
+## ✨ Highlights (2025-09-10)
 - ✅ Migrated fundamentals to **FMP `/stable`**
 - ✅ Added **ingest services** (Income, Balance, Cash) + EF entities & migrations
 - ✅ Added **read endpoints** (SQL → JSON) for each statement
 - ✅ Added **TTM** endpoints (sums & ratios) computed from stored quarterlies
 - ✅ Added **snapshot** route (Income/Balance/Cash + TTM metrics) with `period` passthrough
-- ✅ Added **plan‑safe caps** on quarterly requests to respect FMP plan limits
+- ✅ Added **plan-safe caps** on quarterly requests to respect FMP plan limits
 - ✅ Swagger UI for quick exploration
 
 ---
@@ -85,7 +85,7 @@ GET /api/ingest/income/{symbol}?period=annual|quarter&limit=10
 GET /api/ingest/balance/{symbol}?period=annual|quarter&limit=5
 GET /api/ingest/cash/{symbol}?period=annual|quarter&limit=5
 ```
-- `period=quarter` requests are **plan‑safe capped** at `limit ≤ 5` to avoid 402s.
+- `period=quarter` requests are **plan-safe capped** at `limit ≤ 5` to avoid 402s.
 - Upsert key: `(Symbol, Date, Frequency)`; newest first is recommended for reads.
 
 ### Read (from SQL; no external calls)
@@ -95,7 +95,7 @@ Return persisted rows for debugging, verification, or UI.
 GET /api/data/income/{symbol}?period=annual|quarter&limit=10
 GET /api/data/balance/{symbol}?period=annual|quarter&limit=10
 GET /api/data/cash/{symbol}?period=annual|quarter&limit=10
-```
+``
 
 ### TTM (from SQL; requires 4 stored quarters)
 Compute TTM sums and ratios using the last 4 quarterly rows from your DB.
@@ -118,7 +118,7 @@ GET /api/fundamentals/{symbol}/metrics/ttm
 GET /api/fundamentals/{symbol}/snapshot/stable?period=annual|quarter&limit=3
 ```
 - `snapshot` returns `{ Income, Balance, Cash, Metrics }`, each fetched independently.
-- `metrics/ttm` is period‑agnostic (TTM by definition).
+- `metrics/ttm` is period-agnostic (TTM by definition).
 
 ### Legacy Revenue (helper)
 Simple aggregate returning (by default) quarterly revenue via FMP, falling back to annual and finally Alpha Vantage if needed.
@@ -127,6 +127,8 @@ Simple aggregate returning (by default) quarterly revenue via FMP, falling back 
 GET /api/fundamentals/revenue?symbol=AAPL&limit=8
 ```
 > For `period=quarter` on basic FMP plans, use `limit ≤ 5` to avoid 402s.
+
+> **Other controllers present:** `AdminController` (ops/maintenance), `QuotesController` (quotes/price-related). These are outside the fundamentals scope and may vary.
 
 ---
 
@@ -150,7 +152,7 @@ GET /api/fundamentals/revenue?symbol=AAPL&limit=8
 
 ## 🧭 Design Notes
 - **Separation of concerns:** ingest (write) vs. read (SQL) vs. live (FMP) endpoints
-- **Plan‑aware limits:** quarterly calls are capped to avoid FMP 402s
+- **Plan-aware limits:** quarterly calls are capped to avoid FMP 402s
 - **Lightweight DTOs:** we map only the fields we actually use (faster & safer)
 - **Defensive parsing & logging:** invalid rows are skipped; upstream issues don’t crash reads
 - **Period passthrough:** `period=annual|quarter` is consistently honored in live & snapshot routes
@@ -158,29 +160,40 @@ GET /api/fundamentals/revenue?symbol=AAPL&limit=8
 ---
 
 ## 📂 Project Structure (current)
+This reflects the tree in the repository (controllers + data + services + program):
+
 ```
-portfolio-analytics-backend/
-├─ Portfolio.Api/
-│  ├─ Controllers/
-│  │  ├─ DataController.cs           # read from SQL (income/balance/cash + TTM)
-│  │  ├─ FundamentalsController.cs   # live FMP /stable + revenue helper + snapshot
-│  │  └─ IngestController.cs         # ingest income/balance/cash into SQL
-│  ├─ Data/
-│  │  ├─ Entities/
-│  │  │  ├─ IncomeStatementEntity.cs
-│  │  │  ├─ BalanceSheetEntity.cs
-│  │  │  └─ CashFlowEntity.cs
-│  │  └─ Migrations/                 # EF Core migrations (checked in)
-│  ├─ Services/
-│  │  ├─ FmpClient.cs                # thin /stable client; reads Fmp:ApiKey
-│  │  ├─ AlphaVantageClient.cs       # optional fallback (legacy revenue only)
-│  │  ├─ IncomeIngestService.cs
-│  │  ├─ BalanceSheetIngestService.cs
-│  │  └─ CashFlowIngestService.cs
-│  ├─ appsettings*.json
-│  └─ Program.cs
+Portfolio.Api/
+├─ Controllers/
+│  ├─ AdminController.cs
+│  ├─ DataController.cs            # read from SQL (income/balance/cash + TTM)
+│  ├─ FundamentalsController.cs    # live FMP /stable + revenue helper + snapshot
+│  ├─ IngestController.cs          # ingest income/balance/cash into SQL
+│  └─ QuotesController.cs
+├─ Data/
+│  ├─ Entities/
+│  │  ├─ BalanceSheetEntity.cs
+│  │  ├─ CashFlowEntity.cs
+│  │  └─ IncomeStatementEntity.cs
+│  ├─ AppDbContext.cs
+│  └─ Migrations/                  # EF Core migrations (checked in)
+├─ Models/
+│  ├─ Ticker.cs
+│  └─ Price.cs
+├─ Services/
+│  ├─ AlphaVantageClient.cs        # optional fallback (legacy revenue only)
+│  ├─ BalanceSheetIngestService.cs
+│  ├─ CashFlowIngestService.cs
+│  ├─ FmpClient.cs                 # thin /stable client; reads Fmp:ApiKey
+│  ├─ IncomeIngestService.cs
+│  └─ MaintenanceService.cs
+├─ Program.cs
+├─ appsettings.json
+├─ appsettings.Development.json
 └─ README.md
 ```
+
+> Note: You may also see `obj/` and `Properties/` directories generated by the SDK.
 
 ---
 
