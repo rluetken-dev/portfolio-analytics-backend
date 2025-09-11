@@ -53,7 +53,25 @@ builder.Services.AddScoped<BalanceSheetIngestService>();
 // Registers the cash-flow ingest service (scoped = one per request).
 builder.Services.AddScoped<CashFlowIngestService>();
 
+// Register demo-data seeding helpers (kept separate so controllers stay thin and testable).
+builder.Services.AddScoped<ISeedService, SeedService>();
+
 var app = builder.Build();
+
+using (var scope = app.Services.CreateScope())
+{
+    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+    try
+    {
+        // Preferred: applies EF Core migrations to create/update scheme
+        db.Database.Migrate();
+    }
+    catch
+    {
+        // Fallback: quick-and-dirty if you don't have migrations yet
+        db.Database.EnsureCreated();
+    }
+}
 
 if (app.Environment.IsDevelopment())
 {

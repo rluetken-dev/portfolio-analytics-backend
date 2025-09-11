@@ -5,7 +5,8 @@ using System.ComponentModel.DataAnnotations;
 using Portfolio.Api.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Sqlite;
-
+using Portfolio.Api.Models;
+using Portfolio.Api.Data.Entities;
 
 namespace Portfolio.Api.Controllers;
 
@@ -22,22 +23,10 @@ public class AdminController : ControllerBase
     public AdminController(MaintenanceService maintenance) => _maintenance = maintenance;
 
     /// <summary>
-    /// Deletes outdated rows from the Prices table.
-    /// 
-    /// Query parameters:
-    /// - <c>maxAgeDays</c>: delete rows older than today - N days (default 3 years).
-    /// - <c>keepPerSymbol</c>: keep at most N rows per symbol (delete older rows).
-    /// 
-    /// Examples:
-    /// <br/>POST /api/admin/prune?maxAgeDays=1095
-    /// <br/>POST /api/admin/prune?keepPerSymbol=1000
-    /// <br/>POST /api/admin/prune?maxAgeDays=1825&amp;keepPerSymbol=1500
+    /// Prunes daily price rows only (does not touch fundamentals).
+    /// English: Deletes old price rows based on maxAgeDays and/or caps rows per symbol.
     /// </summary>
     [HttpPost("prune")]
-    [Produces("application/json")]
-    [SwaggerOperation(
-        Summary = "Prune old data",
-        Description = "Deletes old rows and/or caps rows per symbol in the Prices table.")]
     public async Task<IActionResult> Prune(
         [FromQuery] int? maxAgeDays = 3 * 365,
         [FromQuery] int? keepPerSymbol = null,
@@ -51,17 +40,11 @@ public class AdminController : ControllerBase
     }
 
     /// <summary>
-    /// Runs SQLite VACUUM and ANALYZE:
-    /// - Reclaims free space
-    /// - Refreshes statistics
-    /// 
-    /// Should be run after a significant prune to shrink the database file.
+    /// Runs SQLite VACUUM and ANALYZE for the entire database file (not only Prices).
+    /// English: Reclaims free space and refreshes query planner statistics.
+    /// Should be run after large deletes/truncates.
     /// </summary>
     [HttpPost("vacuum")]
-    [Produces("application/json")]
-    [SwaggerOperation(
-        Summary = "VACUUM + ANALYZE (SQLite)",
-        Description = "Compacts the SQLite file and refreshes query planner statistics.")]
     public async Task<IActionResult> Vacuum(CancellationToken ct = default)
     {
         await _maintenance.VacuumAnalyzeAsync(ct);
@@ -69,36 +52,86 @@ public class AdminController : ControllerBase
     }
 
     /// <summary>
-    /// Hard reset: deletes all rows from the Prices table.
-    /// </summary>
-    /// <remarks>
-    /// Example:
-    /// <br/>POST /api/admin/truncate
+    /// Hard reset: deletes rows from one or more tables, controlled by the 'scope' query.
+    /// English:
+    /// - scope=prices        -> wipe only daily price rows
+    /// - scope=fundamentals  -> wipe income, balance, cashflow rows
+    /// - scope=tickers       -> wipe tickers (also implies prices due to FK)
+    /// - scope=all (default) -> wipe everything in a safe order
     /// 
-    /// ⚠️ This is destructive. Use only in development or with explicit confirmation.
-    /// </remarks>
+    /// WARNING: destructive. Keep behind DemoMode/Authorization in production.
+    /// </summary>
     [HttpPost("truncate")]
-    [Produces("application/json")]
-    [SwaggerOperation(
-        Summary = "Delete all rows",
-        Description = "Wipes the Prices table completely. Use with caution.")]
-    public async Task<IActionResult> Truncate(CancellationToken ct = default)
+    public async Task<IActionResult> Truncate(
+        [FromQuery] string? scope,
+        [FromServices] IConfiguration cfg,
+        [FromServices] AppDbContext db,
+        CancellationToken ct = default)
     {
-        var deleted = await _maintenance.TruncateAllAsync(ct);
-        return Ok(new { ok = true, deleted });
+        // Optional: protect with DemoMode like your seed endpoints
+        if (!cfg.GetValue<bool>("DemoMode"))
+            return NotFound();
+
+        // Normalize scope
+        var s = (scope ?? "all").Trim().ToLowerInvariant();
+
+        // English: we delete in an order that respects FK constraints.
+        // Prices -> Fundamentals -> Tickers.
+        var deleted = new Dictionary<string, int>();
+
+        switch (s)
+        {
+            case "prices":
+                {
+                    // delete price rows only
+                    deleted["prices"] = await db.Database.ExecuteSqlRawAsync("DELETE FROM Prices;", ct);
+                    break;
+                }
+            case "fundamentals":
+                {
+                    // delete income, balance, cashflow rows
+                    deleted["income_statements"] = await db.Database.ExecuteSqlRawAsync("DELETE FROM income_statements;", ct);
+                    deleted["balance_sheets"] = await db.Database.ExecuteSqlRawAsync("DELETE FROM balance_sheets;", ct);
+                    deleted["cash_flows"] = await db.Database.ExecuteSqlRawAsync("DELETE FROM cash_flows;", ct);
+                    break;
+                }
+            case "tickers":
+                {
+                    // wipe dependent rows first, then tickers
+                    deleted["prices"] = await db.Database.ExecuteSqlRawAsync("DELETE FROM Prices;", ct);
+                    deleted["income_statements"] = await db.Database.ExecuteSqlRawAsync("DELETE FROM income_statements;", ct);
+                    deleted["balance_sheets"] = await db.Database.ExecuteSqlRawAsync("DELETE FROM balance_sheets;", ct);
+                    deleted["cash_flows"] = await db.Database.ExecuteSqlRawAsync("DELETE FROM cash_flows;", ct);
+                    deleted["tickers"] = await db.Database.ExecuteSqlRawAsync("DELETE FROM Tickers;", ct);
+                    break;
+                }
+            case "all":
+            default:
+                {
+                    // full wipe in safe order
+                    deleted["prices"] = await db.Database.ExecuteSqlRawAsync("DELETE FROM Prices;", ct);
+                    deleted["income_statements"] = await db.Database.ExecuteSqlRawAsync("DELETE FROM income_statements;", ct);
+                    deleted["balance_sheets"] = await db.Database.ExecuteSqlRawAsync("DELETE FROM balance_sheets;", ct);
+                    deleted["cash_flows"] = await db.Database.ExecuteSqlRawAsync("DELETE FROM cash_flows;", ct);
+                    deleted["tickers"] = await db.Database.ExecuteSqlRawAsync("DELETE FROM Tickers;", ct);
+                    break;
+                }
+        }
+
+        return Ok(new { ok = true, scope = s, deleted });
     }
 
     /// <summary>
-    /// Diagnostics: shows which SQLite file is in use and basic table stats.
+    /// Diagnostics: shows DB provider, file path/connection string, and row counts per table.
+    /// English: Use this to quickly inspect if tables are populated (Prices, Income, Balance, CashFlow, Tickers).
+    /// Also includes a compact per-symbol fundamentals snapshot (annual) to see ROE-readiness at a glance.
     /// </summary>
-    /// <remarks>
-    /// GET /api/admin/info
-    /// </remarks>
     [HttpGet("info")]
     [Produces("application/json")]
-    public async Task<IActionResult> Info([FromServices] AppDbContext db, CancellationToken ct = default)
+    public async Task<IActionResult> Info(
+        [FromServices] AppDbContext db,
+        CancellationToken ct = default)
     {
-        // Provider/Connection ermitteln (voll qualifiziert, falls Extensions nicht per using gemapped sind)
         var isSqlite = db.Database.IsSqlite();
         string dbPathOrCxn = "(unknown)";
 
@@ -108,22 +141,26 @@ public class AdminController : ControllerBase
             dbPathOrCxn = conn?.DataSource ?? "(no data source)";
             try
             {
-                if (!string.IsNullOrWhiteSpace(dbPathOrCxn) && !System.IO.Path.IsPathRooted(dbPathOrCxn))
-                    dbPathOrCxn = System.IO.Path.GetFullPath(dbPathOrCxn, AppContext.BaseDirectory);
+                if (!string.IsNullOrWhiteSpace(dbPathOrCxn) && !Path.IsPathRooted(dbPathOrCxn))
+                    dbPathOrCxn = Path.GetFullPath(dbPathOrCxn, AppContext.BaseDirectory);
             }
             catch { /* ignore */ }
         }
         else
         {
-            // Fallback für andere Provider: ConnectionString anzeigen
             dbPathOrCxn = Microsoft.EntityFrameworkCore.RelationalDatabaseFacadeExtensions.GetConnectionString(db.Database)
                             ?? "(no connection string)";
         }
 
-        // Counts & ranges from Prices table.
-        // Group by ticker symbol (via navigation property) and compute row counts + min/max dates.
-        var total = await db.Prices.CountAsync(ct);
-        var perSymbol = await db.Prices
+        // --- Row counts (quick overall health) -----------------------------------
+        var totalPrices = await db.Prices.CountAsync(ct);
+        var totalTickers = await db.Tickers.CountAsync(ct);
+        var totalIncome = await db.IncomeStatements.CountAsync(ct);
+        var totalBalance = await db.BalanceSheets.CountAsync(ct);
+        var totalCashFlow = await db.CashFlows.CountAsync(ct);
+
+        // --- Prices by symbol (range + density) ----------------------------------
+        var pricesBySymbol = await db.Prices
             .GroupBy(p => p.Ticker.Symbol)
             .Select(g => new
             {
@@ -135,12 +172,253 @@ public class AdminController : ControllerBase
             .OrderByDescending(x => x.count)
             .ToListAsync(ct);
 
+        // --- Fundamentals snapshot (annual) --------------------------------------
+        // English: For each symbol, show counts and latest period end for Income and Balance.
+        // "roeReady" is true if latest annual dates exist on both sides and match (so ROE can be computed directly).
+        var incomeAgg = await db.IncomeStatements.AsNoTracking()
+            .Where(i => i.Frequency == "annual")
+            .GroupBy(i => i.Symbol)
+            .Select(g => new { symbol = g.Key, incomeCount = g.Count(), latestIncomeDate = g.Max(x => x.Date) })
+            .ToListAsync(ct);
+
+        var balanceAgg = await db.BalanceSheets.AsNoTracking()
+            .Where(b => b.Frequency == "annual")
+            .GroupBy(b => b.Symbol)
+            .Select(g => new { symbol = g.Key, balanceCount = g.Count(), latestBalanceDate = g.Max(x => x.Date) })
+            .ToListAsync(ct);
+
+        var incomeMap = incomeAgg.ToDictionary(x => x.symbol, StringComparer.OrdinalIgnoreCase);
+        var balanceMap = balanceAgg.ToDictionary(x => x.symbol, StringComparer.OrdinalIgnoreCase);
+        var symbolsFund = incomeMap.Keys.Union(balanceMap.Keys, StringComparer.OrdinalIgnoreCase);
+
+        var fundamentalsBySymbol = symbolsFund
+            .OrderBy(s => s)
+            .Select(s =>
+            {
+                incomeMap.TryGetValue(s, out var inc);
+                balanceMap.TryGetValue(s, out var bal);
+
+                var latestInc = inc?.latestIncomeDate;
+                var latestBal = bal?.latestBalanceDate;
+                var roeReady = latestInc.HasValue && latestBal.HasValue && latestInc.Value == latestBal.Value;
+
+                return new
+                {
+                    symbol = s,
+                    incomeCount = inc?.incomeCount ?? 0,
+                    balanceCount = bal?.balanceCount ?? 0,
+                    latestIncomeDate = latestInc,
+                    latestBalanceDate = latestBal,
+                    roeReady
+                };
+            })
+            .ToList();
+
         return Ok(new
         {
             database = isSqlite ? "SQLite" : "Other",
             locationOrConnection = dbPathOrCxn,
-            totalPrices = total,
-            symbols = perSymbol
+            counts = new
+            {
+                tickers = totalTickers,
+                prices = totalPrices,
+                income = totalIncome,
+                balance = totalBalance,
+                cashflow = totalCashFlow
+            },
+            pricesBySymbol,
+            fundamentalsBySymbol
         });
+    }
+
+    /// <summary>
+    /// Ingests annual Income &amp; Balance from FMP and upserts into DB.
+    /// English: real-data equivalent of our seed endpoints. Respects FMP free-tier limit.
+    /// </summary>
+    [HttpPost("ingest/fmp-annual")]
+    public async Task<IActionResult> IngestFmpAnnual(
+        [FromQuery] string symbol,
+        [FromServices] IncomeIngestService incomeIngest,
+        [FromServices] BalanceSheetIngestService balanceIngest,
+        [FromQuery] int limit = 5,               // English: FMP low tiers allow up to 5 rows
+        CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(symbol))
+            return BadRequest(new { error = "Missing ?symbol=..." });
+
+        var ticker = symbol.Trim().ToUpperInvariant();
+
+        try
+        {
+            // English: pass limit explicitly to avoid 402 on low-tier plans
+            await incomeIngest.IngestAsync(ticker, "annual", limit, ct);
+            await balanceIngest.IngestAsync(ticker, "annual", limit, ct);
+
+            return Ok(new { ticker, limit, ok = true });
+        }
+        catch (HttpRequestException ex)
+        {
+            // English: surface upstream error without stack trace
+            return StatusCode(502, new { ticker, error = "FMP request failed", detail = ex.Message });
+        }
+    }
+
+    /// <summary>
+    /// Ingests annual Cash Flow statements from FMP and upserts into DB.
+    /// English: complements income &amp; balance so we can compute FCF.
+    /// </summary>
+    [HttpPost("ingest/fmp-cashflow-annual")]
+    public async Task<IActionResult> IngestFmpCashflowAnnual(
+        [FromQuery] string symbol,
+        [FromServices] CashFlowIngestService cashflowIngest,
+        [FromQuery] int limit = 5,               // English: FMP low tiers allow up to ~5 rows
+        CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(symbol))
+            return BadRequest(new { error = "Missing ?symbol=..." });
+
+        var ticker = symbol.Trim().ToUpperInvariant();
+
+        try
+        {
+            // English: ask service to fetch+upsert annual cashflows
+            await cashflowIngest.IngestAsync(ticker, "annual", limit, ct);
+            return Ok(new { ticker, limit, ok = true });
+        }
+        catch (HttpRequestException ex)
+        {
+            return StatusCode(502, new { ticker, error = "FMP request failed", detail = ex.Message });
+        }
+    }
+
+
+
+
+
+
+
+
+
+
+
+
+
+    // POST /api/admin/seed/ticker
+    [HttpPost("seed/ticker")]
+    public async Task<IActionResult> SeedTicker(
+        [FromQuery] string symbol,
+        [FromQuery] string? name,
+        [FromServices] IConfiguration cfg,
+        [FromServices] ISeedService seeder,
+        CancellationToken ct = default)
+    {
+        if (!cfg.GetValue<bool>("DemoMode")) return NotFound();
+        if (string.IsNullOrWhiteSpace(symbol)) return BadRequest(new { error = "Query ?symbol=... is required." });
+
+        var (created, updated) = await seeder.SeedTickerAsync(symbol, name, ct);
+        return Ok(new { ticker = symbol.Trim().ToUpperInvariant(), created, updated });
+    }
+
+    // POST /api/admin/seed/annual
+    [HttpPost("seed/annual")]
+    public async Task<IActionResult> SeedAnnual(
+        [FromQuery] string symbol,
+        [FromQuery] int year,
+        [FromQuery] long netIncome,
+        [FromQuery] long equity,
+        [FromServices] IConfiguration cfg,
+        [FromServices] ISeedService seeder,
+        CancellationToken ct = default)
+    {
+        if (!cfg.GetValue<bool>("DemoMode")) return NotFound();
+        if (string.IsNullOrWhiteSpace(symbol)) return BadRequest(new { error = "Missing ?symbol=..." });
+
+        await seeder.SeedAnnualAsync(symbol, year, netIncome, equity, ct);
+        return Ok(new { ticker = symbol.Trim().ToUpperInvariant(), year, netIncome, equity });
+    }
+
+    // POST /api/admin/seed/liabilities
+    [HttpPost("seed/liabilities")]
+    public async Task<IActionResult> SeedLiabilities(
+        [FromQuery] string symbol,
+        [FromQuery] int year,
+        [FromQuery] long totalLiabilities,
+        [FromServices] IConfiguration cfg,
+        [FromServices] ISeedService seeder,
+        CancellationToken ct = default)
+    {
+        if (!cfg.GetValue<bool>("DemoMode")) return NotFound();
+        if (string.IsNullOrWhiteSpace(symbol)) return BadRequest(new { error = "Missing ?symbol=..." });
+
+        await seeder.SeedLiabilitiesAsync(symbol, year, totalLiabilities, ct);
+        return Ok(new { ticker = symbol.Trim().ToUpperInvariant(), year, totalLiabilities });
+    }
+
+    // POST /api/admin/seed/revenue
+    [HttpPost("seed/revenue")]
+    public async Task<IActionResult> SeedRevenue(
+        [FromQuery] string symbol,
+        [FromQuery] int year,
+        [FromQuery] long revenue,
+        [FromServices] IConfiguration cfg,
+        [FromServices] ISeedService seeder,
+        CancellationToken ct = default)
+    {
+        if (!cfg.GetValue<bool>("DemoMode")) return NotFound();
+        if (string.IsNullOrWhiteSpace(symbol)) return BadRequest(new { error = "Missing ?symbol=..." });
+
+        await seeder.SeedRevenueAsync(symbol, year, revenue, ct);
+        return Ok(new { ticker = symbol.Trim().ToUpperInvariant(), year, revenue });
+    }
+
+    // POST /api/admin/seed/assets
+    [HttpPost("seed/assets")]
+    public async Task<IActionResult> SeedAssets(
+        [FromQuery] string symbol,
+        [FromQuery] int year,
+        [FromQuery] long totalAssets,
+        [FromServices] IConfiguration cfg,
+        [FromServices] ISeedService seeder,
+        CancellationToken ct = default)
+    {
+        if (!cfg.GetValue<bool>("DemoMode")) return NotFound();
+        if (string.IsNullOrWhiteSpace(symbol)) return BadRequest(new { error = "Missing ?symbol=..." });
+
+        await seeder.SeedAssetsAsync(symbol, year, totalAssets, ct);
+        return Ok(new { ticker = symbol.Trim().ToUpperInvariant(), year, totalAssets });
+    }
+
+    // POST /api/admin/seed/price
+    [HttpPost("seed/price")]
+    public async Task<IActionResult> SeedPrice(
+        [FromQuery] string symbol,
+        [FromQuery] DateOnly date,
+        [FromQuery] decimal close,
+        [FromServices] IConfiguration cfg,
+        [FromServices] ISeedService seeder,
+        CancellationToken ct = default)
+    {
+        if (!cfg.GetValue<bool>("DemoMode")) return NotFound();
+        if (string.IsNullOrWhiteSpace(symbol)) return BadRequest(new { error = "Missing ?symbol=..." });
+
+        await seeder.SeedPriceAsync(symbol, date, close, ct);
+        return Ok(new { ticker = symbol.Trim().ToUpperInvariant(), date, close });
+    }
+
+    // POST /api/admin/seed/shares
+    [HttpPost("seed/shares")]
+    public async Task<IActionResult> SeedShares(
+        [FromQuery] string symbol,
+        [FromQuery] int year,
+        [FromQuery] long shares,
+        [FromServices] IConfiguration cfg,
+        [FromServices] ISeedService seeder,
+        CancellationToken ct = default)
+    {
+        if (!cfg.GetValue<bool>("DemoMode")) return NotFound();
+        if (string.IsNullOrWhiteSpace(symbol)) return BadRequest(new { error = "Missing ?symbol=..." });
+
+        await seeder.SeedSharesAsync(symbol, year, shares, ct);
+        return Ok(new { ticker = symbol.Trim().ToUpperInvariant(), year, shares });
     }
 }

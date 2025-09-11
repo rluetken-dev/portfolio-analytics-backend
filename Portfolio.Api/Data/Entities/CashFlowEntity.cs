@@ -34,5 +34,8 @@ namespace Portfolio.Api.Data.Entities
 
         /// <summary>Depreciation &amp; amortization.</summary>
         public long? DepreciationAndAmortization { get; set; }
+
+        /// <summary>Change in working capital (adjustment for Owner Earnings).</summary>
+        public long? ChangeInWorkingCapital { get; set; }
     }
 }

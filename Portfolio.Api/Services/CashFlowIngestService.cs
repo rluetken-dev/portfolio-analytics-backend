@@ -79,7 +79,8 @@ namespace Portfolio.Api.Services
                         CapitalExpenditure = r.CapitalExpenditure,
                         FreeCashFlow = r.FreeCashFlow,
                         NetIncome = r.NetIncome,
-                        DepreciationAndAmortization = r.DepreciationAndAmortization
+                        DepreciationAndAmortization = r.DepreciationAndAmortization,
+                        ChangeInWorkingCapital = r.ChangeInWorkingCapital  // <- NEW
                     };
                     _db.CashFlows.Add(entity);
                     changed++;
@@ -93,6 +94,7 @@ namespace Portfolio.Api.Services
                     existing.FreeCashFlow = r.FreeCashFlow;
                     existing.NetIncome = r.NetIncome;
                     existing.DepreciationAndAmortization = r.DepreciationAndAmortization;
+                    existing.ChangeInWorkingCapital = r.ChangeInWorkingCapital; // <- NEW
                     changed++;
                 }
             }

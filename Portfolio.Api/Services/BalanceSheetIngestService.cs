@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;                  // EF Core (queries, SaveC
 using Portfolio.Api.Data;                             // AppDbContext
 using Portfolio.Api.Data.Entities;                    // BalanceSheetEntity
 using System.Globalization;
+using Portfolio.Api.Models;
 
 namespace Portfolio.Api.Services
 {
@@ -22,6 +23,24 @@ namespace Portfolio.Api.Services
         }
 
         /// <summary>
+        /// Ensures the given symbol exists in the Tickers table (idempotent).
+        /// Uppercases the symbol and inserts a minimal row if none exists.
+        /// </summary>
+        /// <param name="symbol">Ticker symbol (e.g., "AAPL"). Case-insensitive.</param>
+        /// <param name="ct">Cancellation token.</param>
+        /// <returns>A task that completes when the check/insert has finished.</returns>
+        private async Task EnsureTickerAsync(string symbol, CancellationToken ct)
+        {
+            var s = symbol.ToUpperInvariant();
+            var exists = await _db.Tickers.AnyAsync(t => t.Symbol == s, ct);
+            if (!exists)
+            {
+                _db.Tickers.Add(new Ticker { Symbol = s, Name = s });
+                await _db.SaveChangesAsync(ct);
+            }
+        }
+
+        /// <summary>
         /// Fetches balance-sheet rows and UPSERTs them into SQL.
         /// </summary>
         /// <param name="symbol">Ticker, e.g., "AAPL".</param>
@@ -31,6 +50,8 @@ namespace Portfolio.Api.Services
         /// <returns>Number of rows inserted or updated.</returns>
         public async Task<int> IngestAsync(string symbol, string period = "annual", int limit = 10, CancellationToken ct = default)
         {
+            await EnsureTickerAsync(symbol, ct);
+
             if (string.IsNullOrWhiteSpace(symbol))
                 throw new ArgumentException("symbol is required", nameof(symbol));
 

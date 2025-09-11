@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;                  // EF Core (queries, SaveC
 using Portfolio.Api.Data;                             // AppDbContext
 using Portfolio.Api.Data.Entities;                    // IncomeStatementEntity
 using System.Globalization;                           // CultureInfo
+using Portfolio.Api.Models;
 
 namespace Portfolio.Api.Services
 {
@@ -22,6 +23,23 @@ namespace Portfolio.Api.Services
         }
 
         /// <summary>
+        /// Ensures a row exists in the Tickers table for the given symbol (idempotent).
+        /// Creates it if missing, normalizing the symbol to uppercase and using it as the fallback name.
+        /// </summary>
+        /// <param name="symbol">Ticker symbol (e.g., "AAPL"). Case-insensitive.</param>
+        /// <param name="ct">Cancellation token.</param>
+        private async Task EnsureTickerAsync(string symbol, CancellationToken ct)
+        {
+            var s = symbol.ToUpperInvariant();
+            var exists = await _db.Tickers.AnyAsync(t => t.Symbol == s, ct);
+            if (!exists)
+            {
+                _db.Tickers.Add(new Ticker { Symbol = s, Name = s }); // name: fallback to symbol
+                await _db.SaveChangesAsync(ct);
+            }
+        }
+
+        /// <summary>
         /// Fetches income-statement rows via FMP /stable and UPSERTs them into SQL.
         /// NOTE (English):
         /// - Uniqueness is enforced by (Symbol, Date, Frequency) unique index.
@@ -31,8 +49,10 @@ namespace Portfolio.Api.Services
         /// <param name="period">"annual" or "quarter".</param>
         /// <param name="limit">Max rows to fetch from API.</param>
         /// <param name="ct">Cancellation token.</param>
-        public async Task<int> IngestAsync(string symbol, string period = "annual", int limit = 10, CancellationToken ct = default)
+        public async Task<int> IngestAsync(string symbol, string period, int limit, CancellationToken ct = default)
         {
+            await EnsureTickerAsync(symbol, ct); // English: make sure Tickers has a row
+
             if (string.IsNullOrWhiteSpace(symbol))
                 throw new ArgumentException("symbol is required", nameof(symbol));
 

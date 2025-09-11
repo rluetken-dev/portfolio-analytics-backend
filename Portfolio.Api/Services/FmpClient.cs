@@ -92,6 +92,7 @@ namespace Portfolio.Api.Services
             long? FreeCashFlow,
             long? NetIncome,
             long? DepreciationAndAmortization,
+            long? ChangeInWorkingCapital,   
             string? ReportedCurrency);
 
         public FmpClient(HttpClient http, IConfiguration config, ILogger<FmpClient> log)
