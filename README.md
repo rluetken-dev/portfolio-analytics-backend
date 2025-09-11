@@ -4,19 +4,18 @@
 ![.NET](https://img.shields.io/badge/.NET-8.0-blue)
 ![License](https://img.shields.io/badge/License-MIT-green)
 
-Backend service for fetching, ingesting, and analyzing stock **fundamentals**.  
-**Now using Financial Modeling Prep (FMP) `/stable`** endpoints for Income Statement, Balance Sheet, and Cash Flow data.  
-Computed **TTM (Trailing Twelve Months)** metrics are derived **from your stored quarterly data** — no external call needed once ingested.
+Backend service for fetching, ingesting, and analyzing stock **fundamentals** and computing **Buffett-style analytics**.  
+Data is persisted in a local SQLite database (`portfolio.db`) and enriched via **Financial Modeling Prep (FMP) `/stable`** endpoints.
 
 ---
 
-## ✨ Highlights (2025-09-10)
+## ✨ Highlights (2025-09-11)
 - ✅ Migrated fundamentals to **FMP `/stable`**
 - ✅ Added **ingest services** (Income, Balance, Cash) + EF entities & migrations
 - ✅ Added **read endpoints** (SQL → JSON) for each statement
 - ✅ Added **TTM** endpoints (sums & ratios) computed from stored quarterlies
-- ✅ Added **snapshot** route (Income/Balance/Cash + TTM metrics) with `period` passthrough
-- ✅ Added **plan-safe caps** on quarterly requests to respect FMP plan limits
+- ✅ Added **Buffett metrics** (ROE, ROA, P/E, P/B, FCF Yield, Owner Earnings, Equity CAGR, etc.)
+- ✅ Added **admin ops** (vacuum, prune, truncate) + **demo seeding** (guarded by `DemoMode`)
 - ✅ Swagger UI for quick exploration
 
 ---
@@ -26,7 +25,7 @@ Computed **TTM (Trailing Twelve Months)** metrics are derived **from your stored
 ### Prerequisites
 - [.NET 8 SDK](https://dotnet.microsoft.com/en-us/download)
 - FMP API key ([financialmodelingprep.com](https://financialmodelingprep.com))
-- *(Optional)* Alpha Vantage API key (used only for a legacy revenue fallback path)
+- *(Optional)* Alpha Vantage API key (legacy fallback for revenue)
 
 ### Setup & Run
 ```bash
@@ -40,11 +39,12 @@ dotnet restore
 # Configure secrets
 dotnet user-secrets init
 dotnet user-secrets set "Fmp:ApiKey" "YOUR_FMP_API_KEY"
-# Optional (only needed for legacy revenue fallback):
+
+# Optional (legacy revenue fallback):
 dotnet user-secrets set "AlphaVantage:ApiKey" "YOUR_ALPHA_VANTAGE_API_KEY"
 
-# Apply database migrations (creates/updates SQLite DB)
-# (Install dotnet-ef once: dotnet tool install --global dotnet-ef)
+# Apply database migrations
+dotnet tool install --global dotnet-ef   # once
 dotnet ef database update --project Portfolio.Api
 
 # Run the API
@@ -60,159 +60,176 @@ dotnet run
 
 ```json
 {
-  "Fmp": {
-    "ApiKey": "override-with-user-secrets"
-  },
-  "ConnectionStrings": {
-    "Default": "Data Source=portfolio.db"
-  }
+  "ConnectionStrings": { "Default": "Data Source=portfolio.db" },
+  "Fmp": { "ApiKey": "override-with-user-secrets" },
+  "DemoMode": true
 }
 ```
 
-Notes:
-- **Fmp:ApiKey** – required, used by the typed `HttpClient`.
-- Throttling/caps for quarterly endpoints are enforced in ingest services to avoid `402 Payment Required` on basic plans (limit ≤ 5 per call).
+- **Fmp:ApiKey** – required for ingest/live endpoints.  
+- **DemoMode** – enables `/api/admin/seed/*` and destructive ops (should be `false` in production).  
+- Free-tier FMP plans require `limit ≤ 5` on many calls; ingestion services enforce this.
 
 ---
 
-## 📚 API Overview (current)
+## 📚 API Overview
 
 ### Ingest (writes to SQL)
-Ingest specific statements from FMP `/stable` and upsert into SQLite.
+Ingest data from FMP `/stable` and upsert into SQLite.
 
 ```http
-GET /api/ingest/income/{symbol}?period=annual|quarter&limit=10
-GET /api/ingest/balance/{symbol}?period=annual|quarter&limit=5
-GET /api/ingest/cash/{symbol}?period=annual|quarter&limit=5
+POST /api/admin/ingest/fmp-annual?symbol=AAPL&limit=5
+POST /api/admin/ingest/fmp-cashflow-annual?symbol=AAPL&limit=5
+GET  /api/ingest/income/{symbol}?period=annual|quarter&limit=5
+GET  /api/ingest/balance/{symbol}?period=annual|quarter&limit=5
+GET  /api/ingest/cash/{symbol}?period=annual|quarter&limit=5
 ```
-- `period=quarter` requests are **plan-safe capped** at `limit ≤ 5` to avoid 402s.
-- Upsert key: `(Symbol, Date, Frequency)`; newest first is recommended for reads.
 
-### Read (from SQL; no external calls)
-Return persisted rows for debugging, verification, or UI.
-
+### Read (from SQL)
 ```http
 GET /api/data/income/{symbol}?period=annual|quarter&limit=10
 GET /api/data/balance/{symbol}?period=annual|quarter&limit=10
 GET /api/data/cash/{symbol}?period=annual|quarter&limit=10
-``
+```
 
-### TTM (from SQL; requires 4 stored quarters)
-Compute TTM sums and ratios using the last 4 quarterly rows from your DB.
-
+### TTM (Trailing Twelve Months)
 ```http
 GET /api/data/ttm/{symbol}
 GET /api/data/ttm/{symbol}/ratios
 ```
-- Sums: `RevenueTtm`, `NetIncomeTtm`, `FreeCashFlowTtm`
-- Ratios: `NetMarginTtm`, `FcfMarginTtm` (computed as sum ÷ RevenueTtm)
+- Sums: `RevenueTtm`, `NetIncomeTtm`, `FreeCashFlowTtm`  
+- Ratios: `NetMarginTtm`, `FcfMarginTtm`
 
-### Live Fundamentals (direct FMP `/stable` calls; read-only)
-Useful when you don’t need persistence or before ingesting.
-
+### Live Fundamentals (direct FMP calls)
 ```http
 GET /api/fundamentals/{symbol}/income-statement/stable?period=annual|quarter&limit=5
 GET /api/fundamentals/{symbol}/balance-sheet/stable?period=annual|quarter&limit=3
 GET /api/fundamentals/{symbol}/cash-flow/stable?period=annual|quarter&limit=3
-GET /api/fundamentals/{symbol}/metrics/ttm
 GET /api/fundamentals/{symbol}/snapshot/stable?period=annual|quarter&limit=3
+GET /api/fundamentals/{symbol}/metrics/ttm
 ```
-- `snapshot` returns `{ Income, Balance, Cash, Metrics }`, each fetched independently.
-- `metrics/ttm` is period-agnostic (TTM by definition).
 
-### Legacy Revenue (helper)
-Simple aggregate returning (by default) quarterly revenue via FMP, falling back to annual and finally Alpha Vantage if needed.
-
+### Analytics (Buffett metrics)
 ```http
-GET /api/fundamentals/revenue?symbol=AAPL&limit=8
+GET /api/analytics/roe?symbol=AAPL
+GET /api/analytics/roa?symbol=AAPL
+GET /api/analytics/equity-ratio?symbol=AAPL
+GET /api/analytics/debt-to-equity?symbol=AAPL
+GET /api/analytics/debt-to-assets?symbol=AAPL
+GET /api/analytics/net-margin?symbol=AAPL
+GET /api/analytics/pe?symbol=AAPL
+GET /api/analytics/pb?symbol=AAPL
+GET /api/analytics/oeps?symbol=AAPL
+GET /api/analytics/p-to-oe?symbol=AAPL
+GET /api/analytics/fcf?symbol=AAPL
+GET /api/analytics/fcf-yield?symbol=AAPL
+GET /api/analytics/fcf-margin?symbol=AAPL
+GET /api/analytics/owner-earnings?symbol=AAPL
+GET /api/analytics/owner-earnings-yield?symbol=AAPL
+GET /api/analytics/equity-cagr?symbol=AAPL
 ```
-> For `period=quarter` on basic FMP plans, use `limit ≤ 5` to avoid 402s.
 
-> **Other controllers present:** `AdminController` (ops/maintenance), `QuotesController` (quotes/price-related). These are outside the fundamentals scope and may vary.
+### Admin & Maintenance
+```http
+GET  /api/admin/info
+POST /api/admin/vacuum
+POST /api/admin/prune?maxAgeDays=1095&keepPerSymbol=1000
+POST /api/admin/truncate?scope=prices|fundamentals|tickers|all
+```
+
+### Demo Seeds (only with `DemoMode=true`)
+```http
+POST /api/admin/seed/ticker?symbol=AAPL&name=Apple%20Inc
+POST /api/admin/seed/annual?symbol=AAPL&year=2024&netIncome=100000000&equity=600000000
+POST /api/admin/seed/revenue?symbol=AAPL&year=2024&revenue=6000000000
+POST /api/admin/seed/liabilities?symbol=AAPL&year=2024&totalLiabilities=300000000
+POST /api/admin/seed/assets?symbol=AAPL&year=2024&totalAssets=1500000000
+POST /api/admin/seed/shares?symbol=AAPL&year=2024&shares=5000000000
+POST /api/admin/seed/price?symbol=AAPL&date=2024-12-31&close=200
+```
 
 ---
 
 ## 🧱 Data Model (EF Core)
-**Entities (SQLite tables):**
-- `income_statements` → `IncomeStatementEntity`  
-  Fields: `Id`, `Symbol`, `Date`, `Frequency` (`annual|quarter`), `ReportedCurrency`, `Revenue`, `NetIncome`, `Eps`, `EpsDiluted`, `WeightedAverageShsOut`, `WeightedAverageShsOutDil`
-- `balance_sheets` → `BalanceSheetEntity`  
-  Fields: `Id`, `Symbol`, `Date`, `Frequency`, `ReportedCurrency`, `TotalAssets`, `TotalLiabilities`, `TotalStockholdersEquity`, `CashAndCashEquivalents`
-- `cash_flows` → `CashFlowEntity`  
-  Fields: `Id`, `Symbol`, `Date`, `Frequency`, `ReportedCurrency`, `OperatingCashFlow`, `CapitalExpenditure`, `FreeCashFlow`, `NetIncome`, `DepreciationAndAmortization`
 
-**Constraints & Conventions:**
-- Unique index on `(Symbol, Date, Frequency)` for each table (prevents duplicates)
-- `DateOnly` converted to UTC `DateTime` for SQLite storage
-- Monetary values stored as integers (raw values from the API), decimals used where appropriate on price tables
+**Entities**
+- `income_statements` → `IncomeStatementEntity`
+- `balance_sheets` → `BalanceSheetEntity`
+- `cash_flows` → `CashFlowEntity` (includes `ChangeInWorkingCapital`)
+- `prices` → `Price`
+- `tickers` → `Ticker`
 
-**Migrations:** included in-repo (apply via `dotnet ef database update`).
+**Constraints**
+- Unique `(Symbol, Date, Frequency)` per fundamentals table
+- `DateOnly` stored as UTC `DateTime` in SQLite
+- Raw ints for API monetary values; decimals for prices
 
 ---
 
-## 🧭 Design Notes
-- **Separation of concerns:** ingest (write) vs. read (SQL) vs. live (FMP) endpoints
-- **Plan-aware limits:** quarterly calls are capped to avoid FMP 402s
-- **Lightweight DTOs:** we map only the fields we actually use (faster & safer)
-- **Defensive parsing & logging:** invalid rows are skipped; upstream issues don’t crash reads
-- **Period passthrough:** `period=annual|quarter` is consistently honored in live & snapshot routes
-
----
-
-## 📂 Project Structure (current)
-This reflects the tree in the repository (controllers + data + services + program):
+## 📂 Project Structure
 
 ```
 Portfolio.Api/
 ├─ Controllers/
 │  ├─ AdminController.cs
-│  ├─ DataController.cs            # read from SQL (income/balance/cash + TTM)
-│  ├─ FundamentalsController.cs    # live FMP /stable + revenue helper + snapshot
-│  ├─ IngestController.cs          # ingest income/balance/cash into SQL
+│  ├─ AnalyticsController.cs
+│  ├─ DataController.cs
+│  ├─ FundamentalsController.cs
+│  ├─ IngestController.cs
 │  └─ QuotesController.cs
+│
 ├─ Data/
 │  ├─ Entities/
 │  │  ├─ BalanceSheetEntity.cs
 │  │  ├─ CashFlowEntity.cs
 │  │  └─ IncomeStatementEntity.cs
 │  ├─ AppDbContext.cs
-│  └─ Migrations/                  # EF Core migrations (checked in)
+│  └─ Migrations/
+│
 ├─ Models/
+│  ├─ Price.cs
+│  ├─ RefreshResponse.cs
 │  ├─ Ticker.cs
-│  └─ Price.cs
+│  └─ TimeseriesPoint.cs
+│
 ├─ Services/
-│  ├─ AlphaVantageClient.cs        # optional fallback (legacy revenue only)
+│  ├─ AlphaVantageClient.cs
 │  ├─ BalanceSheetIngestService.cs
 │  ├─ CashFlowIngestService.cs
-│  ├─ FmpClient.cs                 # thin /stable client; reads Fmp:ApiKey
+│  ├─ FmpClient.cs
 │  ├─ IncomeIngestService.cs
-│  └─ MaintenanceService.cs
+│  ├─ ISeedServices.cs
+│  ├─ MaintenanceService.cs
+│  └─ SeedService.cs
+│
 ├─ Program.cs
 ├─ appsettings.json
-├─ appsettings.Development.json
 └─ README.md
 ```
 
-> Note: You may also see `obj/` and `Properties/` directories generated by the SDK.
-
 ---
 
-## 🧪 Testing
-```bash
-dotnet test
+## 🧪 Quick Test
+
+```powershell
+# Ingest real annuals
+Invoke-RestMethod -Method Post "http://localhost:5046/api/admin/ingest/fmp-annual?symbol=AAPL&limit=5"
+Invoke-RestMethod -Method Post "http://localhost:5046/api/admin/ingest/fmp-cashflow-annual?symbol=AAPL&limit=5"
+
+# Seed price
+Invoke-RestMethod -Method Post "http://localhost:5046/api/admin/seed/price?symbol=AAPL&date=2024-09-30&close=200"
+
+# Check DB
+Invoke-RestMethod "http://localhost:5046/api/admin/info"
+
+# Analytics
+Invoke-RestMethod "http://localhost:5046/api/analytics/roe?symbol=AAPL"
+Invoke-RestMethod "http://localhost:5046/api/analytics/fcf-yield?symbol=AAPL"
+Invoke-RestMethod "http://localhost:5046/api/analytics/owner-earnings-yield?symbol=AAPL"
 ```
-Planned unit tests for: mappings, TTM computation, and controller contracts.
-
----
-
-## 🗺️ Roadmap
-- [ ] Additional derived ratios (ROIC, leverage, cash conversion)
-- [ ] Portfolio rollups (positions, weights, P&L)
-- [ ] Dockerfile + compose (app + DB)
-- [ ] Auth for write routes (API key / token)
-- [ ] Caching headers & ETags on read endpoints
 
 ---
 
 ## 📜 License
+
 MIT
