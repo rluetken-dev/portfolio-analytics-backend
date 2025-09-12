@@ -384,18 +384,23 @@ namespace Portfolio.Api.Controllers
             if (t is null)
                 return NotFound(new { error = $"Ticker {ticker} not found." });
 
-            // 2) Latest annual EPS = NetIncome / WeightedAverageShsOut
+            // 2) Latest annual EPS = NetIncome / WeightedAverageShsOut (via helper)
             var inc = await db.IncomeStatements.AsNoTracking()
                 .Where(i => i.Symbol == ticker && i.Frequency == "annual")
                 .OrderByDescending(i => i.Date)
                 .Select(i => new { i.Date, i.NetIncome, i.WeightedAverageShsOut })
                 .FirstOrDefaultAsync(ct);
-            if (inc is null || !inc.WeightedAverageShsOut.HasValue || inc.WeightedAverageShsOut.Value == 0)
+
+            if (inc is null || !inc.NetIncome.HasValue || !inc.WeightedAverageShsOut.HasValue || inc.WeightedAverageShsOut.Value <= 0)
                 return NotFound(new { error = $"No annual EPS data for {ticker}." });
 
-            var eps = (double)inc.NetIncome! / (double)inc.WeightedAverageShsOut.Value;
+            var epsOpt = FinanceMath.Eps((double)inc.NetIncome.Value, (double)inc.WeightedAverageShsOut.Value);
+            if (epsOpt is null)
+                return BadRequest(new { error = "Cannot compute EPS (invalid inputs)." });
 
-            // 3) Price on/after EPS date (use first trading day >= EPS date)
+            double eps = epsOpt.Value;
+
+            // 3) Price on/after EPS date
             var price = await db.Prices.AsNoTracking()
                 .Where(p => p.TickerId == t.Id && p.TradingDate >= inc.Date)
                 .OrderBy(p => p.TradingDate)
@@ -404,17 +409,20 @@ namespace Portfolio.Api.Controllers
             if (price is null)
                 return NotFound(new { error = $"No price data for {ticker} on/after {inc.Date}." });
 
-            // Use helper (null if EPS == 0 or invalid)
-            double? pe = FinanceMath.Pe((double)price.Close, eps);
+            double priceVal = (double)price.Close;
+
+            // Helper (null-safe)
+            double? pe = FinanceMath.Pe(priceVal, eps);
 
             return Ok(new
             {
                 ticker,
                 eps,
-                price = price.Close,
+                price = priceVal,
                 pe,
                 dateEps = inc.Date,
-                datePrice = price.TradingDate
+                datePrice = price.TradingDate,
+                peRounded = pe is null ? (double?)null : Math.Round(pe.Value, 4)
             });
         }
 
@@ -1044,8 +1052,6 @@ namespace Portfolio.Api.Controllers
             if (cf is null || !cf.OperatingCashFlow.HasValue || !cf.CapitalExpenditure.HasValue)
                 return NotFound(new { error = $"No annual CF row with OCF+CapEx for {ticker}." });
 
-            long owner = (cf.OperatingCashFlow.Value - cf.CapitalExpenditure.Value) + (cf.ChangeInWorkingCapital ?? 0);
-
             var incRows = await db.IncomeStatements.AsNoTracking()
                 .Where(i => i.Symbol == ticker && i.Frequency == "annual" && i.WeightedAverageShsOut.HasValue)
                 .OrderByDescending(i => i.Date)
@@ -1054,8 +1060,6 @@ namespace Portfolio.Api.Controllers
             var shares = inc?.WeightedAverageShsOut;
             if (!shares.HasValue || shares.Value <= 0)
                 return NotFound(new { error = $"No valid shares for {ticker} around {cf.Date}." });
-
-            var oeps = (double)owner / (double)shares.Value;
 
             // Resolve ticker id and pick price on/after OE date (fallback: latest)
             var tid = await db.Tickers.AsNoTracking()
@@ -1077,17 +1081,35 @@ namespace Portfolio.Api.Controllers
                 .FirstOrDefaultAsync(ct);
             if (px is null) return NotFound(new { error = $"No price data available for {ticker}." });
 
-            var pToOe = oeps != 0 ? (double)(px.Close / (decimal)oeps) : (double?)null;
+            // Normalize inputs (CapEx as positive outflow)
+            double ocf = (double)cf.OperatingCashFlow!.Value;
+            double capexAbs = Math.Abs((double)cf.CapitalExpenditure!.Value);
+            double deltaWc = cf.ChangeInWorkingCapital ?? 0.0;
 
+            // Owner Earnings via helper (OCF - CapEx + ΔWC)
+            double? owner = FinanceMath.OwnerEarningsFromCashFlow(ocf, capexAbs, deltaWc);
+            if (owner is null) return BadRequest(new { error = "Cannot compute Owner Earnings." });
+
+            // Shares already validated; lift to non-null local
+            double sh = (double)shares!.Value;
+
+            // OEPS + P/OE via helpers
+            double? oeps = FinanceMath.OwnerEarningsPerShare(owner.Value, sh);
+
+            // Close ist i. d. R. decimal (non-null) → in double wandeln
+            double priceVal = (double)px.Close;
+
+            double? pToOe = (oeps is null) ? (double?)null
+                                           : FinanceMath.PriceToOwnerEarnings(priceVal, oeps.Value);
             return Ok(new
             {
                 ticker,
                 date = cf.Date,
-                ownerEarnings = owner,
-                shares = shares,
+                ownerEarnings = owner,     // jetzt double?
+                shares = sh,
                 oeps,
                 priceDateUsed = px.TradingDate,
-                priceUsed = px.Close,
+                priceUsed = priceVal,
                 pToOe,
                 pToOeRounded = pToOe is null ? (double?)null : Math.Round(pToOe.Value, 2)
             });
