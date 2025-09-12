@@ -230,7 +230,7 @@ namespace Portfolio.Api.Controllers
 
             var ticker = symbol.Trim().ToUpperInvariant();
 
-            // Find latest annual balance row (we need Assets and Equity)
+            // 1) Get the most recent annual balance sheet row (needs Assets and Equity)
             var bal = await db.BalanceSheets.AsNoTracking()
                 .Where(b => b.Symbol == ticker && b.Frequency == "annual")
                 .OrderByDescending(b => b.Date)
@@ -240,10 +240,17 @@ namespace Portfolio.Api.Controllers
             if (bal is null)
                 return NotFound(new { error = $"No annual balance row for {ticker}." });
 
-            double? equityRatio = (bal.TotalAssets.HasValue && bal.TotalStockholdersEquity.HasValue)
-                ? FinanceMath.EquityRatio((double)bal.TotalStockholdersEquity.Value, (double)bal.TotalAssets.Value)
-                : (double?)null;
+            // 2) Compute Equity Ratio via helper (null if Assets invalid/zero)
+            double? equityRatio = null;
+            if (bal.TotalAssets.HasValue && bal.TotalStockholdersEquity.HasValue)
+            {
+                equityRatio = FinanceMath.EquityRatio(
+                    (double)bal.TotalStockholdersEquity.Value,
+                    (double)bal.TotalAssets.Value
+                );
+            }
 
+            // 3) Return values (raw, percentage, rounded)
             return Ok(new
             {
                 ticker,
@@ -251,7 +258,7 @@ namespace Portfolio.Api.Controllers
                 totalAssets = bal.TotalAssets,
                 equity = bal.TotalStockholdersEquity,
                 equityRatio,
-                equityRatioPct = equityRatio * 100.0,
+                equityRatioPct = equityRatio is null ? (double?)null : equityRatio.Value * 100.0,
                 equityRatioRounded = equityRatio is null ? (double?)null : Math.Round(equityRatio.Value, 4)
             });
         }
