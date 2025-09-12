@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Portfolio.Api.Data;
+using Portfolio.Api.Services.Analytics; // FinanceMath helper
 
 namespace Portfolio.Api.Controllers
 {
@@ -54,11 +55,12 @@ namespace Portfolio.Api.Controllers
             long? eqTminus1 = priorBal?.TotalStockholdersEquity;
 
             // Prefer average equity if prior-year exists and is positive; otherwise fallback to end-of-period equity.
-            double denom = (eqTminus1.HasValue && eqTminus1.Value > 0)
+            double equityBasis = (eqTminus1.HasValue && eqTminus1.Value > 0)
                 ? (((double)eqT.Value + (double)eqTminus1.Value) / 2.0)
                 : (double)eqT.Value;
 
-            var roe = denom != 0 ? (double)inc.NetIncome.Value / denom : (double?)null;
+            // Use pure helper (null when invalid, e.g., equityBasis == 0)
+            double? roe = FinanceMath.Roe((double)inc.NetIncome.Value, equityBasis);
 
             return Ok(new
             {
@@ -68,7 +70,7 @@ namespace Portfolio.Api.Controllers
                 equityEnd = eqT,
                 equityPrior = eqTminus1,
                 equityPriorDate = priorBal?.Date,
-                equityBasis = denom, // English: denominator actually used
+                equityBasis,
                 roe,
                 roePct = roe.HasValue ? roe.Value * 100.0 : (double?)null,
                 roeRounded = roe.HasValue ? Math.Round(roe.Value, 4) : (double?)null // 4 dec for ratio; UI can format as %
