@@ -404,8 +404,8 @@ namespace Portfolio.Api.Controllers
             if (price is null)
                 return NotFound(new { error = $"No price data for {ticker} on/after {inc.Date}." });
 
-            double? pe = null;
-            if (eps != 0) pe = (double)price.Close / eps;
+            // Use helper (null if EPS == 0 or invalid)
+            double? pe = FinanceMath.Pe((double)price.Close, eps);
 
             return Ok(new
             {
