@@ -45,5 +45,120 @@ namespace Portfolio.Api.Services.Analytics
             if (Math.Abs(revenue) < 1e-12) return null;
             return netIncome / revenue;
         }
+
+        /// <summary>
+        /// Price/Earnings ratio = Price / EPS.
+        /// Returns null for invalid inputs (e.g., EPS == 0).
+        /// Note: You may want to use TTM EPS for comparability.
+        /// </summary>
+        /// <param name="price">Current or reference price.</param>
+        /// <param name="eps">Earnings per share (FY or TTM).</param>
+        /// <returns>P/E as a raw multiple, or null if invalid.</returns>
+        public static double? Pe(double price, double eps)
+        {
+            if (double.IsNaN(price) || double.IsNaN(eps)) return null;
+            if (Math.Abs(eps) < 1e-12) return null; // avoid division by zero
+            return price / eps;
+        }
+
+        /// <summary>
+        /// Price-to-Book ratio (P/B) = Price per Share / BookValuePerShare.
+        /// Returns null if book value is zero or invalid.
+        /// </summary>
+        /// <param name="price">Current or reference price per share.</param>
+        /// <param name="bookValuePerShare">Book value per share (equity / shares outstanding).</param>
+        /// <returns>P/B multiple, or null if invalid.</returns>
+        public static double? Pb(double price, double bookValuePerShare)
+        {
+            if (double.IsNaN(price) || double.IsNaN(bookValuePerShare)) return null;
+            if (Math.Abs(bookValuePerShare) < 1e-12) return null;
+            return price / bookValuePerShare;
+        }
+
+        /// <summary>
+        /// Debt-to-Equity ratio = TotalLiabilities / Equity.
+        /// Returns null if equity is zero or invalid.
+        /// </summary>
+        /// <param name="liabilities">Total liabilities.</param>
+        /// <param name="equity">Total shareholders' equity.</param>
+        /// <returns>D/E multiple, or null if invalid.</returns>
+        public static double? DebtToEquity(double liabilities, double equity)
+        {
+            if (double.IsNaN(liabilities) || double.IsNaN(equity)) return null;
+            if (Math.Abs(equity) < 1e-12) return null;
+            return liabilities / equity;
+        }
+
+        /// <summary>
+        /// Equity Ratio = Equity / TotalAssets.
+        /// Returns null if assets are zero or invalid.
+        /// </summary>
+        /// <param name="equity">Total shareholders' equity.</param>
+        /// <param name="assets">Total assets.</param>
+        /// <returns>Equity ratio as decimal fraction (e.g., 0.4 = 40%), or null if invalid.</returns>
+        public static double? EquityRatio(double equity, double assets)
+        {
+            if (double.IsNaN(equity) || double.IsNaN(assets)) return null;
+            if (Math.Abs(assets) < 1e-12) return null;
+            return equity / assets;
+        }
+
+        /// <summary>
+        /// Debt-to-Assets ratio = TotalLiabilities / TotalAssets.
+        /// Returns null if assets are zero or invalid.
+        /// </summary>
+        /// <param name="liabilities">Total liabilities.</param>
+        /// <param name="assets">Total assets.</param>
+        /// <returns>D/A as decimal fraction (e.g., 0.6 = 60%), or null if invalid.</returns>
+        public static double? DebtToAssets(double liabilities, double assets)
+        {
+            if (double.IsNaN(liabilities) || double.IsNaN(assets)) return null;
+            if (Math.Abs(assets) < 1e-12) return null;
+            return liabilities / assets;
+        }
+
+        /// <summary>
+        /// Owner Earnings (Buffett-style).
+        /// Canonical: OE = NetIncome + DepreciationAndAmortization - CapEx - DeltaWorkingCapital
+        /// If you don't want to penalize WC changes, pass deltaWorkingCapital = 0.
+        /// Returns null if any required input is NaN.
+        /// </summary>
+        /// <param name="netIncome">Net income for the period (TTM or FY).</param>
+        /// <param name="deprAmort">Depreciation + Amortization for the period.</param>
+        /// <param name="capex">Capital expenditures (usually negative; pass absolute magnitude if you store it negative).</param>
+        /// <param name="deltaWorkingCapital">
+        /// Change in working capital for the period (positive if WC increased and consumed cash).
+        /// Pass 0 if not available.
+        /// </param>
+        /// <returns>Owner earnings value, or null if inputs invalid.</returns>
+        public static double? OwnerEarnings(double netIncome, double deprAmort, double capex, double deltaWorkingCapital = 0.0)
+        {
+            if (double.IsNaN(netIncome) || double.IsNaN(deprAmort) || double.IsNaN(capex) || double.IsNaN(deltaWorkingCapital))
+                return null;
+
+            // Convention: capex should be treated as a cash outflow (positive number here).
+            // If your DB stores CapEx as negative, pass Math.Abs(capexDbValue) when calling this helper.
+            return netIncome + deprAmort - capex - deltaWorkingCapital;
+        }
+
+        /// <summary>
+        /// Owner Earnings derived from cash flow figures:
+        /// OE = OperatingCashFlow - CapEx ± DeltaWorkingCapital
+        /// Notes:
+        /// - Pass CapEx as a positive outflow magnitude (use Math.Abs on DB value if it is stored negative).
+        /// - Sign convention for DeltaWorkingCapital varies by source; this helper applies exactly what you pass.
+        ///   If your DeltaWorkingCapital is positive when WC increases (cash outflow), you might want to subtract it.
+        /// </summary>
+        /// <param name="operatingCashFlow">Operating cash flow for the period.</param>
+        /// <param name="capexAbs">Capital expenditures as a positive number (outflow magnitude).</param>
+        /// <param name="deltaWorkingCapital">Working capital change; apply your desired sign convention before passing.</param>
+        /// <returns>Owner earnings value, or null if inputs invalid.</returns>
+        public static double? OwnerEarningsFromCashFlow(double operatingCashFlow, double capexAbs, double deltaWorkingCapital)
+        {
+            if (double.IsNaN(operatingCashFlow) || double.IsNaN(capexAbs) || double.IsNaN(deltaWorkingCapital))
+                return null;
+
+            return operatingCashFlow - capexAbs + deltaWorkingCapital;
+        }
     }
 }

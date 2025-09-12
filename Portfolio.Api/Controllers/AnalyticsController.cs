@@ -830,7 +830,7 @@ namespace Portfolio.Api.Controllers
                 return BadRequest(new { error = "Missing ?symbol=..." });
             var ticker = symbol.Trim().ToUpperInvariant();
 
-            // 1) Latest annual CF row
+            // Latest annual CF row
             var cf = await db.CashFlows.AsNoTracking()
                 .Where(c => c.Symbol == ticker && c.Frequency == "annual")
                 .OrderByDescending(c => c.Date)
@@ -846,20 +846,24 @@ namespace Portfolio.Api.Controllers
             if (cf is null || !cf.OperatingCashFlow.HasValue || !cf.CapitalExpenditure.HasValue)
                 return NotFound(new { error = $"No annual cash flow row with OCF+CapEx for {ticker}." });
 
-            // 2) Base = FCF
-            long fcf = cf.OperatingCashFlow.Value - cf.CapitalExpenditure.Value; // CapEx often negative → subtracting adds
-            long ownerEarnings = fcf;
+            // Normalize inputs (treat CapEx as positive outflow)
+            double ocf = (double)cf.OperatingCashFlow!.Value;
+            double capexAbs = Math.Abs((double)cf.CapitalExpenditure!.Value);
+            double deltaWc = cf.ChangeInWorkingCapital.HasValue ? (double)cf.ChangeInWorkingCapital.Value : 0.0;
 
-            // 3) Adjust for working capital if available
-            if (cf.ChangeInWorkingCapital.HasValue)
-                ownerEarnings += cf.ChangeInWorkingCapital.Value;
+            // Compute via helper: OE = OCF - CapEx + ΔWC  (matches your current semantics)
+            double? ownerEarnings = FinanceMath.OwnerEarningsFromCashFlow(ocf, capexAbs, deltaWc);
+
+            // For reference: FCF = OCF - CapEx (same semantics as before)
+            double fcf = ocf - capexAbs;
+
 
             return Ok(new
             {
                 ticker,
                 date = cf.Date,
-                operatingCashFlow = cf.OperatingCashFlow,
-                capitalExpenditure = cf.CapitalExpenditure,
+                operatingCashFlow = ocf,
+                capitalExpenditureAbs = capexAbs,
                 changeInWorkingCapital = cf.ChangeInWorkingCapital,
                 fcf,
                 ownerEarnings
