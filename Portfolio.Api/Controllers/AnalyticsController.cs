@@ -612,8 +612,7 @@ namespace Portfolio.Api.Controllers
             if (years <= 0 || first.Equity <= 0)
                 return BadRequest(new { error = "Invalid data span or non-positive starting equity." });
 
-            // CAGR formula: (Ending / Beginning)^(1/years) - 1
-            var cagr = Math.Pow((double)last.Equity / (double)first.Equity, 1.0 / years) - 1.0;
+            var cagr = FinanceMath.EquityCagr(first.Equity, last.Equity, years);
 
             return Ok(new
             {
@@ -623,7 +622,9 @@ namespace Portfolio.Api.Controllers
                 startEquity = first.Equity,
                 endEquity = last.Equity,
                 years,
-                equityCagr = cagr // e.g., 0.12 = 12% p.a.
+                equityCagr = cagr,
+                equityCagrPct = cagr * 100.0,
+                equityCagrRounded = cagr is null ? (double?)null : Math.Round(cagr.Value, 4)
             });
         }
 
