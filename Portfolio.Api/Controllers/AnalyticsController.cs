@@ -278,7 +278,7 @@ namespace Portfolio.Api.Controllers
 
             var ticker = symbol.Trim().ToUpperInvariant();
 
-            // Read latest annual balance row
+            // 1) Read most recent annual balance row
             var bal = await db.BalanceSheets.AsNoTracking()
                 .Where(b => b.Symbol == ticker && b.Frequency == "annual")
                 .OrderByDescending(b => b.Date)
@@ -288,19 +288,26 @@ namespace Portfolio.Api.Controllers
             if (bal is null)
                 return NotFound(new { error = $"No annual balance row for {ticker}." });
 
-            double? da = (bal.TotalAssets.HasValue && bal.TotalLiabilities.HasValue)
-                ? FinanceMath.DebtToAssets((double)bal.TotalLiabilities.Value, (double)bal.TotalAssets.Value)
-                : (double?)null;
+            // 2) Compute Debt-to-Assets via helper (null if assets invalid/zero)
+            double? dta = null;
+            if (bal.TotalAssets.HasValue && bal.TotalLiabilities.HasValue)
+            {
+                dta = FinanceMath.DebtToAssets(
+                    (double)bal.TotalLiabilities.Value,
+                    (double)bal.TotalAssets.Value
+                );
+            }
 
+            // 3) Return values (raw, percentage, rounded)
             return Ok(new
             {
                 ticker,
                 date = bal.Date,
                 totalLiabilities = bal.TotalLiabilities,
                 totalAssets = bal.TotalAssets,
-                debtToAssets = da,
-                debtToAssetsPct = da * 100.0,
-                debtToAssetsRounded = da is null ? (double?)null : Math.Round(da.Value, 4)
+                debtToAssets = dta,
+                debtToAssetsPct = dta is null ? (double?)null : dta.Value * 100.0,
+                debtToAssetsRounded = dta is null ? (double?)null : Math.Round(dta.Value, 4)
             });
         }
 
