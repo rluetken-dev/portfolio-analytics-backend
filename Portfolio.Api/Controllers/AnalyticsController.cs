@@ -102,20 +102,18 @@ namespace Portfolio.Api.Controllers
             if (bal is null)
                 return NotFound(new { error = $"No annual balance row for {ticker}." });
 
-            // 2) Sicher rechnen (null/zero check)
-            double? de = null;
-            if (bal.TotalLiabilities.HasValue && bal.TotalStockholdersEquity.HasValue && bal.TotalStockholdersEquity.Value != 0)
-            {
-                de = (double)bal.TotalLiabilities.Value / (double)bal.TotalStockholdersEquity.Value;
-            }
+            // 2) Compute D/E via helper (null if equity invalid)
+            double? de = (bal.TotalLiabilities.HasValue && bal.TotalStockholdersEquity.HasValue)
+                ? FinanceMath.DebtToEquity((double)bal.TotalLiabilities.Value, (double)bal.TotalStockholdersEquity.Value)
+                : null;
 
             return Ok(new
             {
                 ticker,
                 date = bal.Date,
                 totalLiabilities = bal.TotalLiabilities,
-                equity = bal.TotalStockholdersEquity,
-                debtToEquity = de
+                debtToEquity = de,
+                debtToEquityRounded = de is null ? (double?)null : Math.Round(de.Value, 2)
             });
         }
 
@@ -525,7 +523,7 @@ namespace Portfolio.Api.Controllers
                 pb,
                 pbRounded = pb is null ? (double?)null : Math.Round(pb.Value, 2),
                 dateEquity = bal.Date,
-                datePrice = price.TradingDate                
+                datePrice = price.TradingDate
             });
         }
 
