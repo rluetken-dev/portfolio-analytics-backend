@@ -2,6 +2,8 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Portfolio.Api.Data;
 using Portfolio.Api.Services.Analytics; // FinanceMath helper
+using Swashbuckle.AspNetCore.Annotations;
+
 
 namespace Portfolio.Api.Controllers
 {
@@ -10,15 +12,50 @@ namespace Portfolio.Api.Controllers
     public class AnalyticsController : ControllerBase
     {
         /// <summary>
-        /// Returns latest annual ROE using average equity if a prior annual equity exists.
-        /// English: ROE = NetIncome / AverageEquity, where AverageEquity = (Equity_t + Equity_{t-1}) / 2.
-        /// Falls back to end-of-period equity if prior-year is missing or zero.
+        /// Returns latest annual ROE (Return on Equity).
+        /// Uses average equity if a prior annual equity exists; otherwise falls back to end-of-period equity.
         /// </summary>
+        /// <remarks>
+        /// **Formula**
+        /// <c>ROE = NetIncome / AverageEquity</c>, where
+        /// <c>AverageEquity = (Equity_t + Equity_{t-1}) / 2</c>.
+        /// If the prior-year equity is missing or non-positive, the endpoint falls back to <c>Equity_t</c>.
+        ///
+        /// **Example**
+        /// <code>
+        /// GET /api/analytics/roe?symbol=AAPL
+        /// </code>
+        ///
+        /// **Sample response**
+        /// <code>
+        /// {
+        ///   "ticker": "AAPL",
+        ///   "date": "2024-09-28",
+        ///   "netIncome": 93736000000,
+        ///   "equityEnd": 56950000000,
+        ///   "equityPrior": 62146000000,
+        ///   "equityPriorDate": "2023-09-30",
+        ///   "equityBasis": 59548000000,
+        ///   "roe": 1.5741,
+        ///   "roePct": 157.41,
+        ///   "roeRounded": 1.5741
+        /// }
+        /// </code>
+        /// </remarks>
+        [SwaggerOperation(
+            Summary = "ROE (annual, average-equity fallback)",
+            Description = "Computes latest annual ROE = NetIncome / AverageEquity. Uses prior-year equity when available; otherwise uses end-of-period equity.",
+            OperationId = "Analytics_GetRoe",
+            Tags = new[] { "Analytics" }
+        )]
+        [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(object), StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(typeof(object), StatusCodes.Status404NotFound)]
         [HttpGet("roe")]
         public async Task<IActionResult> GetRoe(
-            [FromQuery] string symbol,
-            [FromServices] AppDbContext db,
-            CancellationToken ct = default)
+                    [FromQuery] string symbol,
+                    [FromServices] AppDbContext db,
+                    CancellationToken ct = default)
         {
             if (string.IsNullOrWhiteSpace(symbol))
                 return BadRequest(new { error = "Missing ?symbol=..." });
@@ -78,14 +115,42 @@ namespace Portfolio.Api.Controllers
         }
 
         /// <summary>
-        /// Returns latest annual Debt-to-Equity (D/E) = TotalLiabilities / TotalStockholdersEquity.
-        /// Example: GET /api/analytics/debt-to-equity?symbol=AAPL
+        /// Returns the latest annual Debt-to-Equity ratio (D/E).
         /// </summary>
+        /// <remarks>
+        /// **Formula**
+        /// <c>D/E = TotalLiabilities / TotalStockholdersEquity</c>.
+        ///
+        /// **Example**
+        /// <code>
+        /// GET /api/analytics/debt-to-equity?symbol=AAPL
+        /// </code>
+        ///
+        /// **Sample response**
+        /// <code>
+        /// {
+        ///   "ticker": "AAPL",
+        ///   "date": "2024-09-28",
+        ///   "totalLiabilities": 308030000000,
+        ///   "equity": 56950000000,
+        ///   "debtToEquity": 5.41
+        /// }
+        /// </code>
+        /// </remarks>
+        [SwaggerOperation(
+            Summary = "Debt-to-Equity ratio (annual)",
+            Description = "Computes latest annual D/E = TotalLiabilities / TotalStockholdersEquity.",
+            OperationId = "Analytics_GetDebtToEquity",
+            Tags = new[] { "Analytics" }
+        )]
+        [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(object), StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(typeof(object), StatusCodes.Status404NotFound)]
         [HttpGet("debt-to-equity")]
         public async Task<IActionResult> GetDebtToEquity(
-            [FromQuery] string symbol,
-            [FromServices] AppDbContext db,
-            CancellationToken ct = default)
+                    [FromQuery] string symbol,
+                    [FromServices] AppDbContext db,
+                    CancellationToken ct = default)
         {
             if (string.IsNullOrWhiteSpace(symbol))
                 return BadRequest(new { error = "Missing ?symbol=..." });
@@ -126,14 +191,44 @@ namespace Portfolio.Api.Controllers
         }
 
         /// <summary>
-        /// Returns latest annual Net Margin = NetIncome / Revenue.
-        /// Example: GET /api/analytics/net-margin?symbol=AAPL
+        /// Returns the latest annual Net Margin.
         /// </summary>
+        /// <remarks>
+        /// **Formula**
+        /// <c>NetMargin = NetIncome / Revenue</c>.
+        ///
+        /// **Example**
+        /// <code>
+        /// GET /api/analytics/net-margin?symbol=AAPL
+        /// </code>
+        ///
+        /// **Sample response**
+        /// <code>
+        /// {
+        ///   "ticker": "AAPL",
+        ///   "date": "2024-09-28",
+        ///   "netIncome": 93736000000,
+        ///   "revenue": 391035000000,
+        ///   "netMargin": 0.2397,
+        ///   "netMarginPct": 23.97,
+        ///   "netMarginRounded": 0.2397
+        /// }
+        /// </code>
+        /// </remarks>
+        [SwaggerOperation(
+            Summary = "Net Margin (annual)",
+            Description = "Computes latest annual Net Margin = NetIncome / Revenue.",
+            OperationId = "Analytics_GetNetMargin",
+            Tags = new[] { "Analytics" }
+        )]
+        [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(object), StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(typeof(object), StatusCodes.Status404NotFound)]
         [HttpGet("net-margin")]
         public async Task<IActionResult> GetNetMargin(
-            [FromQuery] string symbol,
-            [FromServices] AppDbContext db,
-            CancellationToken ct = default)
+                    [FromQuery] string symbol,
+                    [FromServices] AppDbContext db,
+                    CancellationToken ct = default)
         {
             if (string.IsNullOrWhiteSpace(symbol))
                 return BadRequest(new { error = "Missing ?symbol=..." });
@@ -168,14 +263,42 @@ namespace Portfolio.Api.Controllers
         }
 
         /// <summary>
-        /// Returns latest annual ROA = NetIncome / TotalAssets.
-        /// Example: GET /api/analytics/roa?symbol=AAPL
+        /// Returns the latest annual Return on Assets (ROA).
         /// </summary>
+        /// <remarks>
+        /// **Formula**  
+        /// <c>ROA = NetIncome / TotalAssets</c>.
+        ///
+        /// **Example**  
+        /// <code>
+        /// GET /api/analytics/roa?symbol=AAPL
+        /// </code>
+        ///
+        /// **Sample response**
+        /// <code>
+        /// {
+        ///   "ticker": "AAPL",
+        ///   "date": "2024-09-28",
+        ///   "netIncome": 93736000000,
+        ///   "totalAssets": 364980000000,
+        ///   "roa": 0.257
+        /// }
+        /// </code>
+        /// </remarks>
+        [SwaggerOperation(
+            Summary = "Return on Assets (ROA, annual)",
+            Description = "Computes latest annual ROA = NetIncome / TotalAssets.",
+            OperationId = "Analytics_GetRoa",
+            Tags = new[] { "Analytics" }
+        )]
+        [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(object), StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(typeof(object), StatusCodes.Status404NotFound)]
         [HttpGet("roa")]
         public async Task<IActionResult> GetRoa(
-            [FromQuery] string symbol,
-            [FromServices] AppDbContext db,
-            CancellationToken ct = default)
+                    [FromQuery] string symbol,
+                    [FromServices] AppDbContext db,
+                    CancellationToken ct = default)
         {
             if (string.IsNullOrWhiteSpace(symbol))
                 return BadRequest(new { error = "Missing ?symbol=..." });
@@ -216,14 +339,44 @@ namespace Portfolio.Api.Controllers
         }
 
         /// <summary>
-        /// Returns latest annual Equity Ratio = TotalStockholdersEquity / TotalAssets.
-        /// Example: GET /api/analytics/equity-ratio?symbol=AAPL
+        /// Returns the latest annual Equity Ratio.
         /// </summary>
+        /// <remarks>
+        /// **Formula**  
+        /// <c>Equity Ratio = TotalStockholdersEquity / TotalAssets</c>.
+        ///
+        /// **Example**  
+        /// <code>
+        /// GET /api/analytics/equity-ratio?symbol=AAPL
+        /// </code>
+        ///
+        /// **Sample response**
+        /// <code>
+        /// {
+        ///   "ticker": "AAPL",
+        ///   "date": "2024-09-28",
+        ///   "totalAssets": 364980000000,
+        ///   "equity": 56950000000,
+        ///   "equityRatio": 0.156,
+        ///   "equityRatioPct": 15.6,
+        ///   "equityRatioRounded": 0.156
+        /// }
+        /// </code>
+        /// </remarks>
+        [SwaggerOperation(
+            Summary = "Equity Ratio (annual)",
+            Description = "Computes latest annual Equity Ratio = TotalStockholdersEquity / TotalAssets.",
+            OperationId = "Analytics_GetEquityRatio",
+            Tags = new[] { "Analytics" }
+        )]
+        [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(object), StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(typeof(object), StatusCodes.Status404NotFound)]
         [HttpGet("equity-ratio")]
         public async Task<IActionResult> GetEquityRatio(
-            [FromQuery] string symbol,
-            [FromServices] AppDbContext db,
-            CancellationToken ct = default)
+                    [FromQuery] string symbol,
+                    [FromServices] AppDbContext db,
+                    CancellationToken ct = default)
         {
             if (string.IsNullOrWhiteSpace(symbol))
                 return BadRequest(new { error = "Missing ?symbol=..." });
@@ -264,14 +417,44 @@ namespace Portfolio.Api.Controllers
         }
 
         /// <summary>
-        /// Returns latest annual Debt-to-Assets = TotalLiabilities / TotalAssets.
-        /// Example: GET /api/analytics/debt-to-assets?symbol=AAPL
+        /// Returns the latest annual Debt-to-Assets ratio.
         /// </summary>
+        /// <remarks>
+        /// **Formula**  
+        /// <c>Debt-to-Assets = TotalLiabilities / TotalAssets</c>.
+        ///
+        /// **Example**  
+        /// <code>
+        /// GET /api/analytics/debt-to-assets?symbol=AAPL
+        /// </code>
+        ///
+        /// **Sample response**
+        /// <code>
+        /// {
+        ///   "ticker": "AAPL",
+        ///   "date": "2024-09-28",
+        ///   "totalLiabilities": 308030000000,
+        ///   "totalAssets": 364980000000,
+        ///   "debtToAssets": 0.844,
+        ///   "debtToAssetsPct": 84.4,
+        ///   "debtToAssetsRounded": 0.844
+        /// }
+        /// </code>
+        /// </remarks>
+        [SwaggerOperation(
+            Summary = "Debt-to-Assets ratio (annual)",
+            Description = "Computes latest annual Debt-to-Assets = TotalLiabilities / TotalAssets.",
+            OperationId = "Analytics_GetDebtToAssets",
+            Tags = new[] { "Analytics" }
+        )]
+        [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(object), StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(typeof(object), StatusCodes.Status404NotFound)]
         [HttpGet("debt-to-assets")]
         public async Task<IActionResult> GetDebtToAssets(
-            [FromQuery] string symbol,
-            [FromServices] AppDbContext db,
-            CancellationToken ct = default)
+                    [FromQuery] string symbol,
+                    [FromServices] AppDbContext db,
+                    CancellationToken ct = default)
         {
             if (string.IsNullOrWhiteSpace(symbol))
                 return BadRequest(new { error = "Missing ?symbol=..." });
@@ -312,14 +495,37 @@ namespace Portfolio.Api.Controllers
         }
 
         /// <summary>
-        /// Returns latest available close price for a ticker.
-        /// Example: GET /api/analytics/price?symbol=AAPL
+        /// Returns the latest available close price for a ticker.
         /// </summary>
+        /// <remarks>
+        /// **Example**  
+        /// <code>
+        /// GET /api/analytics/price?symbol=AAPL
+        /// </code>
+        ///
+        /// **Sample response**
+        /// <code>
+        /// {
+        ///   "ticker": "AAPL",
+        ///   "date": "2024-09-30",
+        ///   "close": 200.0
+        /// }
+        /// </code>
+        /// </remarks>
+        [SwaggerOperation(
+            Summary = "Latest price",
+            Description = "Returns the latest available close price for a given ticker symbol.",
+            OperationId = "Analytics_GetLatestPrice",
+            Tags = new[] { "Analytics" }
+        )]
+        [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(object), StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(typeof(object), StatusCodes.Status404NotFound)]
         [HttpGet("price")]
         public async Task<IActionResult> GetLatestPrice(
-            [FromQuery] string symbol,
-            [FromServices] AppDbContext db,
-            CancellationToken ct = default)
+                    [FromQuery] string symbol,
+                    [FromServices] AppDbContext db,
+                    CancellationToken ct = default)
         {
             if (string.IsNullOrWhiteSpace(symbol))
                 return BadRequest(new { error = "Missing ?symbol=..." });
@@ -344,14 +550,42 @@ namespace Portfolio.Api.Controllers
         }
 
         /// <summary>
-        /// Returns latest annual EPS = NetIncome / WeightedAverageShsOut.
-        /// Example: GET /api/analytics/eps?symbol=AAPL
+        /// Returns the latest annual Earnings Per Share (EPS).
         /// </summary>
+        /// <remarks>
+        /// **Formula**  
+        /// <c>EPS = NetIncome / WeightedAverageShsOut</c>
+        ///
+        /// **Example**  
+        /// <code>
+        /// GET /api/analytics/eps?symbol=AAPL
+        /// </code>
+        ///
+        /// **Sample response**
+        /// <code>
+        /// {
+        ///   "ticker": "AAPL",
+        ///   "date": "2024-09-28",
+        ///   "netIncome": 93736000000,
+        ///   "shares": 15343783000,
+        ///   "eps": 6.11
+        /// }
+        /// </code>
+        /// </remarks>
+        [SwaggerOperation(
+            Summary = "Earnings Per Share (EPS, annual)",
+            Description = "Computes latest annual EPS = NetIncome / WeightedAverageShsOut.",
+            OperationId = "Analytics_GetEps",
+            Tags = new[] { "Analytics" }
+        )]
+        [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(object), StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(typeof(object), StatusCodes.Status404NotFound)]
         [HttpGet("eps")]
         public async Task<IActionResult> GetEps(
-            [FromQuery] string symbol,
-            [FromServices] AppDbContext db,
-            CancellationToken ct = default)
+                    [FromQuery] string symbol,
+                    [FromServices] AppDbContext db,
+                    CancellationToken ct = default)
         {
             if (string.IsNullOrWhiteSpace(symbol))
                 return BadRequest(new { error = "Missing ?symbol=..." });
@@ -384,14 +618,44 @@ namespace Portfolio.Api.Controllers
         }
 
         /// <summary>
-        /// Returns latest P/E ratio = Price per Share / EPS (annual EPS).
-        /// Example: GET /api/analytics/pe?symbol=AAPL
+        /// Returns the latest annual Price-to-Earnings ratio (P/E).
         /// </summary>
+        /// <remarks>
+        /// **Formula**  
+        /// <c>P/E = Price per Share / EPS</c>  
+        /// where <c>EPS = NetIncome / WeightedAverageShsOut</c>.
+        ///
+        /// **Example**  
+        /// <code>
+        /// GET /api/analytics/pe?symbol=AAPL
+        /// </code>
+        ///
+        /// **Sample response**
+        /// <code>
+        /// {
+        ///   "ticker": "AAPL",
+        ///   "eps": 6.11,
+        ///   "price": 200.0,
+        ///   "pe": 32.7,
+        ///   "dateEps": "2024-09-28",
+        ///   "datePrice": "2024-09-30"
+        /// }
+        /// </code>
+        /// </remarks>
+        [SwaggerOperation(
+            Summary = "Price-to-Earnings ratio (P/E)",
+            Description = "Computes latest annual P/E = Price per Share / EPS (annual).",
+            OperationId = "Analytics_GetPe",
+            Tags = new[] { "Analytics" }
+        )]
+        [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(object), StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(typeof(object), StatusCodes.Status404NotFound)]
         [HttpGet("pe")]
         public async Task<IActionResult> GetPe(
-            [FromQuery] string symbol,
-            [FromServices] AppDbContext db,
-            CancellationToken ct = default)
+                    [FromQuery] string symbol,
+                    [FromServices] AppDbContext db,
+                    CancellationToken ct = default)
         {
             if (string.IsNullOrWhiteSpace(symbol))
                 return BadRequest(new { error = "Missing ?symbol=..." });
@@ -449,14 +713,42 @@ namespace Portfolio.Api.Controllers
         }
 
         /// <summary>
-        /// Returns latest annual BVPS (Book Value per Share) = Equity / SharesOutstanding.
-        /// Example: GET /api/analytics/bvps?symbol=AAPL
+        /// Returns the latest annual Book Value per Share (BVPS).
         /// </summary>
+        /// <remarks>
+        /// **Formula**  
+        /// <c>BVPS = Equity / WeightedAverageShsOut</c>  
+        ///
+        /// **Example**  
+        /// <code>
+        /// GET /api/analytics/bvps?symbol=AAPL
+        /// </code>
+        ///
+        /// **Sample response**
+        /// <code>
+        /// {
+        ///   "ticker": "AAPL",
+        ///   "date": "2024-09-28",
+        ///   "equity": 56950000000,
+        ///   "shares": 15343783000,
+        ///   "bvps": 3.71
+        /// }
+        /// </code>
+        /// </remarks>
+        [SwaggerOperation(
+            Summary = "Book Value per Share (BVPS)",
+            Description = "Computes latest annual BVPS = Equity / Shares Outstanding.",
+            OperationId = "Analytics_GetBvps",
+            Tags = new[] { "Analytics" }
+        )]
+        [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(object), StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(typeof(object), StatusCodes.Status404NotFound)]
         [HttpGet("bvps")]
         public async Task<IActionResult> GetBvps(
-            [FromQuery] string symbol,
-            [FromServices] AppDbContext db,
-            CancellationToken ct = default)
+                    [FromQuery] string symbol,
+                    [FromServices] AppDbContext db,
+                    CancellationToken ct = default)
         {
             if (string.IsNullOrWhiteSpace(symbol))
                 return BadRequest(new { error = "Missing ?symbol=..." });
@@ -494,14 +786,44 @@ namespace Portfolio.Api.Controllers
         }
 
         /// <summary>
-        /// Returns latest P/B ratio = Price per Share / Book Value per Share.
-        /// Example: GET /api/analytics/pb?symbol=AAPL
+        /// Returns the latest Price-to-Book ratio (P/B).
         /// </summary>
+        /// <remarks>
+        /// **Formula**  
+        /// <c>P/B = Price per Share / Book Value per Share</c>  
+        ///
+        /// **Example**  
+        /// <code>
+        /// GET /api/analytics/pb?symbol=AAPL
+        /// </code>
+        ///
+        /// **Sample response**
+        /// <code>
+        /// {
+        ///   "ticker": "AAPL",
+        ///   "bvps": 3.71,
+        ///   "price": 200,
+        ///   "pb": 53.89,
+        ///   "pbRounded": 53.89,
+        ///   "dateEquity": "2024-09-28",
+        ///   "datePrice": "2024-09-30"
+        /// }
+        /// </code>
+        /// </remarks>
+        [SwaggerOperation(
+            Summary = "Price-to-Book ratio (P/B)",
+            Description = "Computes the latest P/B ratio = Price per Share / Book Value per Share (BVPS).",
+            OperationId = "Analytics_GetPb",
+            Tags = new[] { "Analytics" }
+        )]
+        [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(object), StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(typeof(object), StatusCodes.Status404NotFound)]
         [HttpGet("pb")]
         public async Task<IActionResult> GetPb(
-            [FromQuery] string symbol,
-            [FromServices] AppDbContext db,
-            CancellationToken ct = default)
+                    [FromQuery] string symbol,
+                    [FromServices] AppDbContext db,
+                    CancellationToken ct = default)
         {
             if (string.IsNullOrWhiteSpace(symbol))
                 return BadRequest(new { error = "Missing ?symbol=..." });
@@ -568,14 +890,43 @@ namespace Portfolio.Api.Controllers
         }
 
         /// <summary>
-        /// Returns latest annual Asset Turnover = Revenue / TotalAssets.
-        /// Example: GET /api/analytics/asset-turnover?symbol=AAPL
+        /// Returns the latest annual Asset Turnover.
         /// </summary>
+        /// <remarks>
+        /// **Formula**  
+        /// <c>Asset Turnover = Revenue / TotalAssets</c>.
+        ///
+        /// **Example**  
+        /// <code>
+        /// GET /api/analytics/asset-turnover?symbol=AAPL
+        /// </code>
+        ///
+        /// **Sample response**
+        /// <code>
+        /// {
+        ///   "ticker": "AAPL",
+        ///   "date": "2024-09-28",
+        ///   "revenue": 391035000000,
+        ///   "totalAssets": 364980000000,
+        ///   "assetTurnover": 1.07,
+        ///   "assetTurnoverRounded": 1.07
+        /// }
+        /// </code>
+        /// </remarks>
+        [SwaggerOperation(
+            Summary = "Asset Turnover (annual)",
+            Description = "Computes latest annual Asset Turnover = Revenue / TotalAssets.",
+            OperationId = "Analytics_GetAssetTurnover",
+            Tags = new[] { "Analytics" }
+        )]
+        [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(object), StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(typeof(object), StatusCodes.Status404NotFound)]
         [HttpGet("asset-turnover")]
         public async Task<IActionResult> GetAssetTurnover(
-            [FromQuery] string symbol,
-            [FromServices] AppDbContext db,
-            CancellationToken ct = default)
+                    [FromQuery] string symbol,
+                    [FromServices] AppDbContext db,
+                    CancellationToken ct = default)
         {
             if (string.IsNullOrWhiteSpace(symbol))
                 return BadRequest(new { error = "Missing ?symbol=..." });
@@ -619,14 +970,44 @@ namespace Portfolio.Api.Controllers
         }
 
         /// <summary>
-        /// Returns equity CAGR (Compound Annual Growth Rate) using earliest and latest annual balance rows.
-        /// Example: GET /api/analytics/equity-cagr?symbol=AAPL
+        /// Returns Equity CAGR (Compound Annual Growth Rate) using earliest and latest annual balance rows.
         /// </summary>
+        /// <remarks>
+        /// **Formula**  
+        /// <c>CAGR = (EndingEquity / BeginningEquity)^(1/Years) - 1</c>
+        ///
+        /// **Example**  
+        /// <code>
+        /// GET /api/analytics/equity-cagr?symbol=AAPL
+        /// </code>
+        ///
+        /// **Sample response**
+        /// <code>
+        /// {
+        ///   "ticker": "AAPL",
+        ///   "from": "2019-09-28",
+        ///   "to": "2024-09-28",
+        ///   "startEquity": 50000000000,
+        ///   "endEquity": 112000000000,
+        ///   "years": 5,
+        ///   "equityCagr": 0.171
+        /// }
+        /// </code>
+        /// </remarks>
+        [SwaggerOperation(
+            Summary = "Equity CAGR",
+            Description = "Computes Compound Annual Growth Rate of equity using earliest and latest annual balance rows.",
+            OperationId = "Analytics_GetEquityCagr",
+            Tags = new[] { "Analytics" }
+        )]
+        [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(object), StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(typeof(object), StatusCodes.Status404NotFound)]
         [HttpGet("equity-cagr")]
         public async Task<IActionResult> GetEquityCagr(
-            [FromQuery] string symbol,
-            [FromServices] AppDbContext db,
-            CancellationToken ct = default)
+                    [FromQuery] string symbol,
+                    [FromServices] AppDbContext db,
+                    CancellationToken ct = default)
         {
             if (string.IsNullOrWhiteSpace(symbol))
                 return BadRequest(new { error = "Missing ?symbol=..." });
@@ -668,13 +1049,42 @@ namespace Portfolio.Api.Controllers
 
         /// <summary>
         /// Returns latest annual Free Cash Flow (FCF).
-        /// English: FCF = OperatingCashFlow - CapitalExpenditure (latest annual period).
         /// </summary>
+        /// <remarks>
+        /// **Formula**  
+        /// <c>FCF = OperatingCashFlow - CapitalExpenditure</c>  
+        /// (using the latest available annual cash flow row)
+        ///
+        /// **Example**  
+        /// <code>
+        /// GET /api/analytics/fcf?symbol=AAPL
+        /// </code>
+        ///
+        /// **Sample response**
+        /// <code>
+        /// {
+        ///   "ticker": "AAPL",
+        ///   "date": "2024-09-28",
+        ///   "operatingCashFlow": 118254000000,
+        ///   "capitalExpenditure": -9447000000,
+        ///   "fcf": 127701000000
+        /// }
+        /// </code>
+        /// </remarks>
+        [SwaggerOperation(
+            Summary = "Free Cash Flow (FCF)",
+            Description = "Computes latest annual Free Cash Flow (Operating Cash Flow - Capital Expenditure).",
+            OperationId = "Analytics_GetFcf",
+            Tags = new[] { "Analytics" }
+        )]
+        [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(object), StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(typeof(object), StatusCodes.Status404NotFound)]
         [HttpGet("fcf")]
         public async Task<IActionResult> GetFcf(
-            [FromQuery] string symbol,
-            [FromServices] AppDbContext db,
-            CancellationToken ct = default)
+                    [FromQuery] string symbol,
+                    [FromServices] AppDbContext db,
+                    CancellationToken ct = default)
         {
             if (string.IsNullOrWhiteSpace(symbol))
                 return BadRequest(new { error = "Missing ?symbol=..." });
@@ -714,17 +1124,56 @@ namespace Portfolio.Api.Controllers
         }
 
         /// <summary>
-        /// Returns latest annual FCF Yield = FCF / MarketCap with robust fallbacks.
-        /// English:
-        /// - FCF = OperatingCashFlow - CapitalExpenditure (latest annual CF row)
-        /// - Shares = latest annual income row with shares on/before CF date (fallback: latest annual)
-        /// - Price  = first price on/after CF date (fallback: latest available price)
+        /// Returns latest annual Free Cash Flow (FCF) Yield = FCF / MarketCap.
         /// </summary>
+        /// <remarks>
+        /// **Formula**  
+        /// <c>FCF = OperatingCashFlow - CapitalExpenditure</c>  
+        /// <c>MarketCap = Price × Shares</c>  
+        /// <c>FCF Yield = FCF / MarketCap</c>  
+        ///
+        /// **Data sources**  
+        /// - **FCF**: Latest annual cash flow row (OCF − CapEx)  
+        /// - **Shares**: Latest annual income row with WeightedAverageShsOut on/before CF date (fallback: latest annual)  
+        /// - **Price**: First price on/after CF date (fallback: latest available price)  
+        ///
+        /// **Example**  
+        /// <code>
+        /// GET /api/analytics/fcf-yield?symbol=AAPL
+        /// </code>
+        ///
+        /// **Sample response**
+        /// <code>
+        /// {
+        ///   "ticker": "AAPL",
+        ///   "cfDate": "2024-09-28",
+        ///   "operatingCashFlow": 118254000000,
+        ///   "capitalExpenditure": -9447000000,
+        ///   "fcf": 127701000000,
+        ///   "shares": 15343783000,
+        ///   "priceDateUsed": "2024-09-30",
+        ///   "priceUsed": 200,
+        ///   "marketCap": 3068756600000,
+        ///   "fcfYield": 0.0416,
+        ///   "fcfYieldPct": 4.16,
+        ///   "fcfYieldRounded": 0.0416
+        /// }
+        /// </code>
+        /// </remarks>
+        [SwaggerOperation(
+            Summary = "Free Cash Flow Yield",
+            Description = "Computes FCF Yield = FCF / MarketCap using latest annual data and fallback rules.",
+            OperationId = "Analytics_GetFcfYield",
+            Tags = new[] { "Analytics" }
+        )]
+        [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(object), StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(typeof(object), StatusCodes.Status404NotFound)]
         [HttpGet("fcf-yield")]
         public async Task<IActionResult> GetFcfYield(
-            [FromQuery] string symbol,
-            [FromServices] AppDbContext db,
-            CancellationToken ct = default)
+                    [FromQuery] string symbol,
+                    [FromServices] AppDbContext db,
+                    CancellationToken ct = default)
         {
             if (string.IsNullOrWhiteSpace(symbol))
                 return BadRequest(new { error = "Missing ?symbol=..." });
@@ -800,16 +1249,49 @@ namespace Portfolio.Api.Controllers
         }
 
         /// <summary>
-        /// Returns latest annual FCF Margin = FCF / Revenue.
-        /// English:
-        /// - FCF from latest annual cash flow = OperatingCashFlow - CapitalExpenditure
-        /// - Revenue from latest annual income at the same (or nearest prior) date
+        /// Returns latest annual Free Cash Flow (FCF) Margin = FCF / Revenue.
         /// </summary>
+        /// <remarks>
+        /// **Formula**  
+        /// <c>FCF = OperatingCashFlow - CapitalExpenditure</c>  
+        /// <c>FCF Margin = FCF / Revenue</c>  
+        ///
+        /// **Data sources**  
+        /// - **FCF**: Latest annual cash flow row (OCF − CapEx)  
+        /// - **Revenue**: Latest annual income row on/before the same CF date (fallback: latest annual)  
+        ///
+        /// **Example**  
+        /// <code>
+        /// GET /api/analytics/fcf-margin?symbol=AAPL
+        /// </code>
+        ///
+        /// **Sample response**
+        /// <code>
+        /// {
+        ///   "ticker": "AAPL",
+        ///   "date": "2024-09-28",
+        ///   "revenue": 391035000000,
+        ///   "fcf": 127701000000,
+        ///   "fcfMargin": 0.3265,
+        ///   "fcfMarginPct": 32.65,
+        ///   "fcfMarginRounded": 0.3265
+        /// }
+        /// </code>
+        /// </remarks>
+        [SwaggerOperation(
+            Summary = "Free Cash Flow Margin",
+            Description = "Computes FCF Margin = FCF / Revenue using latest annual data.",
+            OperationId = "Analytics_GetFcfMargin",
+            Tags = new[] { "Analytics" }
+        )]
+        [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(object), StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(typeof(object), StatusCodes.Status404NotFound)]
         [HttpGet("fcf-margin")]
         public async Task<IActionResult> GetFcfMargin(
-            [FromQuery] string symbol,
-            [FromServices] AppDbContext db,
-            CancellationToken ct = default)
+                    [FromQuery] string symbol,
+                    [FromServices] AppDbContext db,
+                    CancellationToken ct = default)
         {
             if (string.IsNullOrWhiteSpace(symbol))
                 return BadRequest(new { error = "Missing ?symbol=..." });
@@ -856,14 +1338,48 @@ namespace Portfolio.Api.Controllers
 
         /// <summary>
         /// Returns latest annual Owner Earnings (Buffett-style).
-        /// English: OwnerEarnings = OperatingCashFlow - CapEx ± ChangeInWorkingCapital.
-        /// Falls back to FCF (OCF - CapEx) if working-capital change is missing.
         /// </summary>
+        /// <remarks>
+        /// **Formula**  
+        /// <c>OwnerEarnings = OperatingCashFlow - CapitalExpenditure ± ChangeInWorkingCapital</c>  
+        /// Falls back to Free Cash Flow (OCF − CapEx) if ΔWC is missing.  
+        ///
+        /// **Data sources**  
+        /// - **OperatingCashFlow** and **CapEx**: Latest annual cash flow row  
+        /// - **Δ Working Capital**: Same row if available (else ignored)  
+        ///
+        /// **Example**  
+        /// <code>
+        /// GET /api/analytics/owner-earnings?symbol=AAPL
+        /// </code>
+        ///
+        /// **Sample response**
+        /// <code>
+        /// {
+        ///   "ticker": "AAPL",
+        ///   "date": "2024-09-28",
+        ///   "operatingCashFlow": 118254000000,
+        ///   "capitalExpenditureAbs": 9447000000,
+        ///   "changeInWorkingCapital": 3651000000,
+        ///   "fcf": 108807000000,
+        ///   "ownerEarnings": 112458000000
+        /// }
+        /// </code>
+        /// </remarks>
+        [SwaggerOperation(
+            Summary = "Owner Earnings (Buffett-style)",
+            Description = "Computes Owner Earnings = OCF − CapEx ± ΔWC, fallback to FCF if ΔWC missing.",
+            OperationId = "Analytics_GetOwnerEarnings",
+            Tags = new[] { "Analytics" }
+        )]
+        [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(object), StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(typeof(object), StatusCodes.Status404NotFound)]
         [HttpGet("owner-earnings")]
         public async Task<IActionResult> GetOwnerEarnings(
-            [FromQuery] string symbol,
-            [FromServices] AppDbContext db,
-            CancellationToken ct = default)
+                    [FromQuery] string symbol,
+                    [FromServices] AppDbContext db,
+                    CancellationToken ct = default)
         {
             if (string.IsNullOrWhiteSpace(symbol))
                 return BadRequest(new { error = "Missing ?symbol=..." });
@@ -911,17 +1427,51 @@ namespace Portfolio.Api.Controllers
 
         /// <summary>
         /// Returns latest annual Owner Earnings Yield = OwnerEarnings / MarketCap.
-        /// English:
-        /// - OwnerEarnings = OCF - CapEx (+ ΔWC if available) from latest annual cash flow
-        /// - Shares = latest annual income on/before CF date (fallback: latest annual)
-        /// - Price  = first price on/after CF date (fallback: latest available)
-        /// - Yield  = OwnerEarnings / (Price * Shares)
         /// </summary>
+        /// <remarks>
+        /// **Formula**  
+        /// <c>OwnerEarnings = OCF − CapEx ± ΔWC</c>  
+        /// <c>OwnerEarningsYield = OwnerEarnings / (Price × Shares)</c>  
+        ///
+        /// **Data sources**  
+        /// - **OwnerEarnings**: From latest annual cash flow (OCF − CapEx ± ΔWC)  
+        /// - **Shares**: Latest annual income row on/before CF date (fallback: latest annual)  
+        /// - **Price**: First close price on/after CF date (fallback: latest available)  
+        ///
+        /// **Example**  
+        /// <code>
+        /// GET /api/analytics/owner-earnings-yield?symbol=AAPL
+        /// </code>
+        ///
+        /// **Sample response**
+        /// <code>
+        /// {
+        ///   "ticker": "AAPL",
+        ///   "date": "2024-09-28",
+        ///   "ownerEarnings": 112458000000,
+        ///   "shares": 15343783000,
+        ///   "priceUsed": 200,
+        ///   "marketCap": 3068756600000,
+        ///   "ownerEarningsYield": 0.0366,
+        ///   "ownerEarningsYieldPct": 3.66,
+        ///   "ownerEarningsYieldRounded": 0.0366
+        /// }
+        /// </code>
+        /// </remarks>
+        [SwaggerOperation(
+            Summary = "Owner Earnings Yield",
+            Description = "Computes Owner Earnings Yield = OwnerEarnings / (Price × Shares), based on latest annual data.",
+            OperationId = "Analytics_GetOwnerEarningsYield",
+            Tags = new[] { "Analytics" }
+        )]
+        [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(object), StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(typeof(object), StatusCodes.Status404NotFound)]
         [HttpGet("owner-earnings-yield")]
         public async Task<IActionResult> GetOwnerEarningsYield(
-            [FromQuery] string symbol,
-            [FromServices] AppDbContext db,
-            CancellationToken ct = default)
+                    [FromQuery] string symbol,
+                    [FromServices] AppDbContext db,
+                    CancellationToken ct = default)
         {
             if (string.IsNullOrWhiteSpace(symbol))
                 return BadRequest(new { error = "Missing ?symbol=..." });
@@ -1012,15 +1562,45 @@ namespace Portfolio.Api.Controllers
 
         /// <summary>
         /// Returns latest annual Owner Earnings per Share (OEPS).
-        /// English: OEPS = OwnerEarnings / Shares, where
-        /// - OwnerEarnings = (OCF - CapEx) ± ChangeInWorkingCapital (latest annual)
-        /// - Shares = latest annual income on/before OE date (fallback: latest annual)
         /// </summary>
+        /// <remarks>
+        /// **Formula**  
+        /// <c>OEPS = OwnerEarnings / Shares</c>  
+        ///
+        /// **Where**  
+        /// - **OwnerEarnings** = (OperatingCashFlow − CapEx) ± ΔWorkingCapital  
+        /// - **Shares** = WeightedAverageShsOut from the latest annual income row on/before CF date (fallback: latest annual)  
+        ///
+        /// **Example**  
+        /// <code>
+        /// GET /api/analytics/oeps?symbol=AAPL
+        /// </code>
+        ///
+        /// **Sample response**
+        /// <code>
+        /// {
+        ///   "ticker": "AAPL",
+        ///   "date": "2024-09-28",
+        ///   "ownerEarnings": 112458000000,
+        ///   "shares": 15343783000,
+        ///   "oeps": 7.3292
+        /// }
+        /// </code>
+        /// </remarks>
+        [SwaggerOperation(
+            Summary = "Owner Earnings per Share (OEPS)",
+            Description = "Computes OEPS = OwnerEarnings / Shares, based on latest annual cash flow and income data.",
+            OperationId = "Analytics_GetOeps",
+            Tags = new[] { "Analytics" }
+        )]
+        [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(object), StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(typeof(object), StatusCodes.Status404NotFound)]
         [HttpGet("oeps")]
         public async Task<IActionResult> GetOwnerEarningsPerShare(
-            [FromQuery] string symbol,
-            [FromServices] AppDbContext db,
-            CancellationToken ct = default)
+                    [FromQuery] string symbol,
+                    [FromServices] AppDbContext db,
+                    CancellationToken ct = default)
         {
             if (string.IsNullOrWhiteSpace(symbol))
                 return BadRequest(new { error = "Missing ?symbol=..." });
@@ -1062,13 +1642,50 @@ namespace Portfolio.Api.Controllers
 
         /// <summary>
         /// Returns latest annual Price-to-Owner-Earnings ratio (P/OE).
-        /// English: P/OE = Price / OEPS, using first price on/after OE date (fallback: latest price).
         /// </summary>
+        /// <remarks>
+        /// **Formula**  
+        /// <c>P/OE = Price / OEPS</c>  
+        ///
+        /// **Where**  
+        /// - **OEPS** = OwnerEarnings / Shares  
+        ///   - OwnerEarnings = (OperatingCashFlow − CapEx) ± ΔWorkingCapital (latest annual CF row)  
+        ///   - Shares = WeightedAverageShsOut from latest annual income row on/before OE date (fallback: latest annual)  
+        /// - **Price** = First available close price on/after OE date (fallback: latest available price)  
+        ///
+        /// **Example**  
+        /// <code>
+        /// GET /api/analytics/p-to-oe?symbol=AAPL
+        /// </code>
+        ///
+        /// **Sample response**
+        /// <code>
+        /// {
+        ///   "ticker": "AAPL",
+        ///   "date": "2024-09-28",
+        ///   "ownerEarnings": 112458000000,
+        ///   "shares": 15343783000,
+        ///   "oeps": 7.3292,
+        ///   "priceDateUsed": "2024-09-30",
+        ///   "priceUsed": 200,
+        ///   "pToOe": 27.29
+        /// }
+        /// </code>
+        /// </remarks>
+        [SwaggerOperation(
+            Summary = "Price-to-Owner-Earnings ratio (P/OE)",
+            Description = "Computes P/OE = Price / OEPS, using latest Owner Earnings per Share and the nearest price.",
+            OperationId = "Analytics_GetPriceToOwnerEarnings",
+            Tags = new[] { "Analytics" }
+        )]
+        [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(object), StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(typeof(object), StatusCodes.Status404NotFound)]
         [HttpGet("p-to-oe")]
         public async Task<IActionResult> GetPriceToOwnerEarnings(
-            [FromQuery] string symbol,
-            [FromServices] AppDbContext db,
-            CancellationToken ct = default)
+                    [FromQuery] string symbol,
+                    [FromServices] AppDbContext db,
+                    CancellationToken ct = default)
         {
             if (string.IsNullOrWhiteSpace(symbol))
                 return BadRequest(new { error = "Missing ?symbol=..." });

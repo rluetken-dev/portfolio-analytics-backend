@@ -160,5 +160,115 @@ namespace Portfolio.Api.Services.Analytics
 
             return operatingCashFlow - capexAbs + deltaWorkingCapital;
         }
+
+        /// <summary>
+        /// Return on Assets (ROA) = NetIncome / TotalAssets.
+        /// Returns null if assets are zero or invalid.
+        /// </summary>
+        public static double? Roa(double netIncome, double assets)
+        {
+            if (double.IsNaN(netIncome) || double.IsNaN(assets)) return null;
+            if (Math.Abs(assets) < 1e-12) return null;
+            return netIncome / assets;
+        }
+
+        /// <summary>
+        /// Free Cash Flow Margin = FCF / Revenue.
+        /// Returns null if revenue is zero or invalid.
+        /// </summary>
+        public static double? FcfMargin(double fcf, double revenue)
+        {
+            if (double.IsNaN(fcf) || double.IsNaN(revenue)) return null;
+            if (Math.Abs(revenue) < 1e-12) return null;
+            return fcf / revenue;
+        }
+
+        /// <summary>
+        /// Compound Annual Growth Rate (CAGR) of Equity.
+        /// Formula: CAGR = (EquityEnd / EquityStart)^(1/years) - 1
+        /// Returns null if inputs invalid (years &lt;= 0, start &lt;= 0).
+        /// </summary>
+        public static double? EquityCagr(double equityStart, double equityEnd, double years)
+        {
+            if (equityStart <= 0 || equityEnd <= 0) return null;
+            if (years <= 0) return null;
+            return Math.Pow(equityEnd / equityStart, 1.0 / years) - 1.0;
+        }
+
+        /// <summary>
+        /// Owner Earnings per share = OwnerEarnings / SharesOutstanding.
+        /// Returns null if shares &lt;= 0 or invalid.
+        /// </summary>
+        public static double? OwnerEarningsPerShare(double ownerEarnings, double sharesOutstanding)
+        {
+            if (double.IsNaN(ownerEarnings) || double.IsNaN(sharesOutstanding)) return null;
+            if (sharesOutstanding <= 0) return null;
+            return ownerEarnings / sharesOutstanding;
+        }
+
+        /// <summary>
+        /// Price-to-Owner-Earnings (P/OE) = Price per Share / OEPS.
+        /// Returns null if OEPS == 0 or invalid.
+        /// </summary>
+        public static double? PriceToOwnerEarnings(double pricePerShare, double ownerEarningsPerShare)
+        {
+            if (double.IsNaN(pricePerShare) || double.IsNaN(ownerEarningsPerShare)) return null;
+            if (Math.Abs(ownerEarningsPerShare) < 1e-12) return null;
+            return pricePerShare / ownerEarningsPerShare;
+        }
+
+        /// <summary>
+        /// Free Cash Flow = OperatingCashFlow - CapEx (CapEx as positive outflow).
+        /// If your DB stores CapEx negative, pass Math.Abs(capexDbValue).
+        /// </summary>
+        public static double? Fcf(double operatingCashFlow, double capexAbs)
+        {
+            if (double.IsNaN(operatingCashFlow) || double.IsNaN(capexAbs)) return null;
+            return operatingCashFlow - capexAbs;
+        }
+
+        /// <summary>
+        /// Market capitalization = price per share * shares outstanding.
+        /// Returns null if inputs invalid or non-positive.
+        /// </summary>
+        public static double? MarketCap(double pricePerShare, double sharesOutstanding)
+        {
+            if (double.IsNaN(pricePerShare) || double.IsNaN(sharesOutstanding)) return null;
+            if (pricePerShare <= 0 || sharesOutstanding <= 0) return null;
+            return pricePerShare * sharesOutstanding;
+        }
+
+        /// <summary>
+        /// Earnings per share (EPS) = NetIncome / SharesOutstanding.
+        /// Returns null if shares &lt;= 0 or invalid.
+        /// </summary>
+        public static double? Eps(double netIncome, double sharesOutstanding)
+        {
+            if (double.IsNaN(netIncome) || double.IsNaN(sharesOutstanding)) return null;
+            if (sharesOutstanding <= 0) return null;
+            return netIncome / sharesOutstanding;
+        }
+
+        /// <summary>
+        /// Book value per share (BVPS) = Equity / SharesOutstanding.
+        /// Returns null if shares &lt;= 0 or invalid.
+        /// </summary>
+        public static double? Bvps(double equity, double sharesOutstanding)
+        {
+            if (double.IsNaN(equity) || double.IsNaN(sharesOutstanding)) return null;
+            if (sharesOutstanding <= 0) return null;
+            return equity / sharesOutstanding;
+        }
+
+        /// <summary>
+        /// Owner Earnings Yield = OwnerEarnings / MarketCap.
+        /// Wrapper for clarity; returns null if marketCap &lt;= 0.
+        /// </summary>
+        public static double? OwnerEarningsYield(double ownerEarnings, double marketCap)
+        {
+            if (double.IsNaN(ownerEarnings) || double.IsNaN(marketCap)) return null;
+            if (Math.Abs(marketCap) < 1e-12) return null;
+            return ownerEarnings / marketCap;
+        }
     }
 }

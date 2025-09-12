@@ -37,6 +37,11 @@ The API will be available at
 
 ---
 
+## 📚 API Endpoints
+A full overview of all analytics endpoints can be found in [docs/analytics-endpoints.md](docs/analytics-endpoints.md).
+
+---
+
 ## 📂 Project Structure
 
 ```
