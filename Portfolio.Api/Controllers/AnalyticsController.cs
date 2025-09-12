@@ -738,9 +738,10 @@ namespace Portfolio.Api.Controllers
             if (pxLatest is null)
                 return NotFound(new { error = $"No price data available for {ticker}." });
 
-            // 5) MarketCap & Yield
-            var marketCap = (double)pxLatest.Close * (double)shares.Value;
-            double? fcfYield = marketCap != 0 ? (double)fcf / marketCap : (double?)null;
+            double marketCap = (double)pxLatest.Close * (double)shares.Value;
+
+            // Use pure helper (null when invalid, e.g., marketCap == 0)
+            double? fcfYield = FinanceMath.FcfYield((double)fcf, marketCap);
 
             return Ok(new
             {
