@@ -801,9 +801,7 @@ namespace Portfolio.Api.Controllers
             if (!inc.Revenue.HasValue)
                 return NotFound(new { error = $"Revenue is null for {ticker} at {inc.Date}." });
 
-            double? fcfMargin = inc.Revenue.Value != 0
-                ? (double)fcf / (double)inc.Revenue.Value
-                : (double?)null;
+            double? fcfMargin = FinanceMath.FcfMargin((double)fcf, (double)inc.Revenue.Value);
 
             return Ok(new
             {
