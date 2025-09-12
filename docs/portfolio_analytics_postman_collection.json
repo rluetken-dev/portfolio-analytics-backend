@@ -1,0 +1,138 @@
+{
+  "info": {
+    "name": "Portfolio Analytics Backend",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_postman_id": "9b1c1b2a-4c7b-4f0e-9bde-20250912064441"
+  },
+  "item": [
+    {
+      "name": "Health",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/health",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "health"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Income (quarter)",
+      "request": {
+        "method": "GET",
+        "url": {
+          "raw": "{{baseUrl}}/api/fundamentals/income/{{symbol}}?period=quarter&limit=8",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "fundamentals",
+            "income",
+            "{{symbol}}"
+          ],
+          "query": [
+            {
+              "key": "period",
+              "value": "quarter"
+            },
+            {
+              "key": "limit",
+              "value": "8"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Balance (quarter)",
+      "request": {
+        "method": "GET",
+        "url": {
+          "raw": "{{baseUrl}}/api/fundamentals/balance/{{symbol}}?period=quarter&limit=8",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "fundamentals",
+            "balance",
+            "{{symbol}}"
+          ],
+          "query": [
+            {
+              "key": "period",
+              "value": "quarter"
+            },
+            {
+              "key": "limit",
+              "value": "8"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Cash Flow (quarter)",
+      "request": {
+        "method": "GET",
+        "url": {
+          "raw": "{{baseUrl}}/api/fundamentals/cash/{{symbol}}?period=quarter&limit=8",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "fundamentals",
+            "cash",
+            "{{symbol}}"
+          ],
+          "query": [
+            {
+              "key": "period",
+              "value": "quarter"
+            },
+            {
+              "key": "limit",
+              "value": "8"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "TTM Metrics",
+      "request": {
+        "method": "GET",
+        "url": {
+          "raw": "{{baseUrl}}/api/fundamentals/ttm/{{symbol}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "fundamentals",
+            "ttm",
+            "{{symbol}}"
+          ]
+        }
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:5179"
+    },
+    {
+      "key": "symbol",
+      "value": "AAPL"
+    }
+  ]
+}

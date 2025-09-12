@@ -1,0 +1,191 @@
+openapi: 3.0.3
+info:
+  title: Portfolio Analytics Backend
+  version: 1.0.0
+  description: |
+    Read-only fundamentals API backed by SQLite (EF Core). Sources ingested from FMP `/stable`.
+    TTM metrics are derived from the **last 4 stored quarters** (no external calls).
+servers:
+  - url: http://localhost:5179
+    description: Local Dev
+paths:
+  /api/health:
+    get:
+      summary: Health check
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: OK
+  /api/fundamentals/income/{symbol}:
+    get:
+      summary: Get Income Statements
+      parameters:
+        - name: symbol
+          in: path
+          required: true
+          schema: {"type":"string"}
+          example: AAPL
+        - name: period
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [quarter, annual]
+            default: quarter
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 40
+            default: 8
+      responses:
+        '200':
+          description: Income statements for the symbol
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/IncomeStatement'
+  /api/fundamentals/balance/{symbol}:
+    get:
+      summary: Get Balance Sheets
+      parameters:
+        - name: symbol
+          in: path
+          required: true
+          schema: {"type":"string"}
+          example: AAPL
+        - name: period
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [quarter, annual]
+            default: quarter
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 40
+            default: 8
+      responses:
+        '200':
+          description: Balance sheets for the symbol
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/BalanceSheet'
+  /api/fundamentals/cash/{symbol}:
+    get:
+      summary: Get Cash Flow Statements
+      parameters:
+        - name: symbol
+          in: path
+          required: true
+          schema: {"type":"string"}
+          example: AAPL
+        - name: period
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [quarter, annual]
+            default: quarter
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 40
+            default: 8
+      responses:
+        '200':
+          description: Cash flow statements for the symbol
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CashFlowStatement'
+  /api/fundamentals/ttm/{symbol}:
+    get:
+      summary: Compute TTM metrics from last 4 stored quarters
+      parameters:
+        - name: symbol
+          in: path
+          required: true
+          schema: {"type":"string"}
+          example: AAPL
+      responses:
+        '200':
+          description: Aggregated TTM metrics
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TtmMetrics'
+components:
+  schemas:
+    Money:
+      type: number
+      format: double
+      example: 123456789.01
+    IncomeStatement:
+      type: object
+      properties:
+        id: {type: string, example: "b1f2b3c4-..."}
+        symbol: {type: string, example: "AAPL"}
+        date: {type: string, format: date, example: "2025-06-30"}
+        revenue: {$ref: '#/components/schemas/Money'}
+        grossProfit: {$ref: '#/components/schemas/Money'}
+        operatingIncome: {$ref: '#/components/schemas/Money'}
+        netIncome: {$ref: '#/components/schemas/Money'}
+        eps: {type: number, format: double, example: 1.42}
+    BalanceSheet:
+      type: object
+      properties:
+        id: {type: string}
+        symbol: {type: string}
+        date: {type: string, format: date}
+        totalAssets: {$ref: '#/components/schemas/Money'}
+        totalLiabilities: {$ref: '#/components/schemas/Money'}
+        totalEquity: {$ref: '#/components/schemas/Money'}
+        cashAndShortTermInvestments: {$ref: '#/components/schemas/Money'}
+        longTermDebt: {$ref: '#/components/schemas/Money'}
+    CashFlowStatement:
+      type: object
+      properties:
+        id: {type: string}
+        symbol: {type: string}
+        date: {type: string, format: date}
+        operatingCashFlow: {$ref: '#/components/schemas/Money'}
+        capitalExpenditure: {$ref: '#/components/schemas/Money'}
+        investingCashFlow: {$ref: '#/components/schemas/Money'}
+        financingCashFlow: {$ref: '#/components/schemas/Money'}
+        freeCashFlow: {$ref: '#/components/schemas/Money'}
+    TtmMetrics:
+      type: object
+      properties:
+        symbol: {type: string, example: "AAPL"}
+        asOf: {type: string, format: date, example: "2025-09-11"}
+        revenueTtm: {$ref: '#/components/schemas/Money'}
+        netIncomeTtm: {$ref: '#/components/schemas/Money'}
+        operatingCashFlowTtm: {$ref: '#/components/schemas/Money'}
+        freeCashFlowTtm: {$ref: '#/components/schemas/Money'}
+        # Examples for ratios (optional)
+        # peTtm: {type: number, format: double, example: 24.3}
+        # fcfYield: {type: number, format: double, example: 0.046}
