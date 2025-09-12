@@ -102,18 +102,26 @@ namespace Portfolio.Api.Controllers
             if (bal is null)
                 return NotFound(new { error = $"No annual balance row for {ticker}." });
 
-            // 2) Compute D/E via helper (null if equity invalid)
-            double? de = (bal.TotalLiabilities.HasValue && bal.TotalStockholdersEquity.HasValue)
-                ? FinanceMath.DebtToEquity((double)bal.TotalLiabilities.Value, (double)bal.TotalStockholdersEquity.Value)
-                : null;
+            // 2) Compute D/E via helper (null if equity is zero/invalid)
+            double? de = null;
+            if (bal.TotalLiabilities.HasValue && bal.TotalStockholdersEquity.HasValue)
+            {
+                de = FinanceMath.DebtToEquity(
+                    (double)bal.TotalLiabilities.Value,
+                    (double)bal.TotalStockholdersEquity.Value
+                );
+            }
 
+            // 3) Return values (raw, percentage, rounded)
             return Ok(new
             {
                 ticker,
                 date = bal.Date,
                 totalLiabilities = bal.TotalLiabilities,
+                equity = bal.TotalStockholdersEquity,
                 debtToEquity = de,
-                debtToEquityRounded = de is null ? (double?)null : Math.Round(de.Value, 2)
+                debtToEquityPct = de is null ? (double?)null : de.Value * 100.0,
+                debtToEquityRounded = de is null ? (double?)null : Math.Round(de.Value, 4)
             });
         }
 
@@ -530,7 +538,7 @@ namespace Portfolio.Api.Controllers
 
             double priceVal = (double)price.Close;
 
-           // 3) P/B via helper (null if BVPS invalid/zero)
+            // 3) P/B via helper (null if BVPS invalid/zero)
             double? pb = FinanceMath.Pb(priceVal, bvps);
 
             return Ok(new
@@ -544,7 +552,7 @@ namespace Portfolio.Api.Controllers
                 datePrice = price.TradingDate
             });
         }
-        
+
         /// <summary>
         /// Returns latest annual Asset Turnover = Revenue / TotalAssets.
         /// Example: GET /api/analytics/asset-turnover?symbol=AAPL
