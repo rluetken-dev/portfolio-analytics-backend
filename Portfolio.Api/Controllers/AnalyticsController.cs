@@ -514,9 +514,8 @@ namespace Portfolio.Api.Controllers
 
             if (price is null) return NotFound(new { error = $"No price data for {ticker}." });
 
-            // 3) P/B
-            double? pb = null;
-            if (bvps != 0) pb = (double)price.Close / bvps;
+            // 3) P/B via helper (null if BVPS invalid/zero)
+            double? pb = FinanceMath.Pb((double)price.Close, bvps);
 
             return Ok(new
             {
@@ -524,8 +523,9 @@ namespace Portfolio.Api.Controllers
                 bvps,
                 price = price.Close,
                 pb,
+                pbRounded = pb is null ? (double?)null : Math.Round(pb.Value, 2),
                 dateEquity = bal.Date,
-                datePrice = price.TradingDate
+                datePrice = price.TradingDate                
             });
         }
 
