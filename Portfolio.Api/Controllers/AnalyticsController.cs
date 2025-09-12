@@ -501,12 +501,19 @@ namespace Portfolio.Api.Controllers
                 .Select(i => new { i.WeightedAverageShsOut })
                 .FirstOrDefaultAsync(ct);
 
-            if (inc is null || !inc.WeightedAverageShsOut.HasValue || inc.WeightedAverageShsOut.Value == 0)
+            if (inc is null || !inc.WeightedAverageShsOut.HasValue || inc.WeightedAverageShsOut.Value <= 0)
                 return NotFound(new { error = $"No shares data for {ticker} at {bal.Date}." });
 
-            var bvps = (double)bal.TotalStockholdersEquity.Value / (double)inc.WeightedAverageShsOut.Value;
+            // BVPS via helper (null-safe)
+            var bvpsOpt = FinanceMath.Bvps(
+                (double)bal.TotalStockholdersEquity!.Value,
+                (double)inc.WeightedAverageShsOut!.Value
+            );
+            if (bvpsOpt is null)
+                return BadRequest(new { error = "Cannot compute BVPS (invalid inputs)." });
+            double bvps = bvpsOpt.Value;
 
-            // 2) Letzter Preis ab diesem Datum
+            // 2) Last price from this date
             var t = await db.Tickers.AsNoTracking()
                 .Where(x => x.Symbol == ticker)
                 .Select(x => new { x.Id })
@@ -519,24 +526,25 @@ namespace Portfolio.Api.Controllers
                 .OrderBy(p => p.TradingDate)
                 .Select(p => new { p.TradingDate, p.Close })
                 .FirstOrDefaultAsync(ct);
-
             if (price is null) return NotFound(new { error = $"No price data for {ticker}." });
 
-            // 3) P/B via helper (null if BVPS invalid/zero)
-            double? pb = FinanceMath.Pb((double)price.Close, bvps);
+            double priceVal = (double)price.Close;
+
+           // 3) P/B via helper (null if BVPS invalid/zero)
+            double? pb = FinanceMath.Pb(priceVal, bvps);
 
             return Ok(new
             {
                 ticker,
                 bvps,
-                price = price.Close,
+                price = priceVal,
                 pb,
                 pbRounded = pb is null ? (double?)null : Math.Round(pb.Value, 2),
                 dateEquity = bal.Date,
                 datePrice = price.TradingDate
             });
         }
-
+        
         /// <summary>
         /// Returns latest annual Asset Turnover = Revenue / TotalAssets.
         /// Example: GET /api/analytics/asset-turnover?symbol=AAPL
