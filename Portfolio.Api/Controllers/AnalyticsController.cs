@@ -144,12 +144,10 @@ namespace Portfolio.Api.Controllers
             if (inc is null)
                 return NotFound(new { error = $"No annual income row for {ticker}." });
 
-            // 2) Compute Net Margin safely
-            double? netMargin = null;
-            if (inc.Revenue.HasValue && inc.Revenue.Value != 0)
-            {
-                netMargin = (double)inc.NetIncome! / (double)inc.Revenue.Value;
-            }
+            // 2) Compute Net Margin via helper (null if revenue is zero/invalid)
+            double? netMargin = (inc.NetIncome.HasValue && inc.Revenue.HasValue)
+                ? FinanceMath.NetMargin((double)inc.NetIncome.Value, (double)inc.Revenue.Value)
+                : (double?)null;
 
             return Ok(new
             {
@@ -157,7 +155,9 @@ namespace Portfolio.Api.Controllers
                 date = inc.Date,
                 netIncome = inc.NetIncome,
                 revenue = inc.Revenue,
-                netMargin // e.g., 0.12 = 12%
+                netMargin,
+                netMarginPct = netMargin * 100.0,
+                netMarginRounded = netMargin is null ? (double?)null : Math.Round(netMargin.Value, 4)
             });
         }
 
