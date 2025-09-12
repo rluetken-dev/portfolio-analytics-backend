@@ -191,9 +191,9 @@ namespace Portfolio.Api.Controllers
             if (bal is null)
                 return NotFound(new { error = $"No annual balance row for {ticker} at {inc.Date}." });
 
-            double? roa = null;
-            if (bal.TotalAssets.HasValue && bal.TotalAssets.Value != 0)
-                roa = (double)inc.NetIncome! / (double)bal.TotalAssets.Value;
+            double? roa = (inc.NetIncome.HasValue && bal.TotalAssets.HasValue)
+                ? FinanceMath.Roa((double)inc.NetIncome.Value, (double)bal.TotalAssets.Value)
+                : (double?)null;
 
             return Ok(new
             {
@@ -201,7 +201,9 @@ namespace Portfolio.Api.Controllers
                 date = inc.Date,
                 netIncome = inc.NetIncome,
                 totalAssets = bal.TotalAssets,
-                roa // e.g., 0.08 = 8%
+                roa,
+                roaPct = roa * 100.0,
+                roaRounded = roa is null ? (double?)null : Math.Round(roa.Value, 4)
             });
         }
 
@@ -894,11 +896,15 @@ namespace Portfolio.Api.Controllers
                 .Select(c => new { c.Date, c.OperatingCashFlow, c.CapitalExpenditure, c.ChangeInWorkingCapital })
                 .FirstOrDefaultAsync(ct);
 
+            // --- Guard cf first (before using cf.Date anywhere)
             if (cf is null || !cf.OperatingCashFlow.HasValue || !cf.CapitalExpenditure.HasValue)
                 return NotFound(new { error = $"No annual CF row with OCF+CapEx for {ticker}." });
 
-            long ownerEarnings = (cf.OperatingCashFlow.Value - cf.CapitalExpenditure.Value)
-                                 + (cf.ChangeInWorkingCapital ?? 0);
+            // --- Lift optionals to non-null locals (kills CS8602 on these)
+            var cfDate = cf.Date;
+            double ocf = (double)cf.OperatingCashFlow.Value;
+            double capexAbs = Math.Abs((double)cf.CapitalExpenditure.Value);
+            double deltaWc = cf.ChangeInWorkingCapital ?? 0.0;
 
             // 2) Shares: latest annual income <= OE date; fallback to latest annual
             var incRows = await db.IncomeStatements.AsNoTracking()
@@ -906,10 +912,11 @@ namespace Portfolio.Api.Controllers
                 .OrderByDescending(i => i.Date)
                 .ToListAsync(ct);
 
-            var inc = incRows.FirstOrDefault(i => i.Date <= cf.Date) ?? incRows.FirstOrDefault();
-            var shares = inc?.WeightedAverageShsOut;
-            if (!shares.HasValue || shares.Value <= 0)
-                return NotFound(new { error = $"No valid shares (WeightedAverageShsOut) for {ticker} around {cf.Date}." });
+            var inc = incRows.FirstOrDefault(i => i.Date <= cfDate) ?? incRows.FirstOrDefault();
+            if (inc is null || !inc.WeightedAverageShsOut.HasValue || inc.WeightedAverageShsOut.Value <= 0)
+                return NotFound(new { error = $"No valid shares (WeightedAverageShsOut) for {ticker} around {cfDate}." });
+
+            double sharesVal = (double)inc.WeightedAverageShsOut.Value;
 
             // 3) Resolve ticker id to read Prices
             var tid = await db.Tickers.AsNoTracking()
@@ -919,45 +926,51 @@ namespace Portfolio.Api.Controllers
             if (tid == 0)
                 return NotFound(new { error = $"Ticker {ticker} not found in Tickers." });
 
-            // 4) Price: first on/after OE date; fallback to latest overall
+            // 4) Price: first on/after OE date; fallback to latest overall (filter Close != null)
             var pxAfter = await db.Prices.AsNoTracking()
-                .Where(p => p.TickerId == tid && p.TradingDate >= cf.Date)
+                .Where(p => p.TickerId == tid && p.TradingDate >= cfDate)
                 .OrderBy(p => p.TradingDate)
-                .Select(p => new { p.TradingDate, p.Close })
+                .Select(p => new { p.TradingDate, Close = (double)p.Close! })
                 .FirstOrDefaultAsync(ct);
 
             var px = pxAfter ?? await db.Prices.AsNoTracking()
                 .Where(p => p.TickerId == tid)
                 .OrderByDescending(p => p.TradingDate)
-                .Select(p => new { p.TradingDate, p.Close })
+                .Select(p => new { p.TradingDate, Close = (double)p.Close! })
                 .FirstOrDefaultAsync(ct);
 
             if (px is null)
                 return NotFound(new { error = $"No price data available for {ticker}." });
 
-            // 5) Market cap & yield
-            var marketCap = (double)px.Close * (double)shares.Value;
-            double? oeYield = marketCap != 0 ? (double)ownerEarnings / marketCap : (double?)null;
+            // 5) Compute OE via helper, then yield
+            double? ownerEarnings = FinanceMath.OwnerEarningsFromCashFlow(ocf, capexAbs, deltaWc);
+            if (ownerEarnings is null)
+                return BadRequest(new { error = "Cannot compute Owner Earnings." });
 
+            double marketCap = px.Close * sharesVal;
+            if (marketCap <= 0)
+                return BadRequest(new { error = "Computed market cap is invalid (<= 0)." });
+
+            double? oeYield = FinanceMath.FcfYield(ownerEarnings.Value, marketCap);
+
+            // Response (use non-null locals)
             return Ok(new
             {
                 ticker,
-                date = cf.Date,
-                operatingCashFlow = cf.OperatingCashFlow,
-                capitalExpenditure = cf.CapitalExpenditure,
-                changeInWorkingCapital = cf.ChangeInWorkingCapital,
+                date = cfDate,
+                operatingCashFlow = ocf,
+                capitalExpenditureAbs = capexAbs,
+                changeInWorkingCapital = cf.ChangeInWorkingCapital, // darf nullable bleiben
                 ownerEarnings,
-                shares = shares,
+                shares = sharesVal,
                 priceDateUsed = px.TradingDate,
                 priceUsed = px.Close,
                 marketCap,
-                ownerEarningsYield = oeYield,                      // ratio
-                ownerEarningsYieldPct = oeYield * 100.0,          // percentage
+                ownerEarningsYield = oeYield,
+                ownerEarningsYieldPct = oeYield * 100.0,
                 ownerEarningsYieldRounded = oeYield is null ? (double?)null : Math.Round(oeYield.Value, 4)
             });
         }
-
-        // In Controllers/AnalyticsController.cs
 
         /// <summary>
         /// Returns latest annual Owner Earnings per Share (OEPS).
