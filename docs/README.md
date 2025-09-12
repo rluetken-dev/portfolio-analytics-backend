@@ -101,7 +101,6 @@ GET /api/fundamentals/{symbol}/balance-sheet/stable
 GET /api/fundamentals/{symbol}/cash-flow/stable
 ```
 
-```markdown
 ### Analytics (Buffett metrics)
 
 The backend provides a wide range of analytics metrics (ROE, ROA, Net Margin, P/E, P/B, FCF Yield, Owner Earnings, Equity CAGR, and more).
