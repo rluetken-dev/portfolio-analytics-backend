@@ -230,11 +230,9 @@ namespace Portfolio.Api.Controllers
             if (bal is null)
                 return NotFound(new { error = $"No annual balance row for {ticker}." });
 
-            double? equityRatio = null;
-            if (bal.TotalAssets.HasValue && bal.TotalAssets.Value != 0 && bal.TotalStockholdersEquity.HasValue)
-            {
-                equityRatio = (double)bal.TotalStockholdersEquity.Value / (double)bal.TotalAssets.Value;
-            }
+            double? equityRatio = (bal.TotalAssets.HasValue && bal.TotalStockholdersEquity.HasValue)
+                ? FinanceMath.EquityRatio((double)bal.TotalStockholdersEquity.Value, (double)bal.TotalAssets.Value)
+                : (double?)null;
 
             return Ok(new
             {
@@ -242,7 +240,9 @@ namespace Portfolio.Api.Controllers
                 date = bal.Date,
                 totalAssets = bal.TotalAssets,
                 equity = bal.TotalStockholdersEquity,
-                equityRatio // e.g., 0.40 = 40%
+                equityRatio,
+                equityRatioPct = equityRatio * 100.0,
+                equityRatioRounded = equityRatio is null ? (double?)null : Math.Round(equityRatio.Value, 4)
             });
         }
 
