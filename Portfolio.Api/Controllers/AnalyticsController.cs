@@ -271,11 +271,9 @@ namespace Portfolio.Api.Controllers
             if (bal is null)
                 return NotFound(new { error = $"No annual balance row for {ticker}." });
 
-            double? da = null;
-            if (bal.TotalAssets.HasValue && bal.TotalAssets.Value != 0 && bal.TotalLiabilities.HasValue)
-            {
-                da = (double)bal.TotalLiabilities.Value / (double)bal.TotalAssets.Value;
-            }
+            double? da = (bal.TotalAssets.HasValue && bal.TotalLiabilities.HasValue)
+                ? FinanceMath.DebtToAssets((double)bal.TotalLiabilities.Value, (double)bal.TotalAssets.Value)
+                : (double?)null;
 
             return Ok(new
             {
@@ -283,7 +281,9 @@ namespace Portfolio.Api.Controllers
                 date = bal.Date,
                 totalLiabilities = bal.TotalLiabilities,
                 totalAssets = bal.TotalAssets,
-                debtToAssets = da  // e.g., 0.20 = 20%
+                debtToAssets = da,
+                debtToAssetsPct = da * 100.0,
+                debtToAssetsRounded = da is null ? (double?)null : Math.Round(da.Value, 4)
             });
         }
 
