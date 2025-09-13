@@ -92,8 +92,64 @@ namespace Portfolio.Api.Services
             long? FreeCashFlow,
             long? NetIncome,
             long? DepreciationAndAmortization,
-            long? ChangeInWorkingCapital,   
+            long? ChangeInWorkingCapital,
             string? ReportedCurrency);
+
+        /// <summary>
+        /// Raw shape returned by /api/v3/profile/{symbol}
+        /// </summary>
+        private sealed class FmpProfileRaw
+        {
+            public string? symbol { get; set; }
+            public string? companyName { get; set; }
+            public string? sector { get; set; }
+        }
+
+        /// <summary>
+        /// Stable DTO we return to the rest of the app
+        /// </summary>
+        public sealed class CompanyProfile
+        {
+            public string Symbol { get; init; } = "";
+            public string? Name { get; init; }
+            public string? Sector { get; init; }
+        }
+
+        /// <summary>
+        /// Fetches company profile (name, sector) for a given symbol using FMP v3 API.
+        /// Returns null if not found.
+        /// </summary>
+        public async Task<CompanyProfile?> GetCompanyProfileAsync(string symbol, CancellationToken ct = default)
+        {
+            if (string.IsNullOrWhiteSpace(symbol))
+                throw new ArgumentException("symbol is required", nameof(symbol));
+
+            var sym = symbol.Trim().ToUpperInvariant();
+
+            // Build relative URL: /api/v3/profile/{symbol}?apikey=...
+            var relative = QueryHelpers.AddQueryString($"api/v3/profile/{sym}", new Dictionary<string, string?>
+            {
+                ["apikey"] = _apiKey
+            });
+
+            using var res = await _http.GetAsync(relative, ct);
+            var body = await res.Content.ReadAsStringAsync(ct);
+            if (!res.IsSuccessStatusCode)
+                throw new HttpRequestException($"FMP GET {relative} failed: {(int)res.StatusCode} {res.ReasonPhrase}. Body: {body}");
+
+            await using var stream = await res.Content.ReadAsStreamAsync(ct);
+            var arr = await JsonSerializer.DeserializeAsync<FmpProfileRaw[]>(stream, _jsonStable, ct);
+
+            var first = arr?.FirstOrDefault();
+            if (first is null) return null;
+
+            return new CompanyProfile
+            {
+                Symbol = sym,
+                Name = string.IsNullOrWhiteSpace(first.companyName) ? null : first.companyName,
+                Sector = string.IsNullOrWhiteSpace(first.sector) ? null : first.sector
+            };
+        }
 
         public FmpClient(HttpClient http, IConfiguration config, ILogger<FmpClient> log)
         {
