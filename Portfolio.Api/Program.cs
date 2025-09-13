@@ -6,19 +6,19 @@ using Microsoft.EntityFrameworkCore;
 using System.Reflection;
 using Swashbuckle.AspNetCore.Annotations;
 
-
 var builder = WebApplication.CreateBuilder(args);
 
 // --- existing DbContext registration ---
 builder.Services.AddDbContext<AppDbContext>(opt =>
     opt.UseSqlite(builder.Configuration.GetConnectionString("Default")));
 
+// Register HttpClients
 builder.Services.AddHttpClient<AlphaVantageClient>(client =>
 {
     client.Timeout = TimeSpan.FromSeconds(10); // keep calls bounded
 });
 
-// --- rest stays the same ---
+// Swagger / Controllers
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
@@ -33,42 +33,44 @@ builder.Services.AddSwaggerGen(c =>
         c.IncludeXmlComments(xmlPath);
 });
 
-// Register maintenance utilities for admin endpoints (DI).
-builder.Services.AddScoped<Portfolio.Api.Services.MaintenanceService>();
+// ----- NEW: CORS for Vite dev server (http://localhost:5173) -----
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("AllowViteDev", policy =>
+        policy
+            .WithOrigins("http://localhost:5173") // Vite dev server origin
+            .AllowAnyMethod()                     // GET/POST/PUT/DELETE...
+            .AllowAnyHeader()                     // Content-Type, etc.
+            .AllowCredentials()                   // keep if you might use cookies/auth later
+    );
+});
+// ---------------------------------------------------------------
 
-// Use the root base address so we can call /stable/... endpoints cleanly.
-// IMPORTANT: Leave the trailing slash to avoid bad relative-URL joins.
+// FMP client
 builder.Services.AddHttpClient<Portfolio.Api.Services.FmpClient>(client =>
 {
+    // IMPORTANT: Leave the trailing slash to avoid bad relative-URL joins.
     client.BaseAddress = new Uri("https://financialmodelingprep.com/");
 });
 
-// Registers the ingest service used to upsert income statements into the DB.
-// English: Scoped lifetime is fine (1 per request).
+// Domain services
 builder.Services.AddScoped<IncomeIngestService>();
-
-// Registers the balance-sheet ingest service (scoped = one per request).
 builder.Services.AddScoped<BalanceSheetIngestService>();
-
-// Registers the cash-flow ingest service (scoped = one per request).
 builder.Services.AddScoped<CashFlowIngestService>();
-
-// Register demo-data seeding helpers (kept separate so controllers stay thin and testable).
 builder.Services.AddScoped<ISeedService, SeedService>();
 
 var app = builder.Build();
 
+// Ensure DB ready (migrate or create)
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
     try
     {
-        // Preferred: applies EF Core migrations to create/update scheme
         db.Database.Migrate();
     }
     catch
     {
-        // Fallback: quick-and-dirty if you don't have migrations yet
         db.Database.EnsureCreated();
     }
 }
@@ -78,6 +80,20 @@ if (app.Environment.IsDevelopment())
     app.UseSwagger();
     app.UseSwaggerUI();
 }
+
+// ----- NEW: enable CORS BEFORE mapping endpoints -----
+app.UseCors("AllowViteDev");
+// -----------------------------------------------------
+
+// (Optional) If you force HTTPS in production, keep this. For local dev over http you can comment out.
+// app.UseHttpsRedirection();
+
+app.UseAuthorization();
+
+// ----- NEW: Minimal health endpoint for quick checks -----
+// Returns: { "status": "ok" }
+app.MapGet("/health", () => Results.Json(new { status = "ok" }));
+// ---------------------------------------------------------
 
 app.MapControllers();
 
