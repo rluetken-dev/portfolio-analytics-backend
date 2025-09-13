@@ -11,6 +11,7 @@ This document provides a **deep dive** into the architecture, data model, and AP
 4. [API Overview](#-api-overview)
    - [Ingest](#ingest-writes-to-sql)
    - [Read](#read-from-sql)
+   - [Companies (metadata)](#companies-metadata)
    - [TTM](#ttm-trailing-twelve-months)
    - [Live Fundamentals](#live-fundamentals-direct-fmp-calls)
    - [Analytics](#analytics-buffett-metrics)
@@ -88,6 +89,19 @@ GET /api/data/balance/{symbol}?period=annual|quarter&limit=10
 GET /api/data/cash/{symbol}?period=annual|quarter&limit=10
 ```
 
+### Companies (metadata)
+```http
+GET  /api/companies?q=AAPL&limit=50
+POST /api/companies/{symbol}/refresh-profile
+POST /api/companies/refresh-profiles?limit=25
+```
+- **GET** → Simple search + list of companies from your `tickers` table  
+  - Supports `q` (search by symbol or name)  
+  - Supports `limit` (default 50, max 200)  
+  - Returns `id`, `symbol`, `name`, `sector` (if available)  
+- **POST /{symbol}/refresh-profile** → Fetches **Name + Sector** for a single ticker from FMP `/api/v3/profile/{symbol}` and stores it in DB.  
+- **POST /refresh-profiles** → Batch refresh for multiple tickers (default 25, configurable via `limit`). Returns `{ count, items }`.
+
 ### TTM (Trailing Twelve Months)
 ```http
 GET /api/data/ttm/{symbol}
@@ -127,9 +141,12 @@ POST /api/admin/seed/ticker?symbol=AAPL&name=Apple%20Inc
 POST /api/admin/seed/price?symbol=AAPL&date=2024-09-30&close=200
 ```
 
-👉 The above overview is not exhaustive. For the complete, always up-to-date list of endpoints see:
-- [Swagger UI](http://localhost:5046/swagger)
-- [OpenAPI Spec](openapi.yaml)
+---
+
+⚠️ **Note:**  
+This overview shows only selected endpoints. The **complete and always up-to-date list** is available via:  
+- Swagger UI (interactive): `http://localhost:5046/swagger`  
+- OpenAPI Spec (machine-readable, versioned in repo): `openapi.yaml`
 
 ---
 
@@ -172,6 +189,9 @@ Portfolio.Api/
 ```powershell
 Invoke-RestMethod -Method Post "http://localhost:5046/api/admin/ingest/fmp-annual?symbol=AAPL&limit=5"
 Invoke-RestMethod "http://localhost:5046/api/analytics/roe?symbol=AAPL"
+# Companies metadata
+Invoke-RestMethod -Method Post "http://localhost:5046/api/companies/AAPL/refresh-profile"
+Invoke-RestMethod "http://localhost:5046/api/companies?q=AAPL&limit=10"
 ```
 
 ---
