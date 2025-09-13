@@ -59,6 +59,8 @@ builder.Services.AddScoped<BalanceSheetIngestService>();
 builder.Services.AddScoped<CashFlowIngestService>();
 builder.Services.AddScoped<ISeedService, SeedService>();
 
+builder.Services.AddScoped<MaintenanceService>();
+
 var app = builder.Build();
 
 // Ensure DB ready (migrate or create)
