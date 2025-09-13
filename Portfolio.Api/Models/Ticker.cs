@@ -19,6 +19,12 @@ public class Ticker
     public string? Name { get; set; }
 
     /// <summary>
+    /// Optional sector, e.g. "Technology".
+    /// Will be populated from an external API (e.g., FMP) during ingest.
+    /// </summary>
+    public string? Sector { get; set; }
+
+    /// <summary>
     /// Navigation property to all related price records.
     /// </summary>
     public ICollection<Price> Prices { get; set; } = new List<Price>();

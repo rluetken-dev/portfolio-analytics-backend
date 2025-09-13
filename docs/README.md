@@ -127,6 +127,10 @@ POST /api/admin/seed/ticker?symbol=AAPL&name=Apple%20Inc
 POST /api/admin/seed/price?symbol=AAPL&date=2024-09-30&close=200
 ```
 
+👉 The above overview is not exhaustive. For the complete, always up-to-date list of endpoints see:
+- [Swagger UI](http://localhost:5046/swagger)
+- [OpenAPI Spec](openapi.yaml)
+
 ---
 
 ## 🧱 Data Model (EF Core)
@@ -137,6 +141,10 @@ Entities:
 - `cash_flows` → `CashFlowEntity`
 - `prices` → `Price`
 - `tickers` → `Ticker`
+  - **Id** (int): primary key
+  - **Symbol** (string, required): stock ticker symbol, e.g. "AAPL"
+  - **Name** (string?, optional): display name, e.g. "Apple Inc."
+  - **Sector** (string?, optional): sector/industry, e.g. "Technology"
 
 Constraints:
 - Unique `(Symbol, Date, Frequency)` per fundamentals table  

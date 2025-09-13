@@ -1,44 +1,64 @@
-// Portfolio.Api/Controllers/CompaniesController.cs
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using Portfolio.Api.Data;               
+using Portfolio.Api.Models;          
 
 namespace Portfolio.Api.Controllers
 {
-    /// <summary>
-    /// Minimal controller to list companies (placeholder data).
-    /// Replace the in-memory list with a DB query later.
-    /// </summary>
     [ApiController]
     [Route("api/[controller]")]
     public class CompaniesController : ControllerBase
     {
-        /// <summary>
-        /// Returns a minimal list of companies (demo).
-        /// GET /api/companies
-        /// </summary>
-        [HttpGet]
-        public ActionResult<IEnumerable<CompanySummaryDto>> GetCompanies()
-        {
-            // TODO: Replace with real data from your EF Core DbContext later
-            var demo = new List<CompanySummaryDto>
-            {
-                new() { Id = "1", Symbol = "AAPL", Name = "Apple Inc.",      Sector = "Technology" },
-                new() { Id = "2", Symbol = "MSFT", Name = "Microsoft Corp.", Sector = "Technology" },
-                new() { Id = "3", Symbol = "V",    Name = "Visa Inc.",       Sector = "Financials" },
-            };
+        private readonly AppDbContext _db;
+        public CompaniesController(AppDbContext db) => _db = db;
 
-            return Ok(demo);
+        /// <summary>
+        /// GET /api/companies?q=AAP&amp;limit=50
+        /// Simple search (by Symbol/Name) + limit (default 50, max 200).
+        /// </summary> 
+        [HttpGet]
+        public async Task<ActionResult<IEnumerable<CompanySummaryDto>>> GetCompanies(
+            [FromQuery] string? q,
+            [FromQuery] int? limit,
+            CancellationToken ct)
+        {
+            // Use Set<T>() so we don't depend on a specific DbSet<Ticker> property name.
+            var query = _db.Set<Ticker>().AsQueryable();
+
+            if (!string.IsNullOrWhiteSpace(q))
+            {
+                var term = q.Trim();
+                query = query.Where(t =>
+                    EF.Functions.Like(t.Symbol, $"%{term}%") ||
+                    (t.Name != null && EF.Functions.Like(t.Name, $"%{term}%"))
+                );
+            }
+
+            var take = Math.Clamp(limit ?? 50, 1, 200);
+
+            var rows = await query
+                .OrderBy(t => t.Symbol)
+                .Select(t => new CompanySummaryDto
+                {
+                    Id = t.Id.ToString(),
+                    Symbol = t.Symbol,
+                    Name = t.Name,
+                    // Sector intentionally omitted (not in your Ticker model)
+                })
+                .Take(take)
+                .ToListAsync(ct);
+
+            return Ok(rows);
         }
     }
 
     /// <summary>
-    /// Lightweight DTO used by the frontend Companies page.
-    /// Extend fields over time as needed (e.g., market cap, country, etc.).
+    /// Lightweight DTO for the frontend list.
     /// </summary>
     public record CompanySummaryDto
     {
         public string? Id { get; init; }
         public string? Symbol { get; init; }
         public string? Name { get; init; }
-        public string? Sector { get; init; }
-    }
+    }   
 }
