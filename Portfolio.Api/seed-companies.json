@@ -110,5 +110,11 @@
   { "symbol": "NKE", "name": "NIKE, Inc.", "sector": "Consumer Cyclical" },
   { "symbol": "SBUX", "name": "Starbucks Corporation", "sector": "Consumer Cyclical" },
   { "symbol": "ABT", "name": "Abbott Laboratories", "sector": "Healthcare" },
-  { "symbol": "ADI", "name": "Analog Devices, Inc.", "sector": "Technology" }
+  { "symbol": "ADI", "name": "Analog Devices, Inc.", "sector": "Technology" },
+  { "symbol": "A2", "name": "Alpha 2", "sector": "Technology" },
+  { "symbol": "A10", "name": "Alpha 10", "sector": "Technology" },
+  { "symbol": "ZZZ", "name": "Omega ZZZ", "sector": "" },
+  { "symbol": "ÄPFEL", "name": "Äpfel GmbH", "sector": "Consumer Discretionary" },
+  { "symbol": "ÖKO", "name": "Öko AG", "sector": "Energy" },
+  { "symbol": "ÜBER", "name": "Über Corp", "sector": "Industrials" }
 ]
