@@ -1,12 +1,8 @@
 using Microsoft.AspNetCore.Mvc;
 using Swashbuckle.AspNetCore.Annotations;
 using Portfolio.Api.Services;
-using System.ComponentModel.DataAnnotations;
 using Portfolio.Api.Data;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Sqlite;
-using Portfolio.Api.Models;
-using Portfolio.Api.Data.Entities;
 
 namespace Portfolio.Api.Controllers;
 
@@ -20,7 +16,8 @@ public class AdminController : ControllerBase
 {
     private readonly MaintenanceService _maintenance;
 
-    public AdminController(MaintenanceService maintenance) => _maintenance = maintenance;
+    public AdminController(MaintenanceService maintenance)
+        => _maintenance = maintenance;
 
     /// <summary>
     /// Prunes daily price rows only (does not touch fundamentals).
@@ -291,13 +288,37 @@ public class AdminController : ControllerBase
         }
     }
 
+    /// <summary>
+    /// Row for upserting tickers (symbol + optional name).
+    /// </summary>
+    public sealed record UpsertTickerRow
+    {
+        public string? Symbol { get; init; }
+        public string? Name { get; init; }
+    }
 
+    /// <summary>
+    /// Upserts tickers from a JSON array: creates missing symbols and updates names
+    /// (optionally overwriting existing). Returns { affected }.
+    /// </summary>
+    [HttpPost("tickers/upsert")]
+    [SwaggerOperation(Summary = "Upsert tickers (create missing, update empty names).")]
+    public async Task<IActionResult> UpsertTickers(
+        [FromBody] IEnumerable<UpsertTickerRow>? rows,
+        [FromQuery] bool overwrite = false,
+        CancellationToken ct = default)
+    {
+        if (rows is null)
+            return BadRequest("Body required: JSON array of { symbol, name? }.");
 
+        // Normalize to (Symbol, Name) tuple list for the service
+        var pairs = rows.Select(r => (r.Symbol ?? string.Empty, r.Name));
 
+        var affected = await _maintenance.UpsertTickersAsync(pairs, overwrite, ct);
+        return Ok(new { affected });
+    }
 
-
-
-
+    
 
 
 

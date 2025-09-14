@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Portfolio.Api.Data;
+using Portfolio.Api.Models;
 
 namespace Portfolio.Api.Services;
 
@@ -86,5 +87,67 @@ public class MaintenanceService
     {
         var deleted = await _db.Database.ExecuteSqlRawAsync("DELETE FROM Prices;", ct);
         return deleted;
+    }
+
+    /// <summary>
+    /// Upsert tickers: creates missing symbols and updates Name when empty (or when overwrite is true).
+    /// Returns the number of inserted + updated rows.
+    /// </summary>
+    public async Task<int> UpsertTickersAsync(
+        IEnumerable<(string Symbol, string? Name)> rows,
+        bool overwriteExistingName = false,
+        CancellationToken ct = default)
+    {
+        if (rows is null) return 0;
+
+        // Normalize & de-duplicate by symbol
+        var input = rows
+            .Select(r => (Symbol: (r.Symbol ?? "").Trim().ToUpperInvariant(),
+                          Name: r.Name?.Trim()))
+            .Where(r => !string.IsNullOrWhiteSpace(r.Symbol))
+            .GroupBy(r => r.Symbol)
+            .Select(g => (Symbol: g.Key, Name: g.Select(x => x.Name).FirstOrDefault(n => !string.IsNullOrEmpty(n))))
+            .ToList();
+
+        if (input.Count == 0) return 0;
+
+        var symbols = input.Select(r => r.Symbol).ToList();
+
+        var existing = await _db.Set<Ticker>()
+            .Where(t => symbols.Contains(t.Symbol))
+            .ToDictionaryAsync(t => t.Symbol, ct);
+
+        var toInsert = new List<Ticker>();
+        var updated = 0;
+
+        foreach (var row in input)
+        {
+            if (existing.TryGetValue(row.Symbol, out var t))
+            {
+                // Update name if we have one and either overwrite is allowed or current is empty
+                if (!string.IsNullOrWhiteSpace(row.Name) &&
+                    (overwriteExistingName || string.IsNullOrWhiteSpace(t.Name)))
+                {
+                    t.Name = row.Name;
+                    updated++;
+                }
+            }
+            else
+            {
+                toInsert.Add(new Ticker
+                {
+                    Symbol = row.Symbol,
+                    Name = row.Name
+                });
+            }
+        }
+
+        if (toInsert.Count > 0)
+            await _db.Set<Ticker>().AddRangeAsync(toInsert, ct);
+
+        if (toInsert.Count > 0 || updated > 0)
+            await _db.SaveChangesAsync(ct);
+
+        return toInsert.Count + updated;
     }
 }

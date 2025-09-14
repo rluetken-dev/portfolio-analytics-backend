@@ -492,5 +492,50 @@ namespace Portfolio.Api.Services
                 },
                 ct);
         }
+
+        /// <summary>
+        /// Minimal DTO for FMP v3 /api/v3/sp500_constituent (only used fields).
+        /// </summary>
+        private sealed class FmpSp500Row
+        {
+            /// <summary>Ticker (e.g., "AAPL").</summary>
+            public string? symbol { get; set; }
+
+            /// <summary>Company name.</summary>
+            public string? name { get; set; }
+        }
+
+        /// <summary>
+        /// Fetch S&amp;P 500 constituents (symbol + optional name) from FMP v3.
+        /// </summary>
+        public async Task<IReadOnlyList<(string Symbol, string? Name)>> GetSp500ConstituentsAsync(
+            CancellationToken ct = default)
+        {
+            var relative = QueryHelpers.AddQueryString("api/v3/sp500_constituent", new Dictionary<string, string?>
+            {
+                ["apikey"] = _apiKey
+            });
+
+            using var res = await _http.GetAsync(relative, ct);
+            var body = await res.Content.ReadAsStringAsync(ct);
+            if (!res.IsSuccessStatusCode)
+                throw new HttpRequestException($"FMP GET {relative} failed: {(int)res.StatusCode} {res.ReasonPhrase}. Body: {body}");
+
+            await using var stream = await res.Content.ReadAsStreamAsync(ct);
+            var arr = await JsonSerializer.DeserializeAsync<FmpSp500Row[]>(stream, _jsonStable, ct);
+
+            var list = new List<(string Symbol, string? Name)>(arr?.Length ?? 0);
+            if (arr != null)
+            {
+                foreach (var r in arr)
+                {
+                    if (string.IsNullOrWhiteSpace(r.symbol)) continue;
+                    var sym = r.symbol.Trim().ToUpperInvariant();
+                    var name = string.IsNullOrWhiteSpace(r.name) ? null : r.name.Trim();
+                    list.Add((sym, name));
+                }
+            }
+            return list;
+        }
     }
 }
