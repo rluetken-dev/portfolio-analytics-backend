@@ -150,4 +150,15 @@ public class MaintenanceService
 
         return toInsert.Count + updated;
     }
+
+    // MaintenanceService.cs
+    /// <summary>
+    /// Sets <c>Ticker.Sector</c> to <c>NULL</c> for all rows.
+    /// Useful to "reset" sectors before refilling them from an external source.
+    /// </summary>
+    /// <returns>Number of affected rows.</returns>
+    public async Task<int> ClearAllTickerSectorsAsync(CancellationToken ct = default)
+    {
+        return await _db.Database.ExecuteSqlRawAsync("UPDATE Tickers SET Sector = NULL;", ct);
+    }
 }

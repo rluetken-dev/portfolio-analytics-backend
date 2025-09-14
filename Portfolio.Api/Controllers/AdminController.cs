@@ -3,6 +3,7 @@ using Swashbuckle.AspNetCore.Annotations;
 using Portfolio.Api.Services;
 using Portfolio.Api.Data;
 using Microsoft.EntityFrameworkCore;
+using Portfolio.Api.Models;
 
 namespace Portfolio.Api.Controllers;
 
@@ -14,10 +15,15 @@ namespace Portfolio.Api.Controllers;
 [Route("api/admin")]
 public class AdminController : ControllerBase
 {
+    private readonly AppDbContext _db;
     private readonly MaintenanceService _maintenance;
 
-    public AdminController(MaintenanceService maintenance)
-        => _maintenance = maintenance;
+    /// <summary>Inject EF Core context and housekeeping service.</summary>
+    public AdminController(AppDbContext db, MaintenanceService maintenance)
+    {
+        _db = db;
+        _maintenance = maintenance;
+    }
 
     /// <summary>
     /// Prunes daily price rows only (does not touch fundamentals).
@@ -288,37 +294,70 @@ public class AdminController : ControllerBase
         }
     }
 
-    /// <summary>
-    /// Row for upserting tickers (symbol + optional name).
-    /// </summary>
-    public sealed record UpsertTickerRow
+    // Request shape for bulk upsert (symbol required; name/sector optional)
+    public sealed class UpsertTickerDto
     {
         public string? Symbol { get; init; }
         public string? Name { get; init; }
+        public string? Sector { get; init; } 
     }
 
     /// <summary>
-    /// Upserts tickers from a JSON array: creates missing symbols and updates names
-    /// (optionally overwriting existing). Returns { affected }.
+    /// Bulk upsert tickers. If overwrite=false (default), only fill missing fields;
+    /// with overwrite=true, replace existing Name/Sector as well.
     /// </summary>
     [HttpPost("tickers/upsert")]
-    [SwaggerOperation(Summary = "Upsert tickers (create missing, update empty names).")]
     public async Task<IActionResult> UpsertTickers(
-        [FromBody] IEnumerable<UpsertTickerRow>? rows,
-        [FromQuery] bool overwrite = false,
+        [FromQuery] bool overwrite,
+        [FromBody] List<UpsertTickerDto> items,
         CancellationToken ct = default)
     {
-        if (rows is null)
-            return BadRequest("Body required: JSON array of { symbol, name? }.");
+        if (items is null || items.Count == 0) return BadRequest("No items.");
 
-        // Normalize to (Symbol, Name) tuple list for the service
-        var pairs = rows.Select(r => (r.Symbol ?? string.Empty, r.Name));
+        var set = _db.Set<Ticker>();
+        var affected = 0;
 
-        var affected = await _maintenance.UpsertTickersAsync(pairs, overwrite, ct);
+        foreach (var row in items)
+        {
+            if (string.IsNullOrWhiteSpace(row.Symbol)) continue;
+
+            var sym = row.Symbol.Trim().ToUpperInvariant();
+            var name = string.IsNullOrWhiteSpace(row.Name) ? null : row.Name.Trim();
+            var sector = string.IsNullOrWhiteSpace(row.Sector) ? null : row.Sector.Trim();
+
+            var t = await set.FirstOrDefaultAsync(x => x.Symbol == sym, ct);
+            if (t is null)
+            {
+                _db.Add(new Ticker { Symbol = sym, Name = name, Sector = sector });
+                affected++;
+                continue;
+            }
+
+            // Update only when overwriting OR target field is empty and incoming has value
+            if (name is not null && (overwrite || string.IsNullOrWhiteSpace(t.Name))) t.Name = name;
+            if (sector is not null && (overwrite || string.IsNullOrWhiteSpace(t.Sector))) t.Sector = sector;
+        }
+
+        await _db.SaveChangesAsync(ct);
         return Ok(new { affected });
     }
 
-    
+    // AdminController.cs
+    /// <summary>
+    /// Admin-only: clears the <c>Sector</c> column for all tickers by setting it to <c>NULL</c>.
+    /// Intended as a destructive reset before running a fresh profile refresh.
+    /// </summary>
+    /// <response code="200">Returns JSON like <c>{ cleared: N }</c>.</response>
+    [HttpPost("tickers/clear-sectors")]
+    public async Task<IActionResult> ClearTickerSectors(CancellationToken ct)
+    {
+        var n = await _maintenance.ClearAllTickerSectorsAsync(ct);
+        return Ok(new { cleared = n });
+    }
+
+
+
+
 
 
 
