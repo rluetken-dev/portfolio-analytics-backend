@@ -38,10 +38,10 @@ builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowViteDev", policy =>
         policy
-            .WithOrigins("http://localhost:5173") // Vite dev server origin
-            .AllowAnyMethod()                     // GET/POST/PUT/DELETE...
-            .AllowAnyHeader()                     // Content-Type, etc.
-            .AllowCredentials()                   // keep if you might use cookies/auth later
+            .WithOrigins("http://localhost:5173", "http://127.0.0.1:5173")  // Vite dev server origin
+            .AllowAnyMethod()                                               // GET/POST/PUT/DELETE...
+            .AllowAnyHeader()                                               // Content-Type, etc.
+            .AllowCredentials()                                             // keep if you might use cookies/auth later
     );
 });
 // ---------------------------------------------------------------
