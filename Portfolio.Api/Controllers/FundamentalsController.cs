@@ -289,5 +289,50 @@ namespace Portfolio.Api.Controllers
                 Metrics = metrics
             });
         }
+
+        /// <summary>
+        /// Persist fundamentals (annual or quarter) for a symbol into the DB.
+        /// NOTE: First step stub: returns 200 with zero counters so the UI stops 404-ing.
+        /// We'll wire the actual upsert in the next step.
+        /// </summary>
+        [HttpPost("refresh")]
+        [Produces("application/json")]
+        [SwaggerOperation(
+            Summary = "Fetch & store fundamentals",
+            Description = "Stub: validates inputs and returns zero counters. Next step will upsert Income/Balance/Cash."
+        )]
+        [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+        public IActionResult RefreshFundamentals(
+            [FromQuery, Required] string symbol,
+            [FromQuery] string period = "annual",   // "annual" | "quarter"
+            [FromQuery] int years = 5              // clamp 1..10
+        )
+        {
+            // --- 1) Normalize & validate ---
+            var sym = symbol?.Trim().ToUpperInvariant();
+            if (string.IsNullOrWhiteSpace(sym))
+                return BadRequest(new { error = "symbol required" });
+
+            var per = (period ?? "annual").Trim().ToLowerInvariant();
+            if (per != "annual" && per != "quarter")
+                return BadRequest(new { error = "period must be 'annual' or 'quarter'" });
+
+            years = Math.Clamp(years, 1, 10);
+
+            // --- 2) TODO (next step): call your FMP /stable client and UPSERT to DB ---
+            // We'll implement actual persistence for Income/Balance/Cash in the next mini step.
+
+            // --- 3) Return zero counters so frontend can proceed without 404 ---
+            return Ok(new
+            {
+                ok = true,
+                symbol = sym,
+                period = per,
+                years,
+                inserted = new { income = 0, balance = 0, cash = 0 },
+                skipped = new { income = 0, balance = 0, cash = 0 }
+            });
+        }
     }
 }
