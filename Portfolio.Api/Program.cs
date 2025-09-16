@@ -61,6 +61,14 @@ builder.Services.AddScoped<ISeedService, SeedService>();
 
 builder.Services.AddScoped<MaintenanceService>();
 
+// English: lightweight client pointing to this API itself (same dev host/port)
+builder.Services.AddHttpClient("self", c =>
+{
+    c.BaseAddress = new Uri("http://localhost:5046");
+    c.DefaultRequestHeaders.Accept.ParseAdd("application/json");
+});
+
+
 var app = builder.Build();
 
 // Ensure DB ready (migrate or create)

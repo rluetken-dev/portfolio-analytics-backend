@@ -2,6 +2,7 @@ using System.ComponentModel.DataAnnotations;
 using Microsoft.AspNetCore.Mvc;
 using Swashbuckle.AspNetCore.Annotations;
 using Portfolio.Api.Services;
+using System.Text.Json;
 
 namespace Portfolio.Api.Controllers
 {
@@ -290,49 +291,122 @@ namespace Portfolio.Api.Controllers
             });
         }
 
+        // English: DTOs for request/response of the refresh endpoint
+        public sealed record FundamentalsCounters(int Income, int Balance, int Cash);
+        public sealed record FundamentalsRefreshResponse(
+            bool Ok,
+            string Symbol,
+            string Period, // "annual" | "quarter"
+            int Years,
+            FundamentalsCounters Inserted,
+            FundamentalsCounters Skipped
+        );
+
+        // English: call our own ingest endpoints and normalize counters
+        private static async Task<(int inserted, int skipped)> HitIngestAsync(
+            HttpClient http, string path, CancellationToken ct)
+        {
+            using var resp = await http.GetAsync(path, ct);
+            resp.EnsureSuccessStatusCode();
+
+            using var stream = await resp.Content.ReadAsStreamAsync(ct);
+            using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: ct);
+            var root = doc.RootElement;
+
+            // English: tolerate different shapes: inserted/upserts + skipped
+            int inserted = 0;
+            if (root.TryGetProperty("inserted", out var iProp) && iProp.TryGetInt32(out var iVal))
+                inserted = iVal;
+            else if (root.TryGetProperty("upserts", out var uProp) && uProp.TryGetInt32(out var uVal))
+                inserted = uVal;
+
+            int skipped = 0;
+            if (root.TryGetProperty("skipped", out var sProp) && sProp.TryGetInt32(out var sVal))
+                skipped = sVal;
+
+            return (inserted, skipped);
+        }
+
         /// <summary>
         /// Persist fundamentals (annual or quarter) for a symbol into the DB.
-        /// NOTE: First step stub: returns 200 with zero counters so the UI stops 404-ing.
-        /// We'll wire the actual upsert in the next step.
         /// </summary>
         [HttpPost("refresh")]
         [Produces("application/json")]
         [SwaggerOperation(
-            Summary = "Fetch & store fundamentals",
-            Description = "Stub: validates inputs and returns zero counters. Next step will upsert Income/Balance/Cash."
+            Summary = "Fetch & store fundamentals (smoke: income only)",
+            Description = "Calls income ingest and returns counters; balance/cash follow next step."
         )]
-        [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(FundamentalsRefreshResponse), StatusCodes.Status200OK)]
         [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
-        public IActionResult RefreshFundamentals(
+        public async Task<IActionResult> RefreshFundamentals(
             [FromQuery, Required] string symbol,
             [FromQuery] string period = "annual",   // "annual" | "quarter"
-            [FromQuery] int years = 5              // clamp 1..10
+            [FromQuery] int years = 5,
+            [FromServices] IHttpClientFactory? httpFactory = null,
+            CancellationToken ct = default
         )
         {
-            // --- 1) Normalize & validate ---
+            // English: normalize + validate
             var sym = symbol?.Trim().ToUpperInvariant();
             if (string.IsNullOrWhiteSpace(sym))
-                return BadRequest(new { error = "symbol required" });
+                return BadRequest(new ProblemDetails { Title = "Bad Request", Detail = "symbol required" });
 
             var per = (period ?? "annual").Trim().ToLowerInvariant();
             if (per != "annual" && per != "quarter")
-                return BadRequest(new { error = "period must be 'annual' or 'quarter'" });
+                return BadRequest(new ProblemDetails { Title = "Bad Request", Detail = "period must be 'annual' or 'quarter'" });
 
             years = Math.Clamp(years, 1, 10);
+            var limit = Math.Max(1, years);
 
-            // --- 2) TODO (next step): call your FMP /stable client and UPSERT to DB ---
-            // We'll implement actual persistence for Income/Balance/Cash in the next mini step.
-
-            // --- 3) Return zero counters so frontend can proceed without 404 ---
-            return Ok(new
+            // English: get an HttpClient; fall back to a local client if DI not configured
+            var http = httpFactory?.CreateClient("self") ?? new HttpClient
             {
-                ok = true,
-                symbol = sym,
-                period = per,
-                years,
-                inserted = new { income = 0, balance = 0, cash = 0 },
-                skipped = new { income = 0, balance = 0, cash = 0 }
-            });
+                BaseAddress = new Uri("http://localhost:5046")
+            };
+            http.DefaultRequestHeaders.Accept.ParseAdd("application/json");
+
+            // English: helper to hit ingest endpoint and read counters (supports 'upserted'/'inserted' + 'skipped')
+            static async Task<(int inserted, int skipped)> HitAsync(HttpClient c, string path, CancellationToken token)
+            {
+                using var resp = await c.GetAsync(path, token);
+                resp.EnsureSuccessStatusCode();
+
+                using var stream = await resp.Content.ReadAsStreamAsync(token);
+                using var doc = await System.Text.Json.JsonDocument.ParseAsync(stream, cancellationToken: token);
+                var root = doc.RootElement;
+
+                // English: prefer 'upserted' (your ingest output), then 'inserted'
+                int inserted = 0;
+                if (root.TryGetProperty("upserted", out var up) && up.TryGetInt32(out var upVal))
+                    inserted = upVal;
+                else if (root.TryGetProperty("inserted", out var ins) && ins.TryGetInt32(out var insVal))
+                    inserted = insVal;
+
+                int skipped = 0;
+                if (root.TryGetProperty("skipped", out var sk) && sk.TryGetInt32(out var skVal))
+                    skipped = skVal;
+
+                return (inserted, skipped);
+            }
+
+            // English: income ingest
+            var income = await HitAsync(http, $"/api/ingest/income/{sym}?period={per}&limit={limit}", ct);
+
+            // English: balance ingest
+            var balance = await HitAsync(http, $"/api/ingest/balance/{sym}?period={per}&limit={limit}", ct);
+
+            // English: cash ingest
+            var cash = await HitAsync(http, $"/api/ingest/cash/{sym}?period={per}&limit={limit}", ct);
+
+            var payload = new FundamentalsRefreshResponse(
+                Ok: true,
+                Symbol: sym!,
+                Period: per,
+                Years: years,
+                Inserted: new FundamentalsCounters(income.inserted, balance.inserted, cash.inserted),
+                Skipped: new FundamentalsCounters(income.skipped, balance.skipped, cash.skipped)
+            );
+            return Ok(payload);
         }
     }
 }
