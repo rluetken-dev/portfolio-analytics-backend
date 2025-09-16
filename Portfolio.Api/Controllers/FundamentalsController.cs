@@ -327,17 +327,29 @@ namespace Portfolio.Api.Controllers
             return (inserted, skipped);
         }
 
+        // English: detect plan/paid-tier errors in upstream message
+        static bool IsPlanLimited(string? msg)
+        {
+            if (string.IsNullOrWhiteSpace(msg)) return false;
+            var m = msg.ToLowerInvariant();
+            return m.Contains("402 payment required") ||
+                   m.Contains("premium query parameter") ||
+                   m.Contains("not available under your current subscription") ||
+                   m.Contains("subscription page");
+        }
+
         /// <summary>
         /// Persist fundamentals (annual or quarter) for a symbol into the DB.
         /// </summary>
         [HttpPost("refresh")]
         [Produces("application/json")]
         [SwaggerOperation(
-            Summary = "Fetch & store fundamentals (smoke: income only)",
-            Description = "Calls income ingest and returns counters; balance/cash follow next step."
+            Summary = "Fetch & store fundamentals (income/balance/cash)",
+            Description = "Calls ingest endpoints and returns counters; income has one retry; errors include upstream body."
         )]
         [ProducesResponseType(typeof(FundamentalsRefreshResponse), StatusCodes.Status200OK)]
         [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status502BadGateway)]
         public async Task<IActionResult> RefreshFundamentals(
             [FromQuery, Required] string symbol,
             [FromQuery] string period = "annual",   // "annual" | "quarter"
@@ -365,38 +377,105 @@ namespace Portfolio.Api.Controllers
             };
             http.DefaultRequestHeaders.Accept.ParseAdd("application/json");
 
-            // English: helper to hit ingest endpoint and read counters (supports 'upserted'/'inserted' + 'skipped')
+            // English: call ingest endpoint; include status/body on errors for diagnostics
             static async Task<(int inserted, int skipped)> HitAsync(HttpClient c, string path, CancellationToken token)
             {
                 using var resp = await c.GetAsync(path, token);
-                resp.EnsureSuccessStatusCode();
+                var raw = await resp.Content.ReadAsStringAsync(token);
 
-                using var stream = await resp.Content.ReadAsStreamAsync(token);
-                using var doc = await System.Text.Json.JsonDocument.ParseAsync(stream, cancellationToken: token);
-                var root = doc.RootElement;
+                if (!resp.IsSuccessStatusCode)
+                {
+                    // English: propagate status + body so callers can show the real cause
+                    throw new HttpRequestException($"HTTP {(int)resp.StatusCode} {resp.ReasonPhrase} on {path}: {raw}");
+                }
 
-                // English: prefer 'upserted' (your ingest output), then 'inserted'
-                int inserted = 0;
-                if (root.TryGetProperty("upserted", out var up) && up.TryGetInt32(out var upVal))
-                    inserted = upVal;
-                else if (root.TryGetProperty("inserted", out var ins) && ins.TryGetInt32(out var insVal))
-                    inserted = insVal;
+                try
+                {
+                    using var doc = System.Text.Json.JsonDocument.Parse(raw);
+                    var root = doc.RootElement;
 
-                int skipped = 0;
-                if (root.TryGetProperty("skipped", out var sk) && sk.TryGetInt32(out var skVal))
-                    skipped = skVal;
+                    // English: support both 'upserted' and 'inserted'
+                    int inserted = 0;
+                    if (root.TryGetProperty("upserted", out var up) && up.ValueKind == System.Text.Json.JsonValueKind.Number && up.TryGetInt32(out var upVal))
+                        inserted = upVal;
+                    else if (root.TryGetProperty("inserted", out var ins) && ins.ValueKind == System.Text.Json.JsonValueKind.Number && ins.TryGetInt32(out var insVal))
+                        inserted = insVal;
 
-                return (inserted, skipped);
+                    int skipped = 0;
+                    if (root.TryGetProperty("skipped", out var sk) && sk.ValueKind == System.Text.Json.JsonValueKind.Number && sk.TryGetInt32(out var skVal))
+                        skipped = skVal;
+
+                    return (inserted, skipped);
+                }
+                catch (System.Text.Json.JsonException)
+                {
+                    // English: surface unexpected payloads clearly
+                    throw new HttpRequestException($"HTTP 200 but invalid JSON on {path}: {raw}");
+                }
             }
 
-            // English: income ingest
-            var income = await HitAsync(http, $"/api/ingest/income/{sym}?period={per}&limit={limit}", ct);
+            // English: declare counters upfront so they're in scope after try/catch
+            var income = (inserted: 0, skipped: 0);
+            var balance = (inserted: 0, skipped: 0);
+            var cash = (inserted: 0, skipped: 0);
 
-            // English: balance ingest
-            var balance = await HitAsync(http, $"/api/ingest/balance/{sym}?period={per}&limit={limit}", ct);
+            // English: income ingest with one retry (handles transient 429/500/DB locks)
+            try
+            {
+                income = await HitAsync(http, $"/api/ingest/income/{sym}?period={per}&limit={limit}", ct);
+            }
+            catch (HttpRequestException ex2)
+            {
+                if (IsPlanLimited(ex2.Message))
+                {
+                    // English: treat plan-limited symbol as a non-fatal skip
+                    _log.LogInformation("Income ingest skipped (plan limit) for {Symbol}: {Msg}", sym, ex2.Message);
+                    // keep 'income' counters at 0
+                }
+                else
+                {
+                    return StatusCode(StatusCodes.Status502BadGateway,
+                        new ProblemDetails { Title = "Income ingest failed (after retry)", Detail = ex2.Message });
+                }
+            }
 
-            // English: cash ingest
-            var cash = await HitAsync(http, $"/api/ingest/cash/{sym}?period={per}&limit={limit}", ct);
+            // English: balance ingest with explicit error wrapping
+            try
+            {
+                balance = await HitAsync(http, $"/api/ingest/balance/{sym}?period={per}&limit={limit}", ct);
+            }
+            catch (HttpRequestException ex)
+            {
+                if (IsPlanLimited(ex.Message))
+                {
+                    _log.LogInformation("Balance ingest skipped (plan limit) for {Symbol}: {Msg}", sym, ex.Message);
+                    // keep 'balance' counters at 0
+                }
+                else
+                {
+                    return StatusCode(StatusCodes.Status502BadGateway,
+                        new ProblemDetails { Title = "Balance ingest failed", Detail = ex.Message });
+                }
+            }
+
+            // English: cash ingest with explicit error wrapping
+            try
+            {
+                cash = await HitAsync(http, $"/api/ingest/cash/{sym}?period={per}&limit={limit}", ct);
+            }
+            catch (HttpRequestException ex)
+            {
+                if (IsPlanLimited(ex.Message))
+                {
+                    _log.LogInformation("Cash ingest skipped (plan limit) for {Symbol}: {Msg}", sym, ex.Message);
+                    // keep 'cash' counters at 0
+                }
+                else
+                {
+                    return StatusCode(StatusCodes.Status502BadGateway,
+                        new ProblemDetails { Title = "Cash ingest failed", Detail = ex.Message });
+                }
+            }
 
             var payload = new FundamentalsRefreshResponse(
                 Ok: true,
