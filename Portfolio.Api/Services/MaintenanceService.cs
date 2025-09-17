@@ -95,12 +95,12 @@ public class MaintenanceService
     }
 
     /// <summary>
-    /// Upsert tickers: creates missing symbols and updates Name when empty (or when overwrite is true).
-    /// Returns the number of inserted + updated rows.
+    /// Upserts tickers. English: Optionally skip inserts to avoid creating new/invalid symbols.
     /// </summary>
     public async Task<int> UpsertTickersAsync(
         IEnumerable<(string Symbol, string? Name)> rows,
         bool overwriteExistingName = false,
+        bool createIfMissing = true, // English: Safety switch to prevent accidental inserts
         CancellationToken ct = default)
     {
         if (rows is null) return 0;
@@ -122,14 +122,16 @@ public class MaintenanceService
             .Where(t => symbols.Contains(t.Symbol))
             .ToDictionaryAsync(t => t.Symbol, ct);
 
+        // English: Collect inserts only if allowed; always track how many would be new
         var toInsert = new List<Ticker>();
+        var wouldInsert = 0;
         var updated = 0;
 
         foreach (var row in input)
         {
             if (existing.TryGetValue(row.Symbol, out var t))
             {
-                // Update name if we have one and either overwrite is allowed or current is empty
+                // English: Update name if applicable
                 if (!string.IsNullOrWhiteSpace(row.Name) &&
                     (overwriteExistingName || string.IsNullOrWhiteSpace(t.Name)))
                 {
@@ -139,12 +141,24 @@ public class MaintenanceService
             }
             else
             {
-                toInsert.Add(new Ticker
+                // English: Symbol not present in DB -> candidate for insert
+                wouldInsert++;
+                if (createIfMissing)
                 {
-                    Symbol = row.Symbol,
-                    Name = row.Name
-                });
+                    toInsert.Add(new Ticker
+                    {
+                        Symbol = row.Symbol,
+                        Name = row.Name
+                    });
+                }
+                // else: skip insert intentionally (safety)
             }
+        }
+
+        // English: If inserts are disabled but candidates exist, log for visibility
+        if (!createIfMissing && wouldInsert > 0)
+        {
+            _log.LogInformation("UpsertTickers: {Count} symbols skipped (createIfMissing=false).", wouldInsert);
         }
 
         if (toInsert.Count > 0)
