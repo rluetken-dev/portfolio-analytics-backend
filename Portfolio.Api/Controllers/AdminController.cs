@@ -4,6 +4,8 @@ using Portfolio.Api.Services;
 using Portfolio.Api.Data;
 using Microsoft.EntityFrameworkCore;
 using Portfolio.Api.Models;
+using Microsoft.Data.Sqlite;
+using Microsoft.Extensions.Configuration;
 
 namespace Portfolio.Api.Controllers;
 
@@ -299,7 +301,7 @@ public class AdminController : ControllerBase
     {
         public string? Symbol { get; init; }
         public string? Name { get; init; }
-        public string? Sector { get; init; } 
+        public string? Sector { get; init; }
     }
 
     /// <summary>
@@ -354,6 +356,31 @@ public class AdminController : ControllerBase
         var n = await _maintenance.ClearAllTickerSectorsAsync(ct);
         return Ok(new { cleared = n });
     }
+
+
+    // AdminController.cs (Ergänzung)
+    /// <summary>
+    /// Admin-only: deletes a company by ticker symbol, including prices and fundamentals.
+    /// English: Hard-delete all data for {symbol} in one atomic operation.
+    /// </summary>
+    /// <response code="200">
+    /// Returns JSON: { symbol, pricesDeleted, incomeDeleted, balanceDeleted, cashDeleted, tickerDeleted }
+    /// </response>
+    [HttpDelete("tickers/{symbol}")]
+    public async Task<IActionResult> DeleteTicker([FromRoute] string symbol, CancellationToken ct)
+    {
+        var result = await _maintenance.DeleteTickerAsync(symbol, ct);
+        return Ok(result); // English: idempotent — returns zeros if symbol not found
+    }
+
+
+
+
+
+
+
+
+
 
 
 
@@ -481,4 +508,5 @@ public class AdminController : ControllerBase
         await seeder.SeedSharesAsync(symbol, year, shares, ct);
         return Ok(new { ticker = symbol.Trim().ToUpperInvariant(), year, shares });
     }
+
 }

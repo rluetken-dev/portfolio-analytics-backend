@@ -13,8 +13,13 @@ namespace Portfolio.Api.Services;
 public class MaintenanceService
 {
     private readonly AppDbContext _db;
+    private readonly ILogger<MaintenanceService> _log;
 
-    public MaintenanceService(AppDbContext db) => _db = db;
+    public MaintenanceService(AppDbContext db, ILogger<MaintenanceService> log)
+    {
+        _db = db;
+        _log = log;
+    }
 
     /// <summary>
     /// Deletes old price rows from the database.
@@ -160,5 +165,82 @@ public class MaintenanceService
     public async Task<int> ClearAllTickerSectorsAsync(CancellationToken ct = default)
     {
         return await _db.Database.ExecuteSqlRawAsync("UPDATE Tickers SET Sector = NULL;", ct);
+    }
+
+
+    /// <summary>
+    /// Result payload for a ticker hard-delete operation.
+    /// English: Summarizes how many rows were removed across all related tables,
+    /// allowing callers to log, assert in tests, or show UI feedback.
+    /// </summary>
+    /// <param name="Symbol">English: Normalized ticker symbol (uppercase) that was requested to delete.</param>
+    /// <param name="PricesDeleted">English: Count of deleted daily price rows (child table by TickerId).</param>
+    /// <param name="IncomeDeleted">English: Count of deleted income statement rows (filtered by Symbol).</param>
+    /// <param name="BalanceDeleted">English: Count of deleted balance sheet rows (filtered by Symbol).</param>
+    /// <param name="CashDeleted">English: Count of deleted cash flow rows (filtered by Symbol).</param>
+    /// <param name="TickerDeleted">English: 1 if the Ticker row itself was deleted; 0 if it did not exist.</param>
+    public sealed record DeleteTickerResult(
+        string Symbol,
+        int PricesDeleted,
+        int IncomeDeleted,
+        int BalanceDeleted,
+        int CashDeleted,
+        int TickerDeleted
+    );
+
+    /// <summary>
+    /// Deletes all persisted data for a given ticker symbol in one transaction.
+    /// English: Hard-delete a symbol (prices + fundamentals + ticker) atomically.
+    /// </summary>https://chatgpt.com/c/68c11e64-5bcc-8330-a8f8-8b57a3e7f781
+    public async Task<DeleteTickerResult> DeleteTickerAsync(string symbol, CancellationToken ct = default)
+    {
+        // English: Normalize input (case-insensitive handling)
+        var sym = (symbol ?? string.Empty).Trim().ToUpperInvariant();
+
+        // English: Log both original input and normalized symbol for safety
+        _log.LogInformation("Requested delete for symbol={Input}, normalized={Normalized}", symbol, sym);
+
+        // English: Find ticker (needed to delete Prices by TickerId)
+        var ticker = await _db.Tickers
+            .AsNoTracking()
+            .SingleOrDefaultAsync(t => t.Symbol == sym, ct);
+
+        // English: Start provider-agnostic transaction (avoids SqliteTransaction cast issues)
+        await using var tx = await _db.Database.BeginTransactionAsync(ct);
+
+        int prices = 0;
+        if (ticker is not null)
+        {
+            // English: Delete daily prices via foreign key (faster than loading entities)
+            prices = await _db.Prices
+                .Where(p => p.TickerId == ticker.Id)
+                .ExecuteDeleteAsync(ct);
+        }
+
+        // English: Fundamentals store Symbol (string) → delete by symbol
+        var income = await _db.IncomeStatements
+            .Where(x => x.Symbol == sym)
+            .ExecuteDeleteAsync(ct);
+
+        var balance = await _db.BalanceSheets
+            .Where(x => x.Symbol == sym)
+            .ExecuteDeleteAsync(ct);
+
+        var cash = await _db.CashFlows
+            .Where(x => x.Symbol == sym)
+            .ExecuteDeleteAsync(ct);
+
+        var tick = 0;
+        if (ticker is not null)
+        {
+            // English: Finally remove the Ticker row
+            tick = await _db.Tickers
+                .Where(t => t.Id == ticker.Id)
+                .ExecuteDeleteAsync(ct);
+        }
+
+        await tx.CommitAsync(ct);
+
+        return new DeleteTickerResult(sym, prices, income, balance, cash, tick);
     }
 }
