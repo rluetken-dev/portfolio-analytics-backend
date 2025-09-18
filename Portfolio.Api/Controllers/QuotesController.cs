@@ -394,5 +394,78 @@ namespace Portfolio.Api.Controllers
 
             return false;
         }
+
+        // Slim DTO for candles
+        public record OhlcRowDto(string Date, decimal Open, decimal High, decimal Low, decimal Close, decimal? Volume);
+
+        // Compact helper to format DateOnly as ISO (no timezone surprises)
+        private static string Iso(DateOnly d) => d.ToString("yyyy-MM-dd");
+
+        /// <summary>
+        /// Daily OHLCV time series in ascending order.
+        /// </summary>
+        /// <remarks>
+        /// Examples:
+        /// GET /api/quotes/ohlc?symbol=AAPL
+        /// GET /api/quotes/ohlc?symbol=AAPL&amp;from=2025-03-01&amp;to=2025-09-15
+        /// </remarks>
+        [HttpGet("ohlc")]
+        [Produces("application/json")]
+        public async Task<IActionResult> Ohlc(
+            [FromQuery/*, Required*/] string symbol,
+            [FromQuery] DateTime? from = null,
+            [FromQuery] DateTime? to = null,
+            CancellationToken ct = default)
+        {
+            // Normalize inputs
+            var sym = (symbol ?? string.Empty).Trim().ToUpperInvariant();
+            if (string.IsNullOrWhiteSpace(sym))
+                return BadRequest(new { error = "symbol required" });
+
+            // Default window: last 180 calendar days
+            var toDt = (to ?? DateTime.UtcNow.Date).Date;
+            var fromDt = (from ?? toDt.AddDays(-180)).Date;
+
+            var fromD = DateOnly.FromDateTime(fromDt);
+            var toD = DateOnly.FromDateTime(toDt);
+
+            // Resolve ticker id once
+            var tickerId = await _db.Tickers
+                .Where(t => t.Symbol == sym)
+                .Select(t => t.Id)
+                .FirstOrDefaultAsync(ct);
+
+            if (tickerId == 0)
+                return Ok(Array.Empty<OhlcRowDto>()); // no ticker → empty array
+
+            // Query OHLCV and return ascending by date
+            var rowsRaw = await _db.Prices
+                .AsNoTracking()
+                .Where(p => p.TickerId == tickerId && p.TradingDate >= fromD && p.TradingDate <= toD)
+                .OrderBy(p => p.TradingDate)
+                .Select(p => new
+                {
+                    p.TradingDate,
+                    p.Open,
+                    p.High,
+                    p.Low,
+                    p.Close,
+                    p.Volume
+                })
+                .ToListAsync(ct);
+
+            // Jetzt clientseitig formatieren + positionale Argumente (keine named args!)
+            var rows = rowsRaw.Select(p => new OhlcRowDto(
+                Iso(p.TradingDate),   // date "YYYY-MM-DD"
+                p.Open,
+                p.High,
+                p.Low,
+                p.Close,
+                p.Volume
+            )).ToList();
+
+            return Ok(rows);            
+        }
     }
 }
+
