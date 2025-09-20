@@ -416,7 +416,13 @@ public class AdminController : ControllerBase
         [FromServices] IConfiguration cfg,
         [FromServices] ISeedService seeder,
         CancellationToken ct = default)
-    {
+    {        
+        if (year < 1900 || year > DateTime.UtcNow.Year)
+            return BadRequest(new { title = "Invalid year", detail = $"Year '{year}' is out of range." });
+
+        if (string.IsNullOrWhiteSpace(symbol))
+            return BadRequest(new { title = "Missing symbol" });
+
         if (!cfg.GetValue<bool>("DemoMode")) return NotFound();
         if (string.IsNullOrWhiteSpace(symbol)) return BadRequest(new { error = "Missing ?symbol=..." });
 
