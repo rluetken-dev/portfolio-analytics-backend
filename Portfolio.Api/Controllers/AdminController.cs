@@ -6,6 +6,10 @@ using Microsoft.EntityFrameworkCore;
 using Portfolio.Api.Models;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Configuration;
+using System.Globalization;
+using System.Text.Json;
+using Portfolio.Api.Seed;      // ISeedFileService
+using Portfolio.Api.Seed.Dto;  // CompanySeedFile etc.
 
 namespace Portfolio.Api.Controllers;
 
@@ -19,12 +23,16 @@ public class AdminController : ControllerBase
 {
     private readonly AppDbContext _db;
     private readonly MaintenanceService _maintenance;
+    private readonly ISeedFileService _files;
+    private readonly ISeedService _seed;
 
     /// <summary>Inject EF Core context and housekeeping service.</summary>
-    public AdminController(AppDbContext db, MaintenanceService maintenance)
+    public AdminController(AppDbContext db, MaintenanceService maintenance, ISeedFileService files, ISeedService seed)
     {
         _db = db;
         _maintenance = maintenance;
+        _files = files;
+        _seed = seed;
     }
 
     /// <summary>
@@ -385,6 +393,231 @@ public class AdminController : ControllerBase
 
 
 
+    [HttpPost("seed/company-file/{symbol}")]
+    public async Task<IActionResult> SeedCompanyFileDryRun([FromRoute] string symbol, CancellationToken ct)
+    {
+        // English: load + validate file (no DB writes)
+        var res = await _files.LoadCompanyAsync(symbol);
+        if (!res.Success || res.Data is null)
+            return BadRequest(new { title = "Seed validation failed", detail = res.Error });
+
+        var m = res.Data;
+
+        // English: optional fundamentals summary
+        var fundamentalsSummary = (m.Fundamentals is null || m.Fundamentals.Annual.Count == 0)
+            ? null
+            : new
+            {
+                count = m.Fundamentals.Annual.Count,
+                firstYear = m.Fundamentals.Annual.Min(a => a.Year),
+                lastYear = m.Fundamentals.Annual.Max(a => a.Year),
+                currency = m.Fundamentals.Currency
+            };
+
+        // English: brief summary for caller
+        var summary = new
+        {
+            symbol = m.Symbol,
+            name = m.Profile.Name,
+            sector = m.Profile.Sector,
+            quotes = new
+            {
+                currency = m.Quotes.Currency,
+                count = m.Quotes.Rows.Count,
+                firstDate = m.Quotes.Rows.Min(r => r.Date),
+                lastDate = m.Quotes.Rows.Max(r => r.Date)
+            },
+            fundamentals = fundamentalsSummary
+        };
+
+        return Ok(new { title = "Seed file OK (dry-run)", summary });
+    }
+
+
+
+    [HttpPost("seed/company-file/{symbol}/apply")]
+    public async Task<IActionResult> SeedCompanyFileApply([FromRoute] string symbol, CancellationToken ct)
+    {
+        // English: 1) load + validate JSON first
+        var res = await _files.LoadCompanyAsync(symbol);
+        if (!res.Success || res.Data is null)
+            return BadRequest(new { title = "Seed validation failed", detail = res.Error });
+
+        var m = res.Data;
+
+        // English: 2) upsert ticker profile (name + sector)
+        var (created, updated) = await _seed.SeedTickerProfileAsync(
+            m.Symbol, m.Profile.Name, m.Profile.Sector, ct);
+
+        // English: 3) upsert full OHLCV for each trading day
+        int priceInsertedOrUpdated = 0;
+        foreach (var r in m.Quotes.Rows)
+        {
+            if (!DateOnly.TryParseExact(
+                    r.Date, "yyyy-MM-dd",
+                    System.Globalization.CultureInfo.InvariantCulture,
+                    System.Globalization.DateTimeStyles.None,
+                    out var d))
+            {
+                return BadRequest(new { title = "Invalid date in quotes.rows", detail = $"Bad date: {r.Date}" });
+            }
+
+            await _seed.SeedFullPriceAsync(
+                m.Symbol, d,
+                r.Open, r.High, r.Low, r.Close, r.Volume, // English: write full OHLCV
+                ct
+            );
+            priceInsertedOrUpdated++;
+        }
+
+        // English: 4) optionally apply fundamentals (annual rows)
+        int yearsTouched = 0;
+        int annualPairs = 0;        // years where (NetIncome + Equity) were both set via SeedAnnualAsync
+        int revenueCount = 0;
+        int assetsCount = 0;
+        int liabilitiesCount = 0;
+        int sharesCount = 0;
+        int cfoCount = 0;           // Operating Cash Flow rows written
+        int capexCount = 0;         // Capital Expenditures rows written
+
+        if (m.Fundamentals?.Annual is not null && m.Fundamentals.Annual.Count > 0)
+        {
+            foreach (var a in m.Fundamentals.Annual)
+            {
+                bool touchedThisYear = false;
+
+                // English: set revenue if provided
+                if (a.Revenue.HasValue)
+                {
+                    await _seed.SeedRevenueAsync(m.Symbol, a.Year, a.Revenue.Value, ct);
+                    revenueCount++;
+                    touchedThisYear = true;
+                }
+
+                // English: set assets if provided
+                if (a.TotalAssets.HasValue)
+                {
+                    await _seed.SeedAssetsAsync(m.Symbol, a.Year, a.TotalAssets.Value, ct);
+                    assetsCount++;
+                    touchedThisYear = true;
+                }
+
+                // English: set liabilities if provided
+                if (a.TotalLiabilities.HasValue)
+                {
+                    await _seed.SeedLiabilitiesAsync(m.Symbol, a.Year, a.TotalLiabilities.Value, ct);
+                    liabilitiesCount++;
+                    touchedThisYear = true;
+                }
+
+                // English: set shares if provided
+                if (a.Shares.HasValue)
+                {
+                    await _seed.SeedSharesAsync(m.Symbol, a.Year, a.Shares.Value, ct);
+                    sharesCount++;
+                    touchedThisYear = true;
+                }
+
+                // English: set operating cash flow if provided (negative allowed)
+                if (a.OperatingCashFlow.HasValue)
+                {
+                    await _seed.SeedOperatingCashFlowAsync(m.Symbol, a.Year, a.OperatingCashFlow.Value, ct);
+                    cfoCount++;
+                    touchedThisYear = true;
+                }
+
+                // English: set capital expenditures if provided (negative allowed)
+                if (a.CapitalExpenditures.HasValue)
+                {
+                    await _seed.SeedCapitalExpendituresAsync(m.Symbol, a.Year, a.CapitalExpenditures.Value, ct);
+                    capexCount++;
+                    touchedThisYear = true;
+                }
+
+                // English: only set netIncome+equity together if both are present
+                if (a.NetIncome.HasValue && a.Equity.HasValue)
+                {
+                    await _seed.SeedAnnualAsync(m.Symbol, a.Year, a.NetIncome.Value, a.Equity.Value, ct);
+                    annualPairs++;
+                    touchedThisYear = true;
+                }
+
+                if (touchedThisYear) yearsTouched++;
+            }
+        }
+
+        // English: 5) summary response
+        return Ok(new
+        {
+            title = "Seed applied",
+            ticker = new { created, updated },
+            prices = new { count = priceInsertedOrUpdated, currency = m.Quotes.Currency },
+            range = new { firstDate = m.Quotes.Rows.Min(x => x.Date), lastDate = m.Quotes.Rows.Max(x => x.Date) },
+            fundamentals = (m.Fundamentals?.Annual is null || m.Fundamentals.Annual.Count == 0)
+                ? null
+                : new
+                {
+                    yearsTouched,
+                    annualPairs,   // number of years where (netIncome+equity) were set
+                    revenue = revenueCount,
+                    assets = assetsCount,
+                    liabilities = liabilitiesCount,
+                    shares = sharesCount,
+                    cfo = cfoCount,
+                    capex = capexCount,
+                    currency = m.Fundamentals.Currency
+                }
+        });
+    }
+
+
+
+    [HttpGet("seed/inspect/{symbol}")]
+    public async Task<IActionResult> InspectSeed([FromRoute] string symbol, CancellationToken ct)
+    {
+        var s = (symbol ?? string.Empty).Trim().ToUpperInvariant();
+        if (string.IsNullOrWhiteSpace(s))
+            return BadRequest(new { title = "Invalid symbol" });
+
+        var ticker = await _db.Tickers
+            .Where(t => t.Symbol == s)
+            .Select(t => new { t.Id, t.Symbol, t.Name, t.Sector })
+            .FirstOrDefaultAsync(ct);
+
+        if (ticker is null)
+            return NotFound(new { title = "Ticker not found", symbol = s });
+
+        var priceInfo = await _db.Prices
+            .Where(p => p.TickerId == ticker.Id)
+            .GroupBy(_ => 1)
+            .Select(g => new
+            {
+                count = g.Count(),
+                firstDate = g.Min(x => x.TradingDate), // DateOnly (non-nullable)
+                lastDate = g.Max(x => x.TradingDate)  // DateOnly (non-nullable)
+            })
+            .FirstOrDefaultAsync(ct);
+
+        // English: build a single anonymous object; null-safe per field
+        var prices = new
+        {
+            count = priceInfo?.count ?? 0,
+            firstDate = priceInfo?.firstDate, // becomes DateOnly?
+            lastDate = priceInfo?.lastDate   // becomes DateOnly?
+        };
+
+        return Ok(new { title = "Inspect OK", ticker, prices });
+    }
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -416,7 +649,7 @@ public class AdminController : ControllerBase
         [FromServices] IConfiguration cfg,
         [FromServices] ISeedService seeder,
         CancellationToken ct = default)
-    {        
+    {
         if (year < 1900 || year > DateTime.UtcNow.Year)
             return BadRequest(new { title = "Invalid year", detail = $"Year '{year}' is out of range." });
 

@@ -5,6 +5,7 @@ using Portfolio.Api.Data;
 using Microsoft.EntityFrameworkCore;
 using System.Reflection;
 using Swashbuckle.AspNetCore.Annotations;
+using Portfolio.Api.Seed;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -68,7 +69,11 @@ builder.Services.AddHttpClient("self", c =>
     c.DefaultRequestHeaders.Accept.ParseAdd("application/json");
 });
 
+// English: register loader (stateless → singleton ok)
+builder.Services.AddSingleton<ISeedFileService, SeedFileService>();
 
+// English: ensure your DB seeder is available (if not already)
+builder.Services.AddScoped<Portfolio.Api.Services.ISeedService, Portfolio.Api.Services.SeedService>();
 var app = builder.Build();
 
 // Ensure DB ready (migrate or create)

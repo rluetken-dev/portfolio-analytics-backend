@@ -13,5 +13,30 @@ namespace Portfolio.Api.Services
         Task SeedRevenueAsync(string symbol, int year, long revenue, CancellationToken ct);
         Task SeedSharesAsync(string symbol, int year, long shares, CancellationToken ct);
         Task SeedPriceAsync(string symbol, DateOnly date, decimal close, CancellationToken ct);
+
+        /// <summary>
+        /// Upsert ticker profile (name + sector). Returns (created, updated).
+        /// </summary>
+        Task<(bool created, bool updated)> SeedTickerProfileAsync(
+            string symbol, string? name, string? sector, CancellationToken ct);
+
+        // English: upsert annual Operating Cash Flow
+        System.Threading.Tasks.Task SeedOperatingCashFlowAsync(
+            string symbol, int year, long operatingCashFlow, System.Threading.CancellationToken ct);
+
+        // English: upsert annual Capital Expenditures
+        System.Threading.Tasks.Task SeedCapitalExpendituresAsync(
+            string symbol, int year, long capitalExpenditures, System.Threading.CancellationToken ct);
+
+        // English: upsert full daily OHLCV
+        System.Threading.Tasks.Task SeedFullPriceAsync(
+            string symbol,
+            System.DateOnly date,
+            decimal open,
+            decimal high,
+            decimal low,
+            decimal close,
+            long volume,
+            System.Threading.CancellationToken ct);
     }
 }

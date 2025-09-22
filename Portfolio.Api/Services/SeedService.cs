@@ -134,7 +134,10 @@ namespace Portfolio.Api.Services
             {
                 inc = new IncomeStatementEntity
                 {
-                    Symbol = t.Symbol, Date = date, Frequency = freq, ReportedCurrency = "USD"
+                    Symbol = t.Symbol,
+                    Date = date,
+                    Frequency = freq,
+                    ReportedCurrency = "USD"
                 };
                 _db.IncomeStatements.Add(inc);
             }
@@ -154,7 +157,10 @@ namespace Portfolio.Api.Services
             {
                 inc = new IncomeStatementEntity
                 {
-                    Symbol = t.Symbol, Date = date, Frequency = freq, ReportedCurrency = "USD"
+                    Symbol = t.Symbol,
+                    Date = date,
+                    Frequency = freq,
+                    ReportedCurrency = "USD"
                 };
                 _db.IncomeStatements.Add(inc);
             }
@@ -189,5 +195,139 @@ namespace Portfolio.Api.Services
             }
             await _db.SaveChangesAsync(ct);
         }
+
+        public async Task<(bool created, bool updated)> SeedTickerProfileAsync(string symbol, string? name, string? sector, CancellationToken ct)
+        {
+            // English: upsert ticker and update name/sector if changed
+            var s = symbol.ToUpperInvariant();
+            var t = await _db.Tickers.FirstOrDefaultAsync(x => x.Symbol == s, ct);
+            if (t is null)
+            {
+                t = new Ticker
+                {
+                    Symbol = s,
+                    Name = string.IsNullOrWhiteSpace(name) ? s : name.Trim(),
+                    // English: sector optional; store if provided
+                    Sector = string.IsNullOrWhiteSpace(sector) ? null : sector.Trim()
+                };
+                _db.Tickers.Add(t);
+                await _db.SaveChangesAsync(ct);
+                return (created: true, updated: false);
+            }
+
+            bool updated = false;
+            if (!string.IsNullOrWhiteSpace(name) && t.Name != name)
+            {
+                t.Name = name.Trim();
+                updated = true;
+            }
+            if (!string.IsNullOrWhiteSpace(sector) && t.Sector != sector)
+            {
+                t.Sector = sector.Trim();
+                updated = true;
+            }
+            if (updated) await _db.SaveChangesAsync(ct);
+            return (created: false, updated);
+        }
+
+        // English: upsert Operating Cash Flow (annual)
+        public async System.Threading.Tasks.Task SeedOperatingCashFlowAsync(
+            string symbol, int year, long operatingCashFlow, System.Threading.CancellationToken ct)
+        {
+            var date = new DateOnly(year, 12, 31);
+            const string freq = "annual";
+
+            var t = await EnsureTickerAsync(symbol, name: symbol, ct);
+
+            // English: find or create cash-flow row for (symbol, year, annual)
+            var cf = await _db.CashFlows
+                .FirstOrDefaultAsync(x => x.Symbol == t.Symbol && x.Date == date && x.Frequency == freq, ct);
+
+            if (cf is null)
+            {
+                cf = new CashFlowEntity
+                {
+                    Symbol = t.Symbol,
+                    Date = date,
+                    Frequency = freq,
+                    ReportedCurrency = "USD"
+                };
+                _db.CashFlows.Add(cf);
+            }
+
+            cf.OperatingCashFlow = operatingCashFlow; // English: set CFO
+            await _db.SaveChangesAsync(ct);
+        }
+
+        // English: upsert Capital Expenditures (annual)
+        public async System.Threading.Tasks.Task SeedCapitalExpendituresAsync(
+            string symbol, int year, long capitalExpenditures, System.Threading.CancellationToken ct)
+        {
+            var date = new DateOnly(year, 12, 31);
+            const string freq = "annual";
+
+            var t = await EnsureTickerAsync(symbol, name: symbol, ct);
+
+            var cf = await _db.CashFlows
+                .FirstOrDefaultAsync(x => x.Symbol == t.Symbol && x.Date == date && x.Frequency == freq, ct);
+
+            if (cf is null)
+            {
+                cf = new CashFlowEntity
+                {
+                    Symbol = t.Symbol,
+                    Date = date,
+                    Frequency = freq,
+                    ReportedCurrency = "USD"
+                };
+                _db.CashFlows.Add(cf);
+            }
+
+            // NOTE: If your entity uses a different property name (e.g., CapitalExpenditures),
+            // rename the assignment below accordingly.
+            cf.CapitalExpenditure = capitalExpenditures; // English: set CapEx
+            await _db.SaveChangesAsync(ct);
+        }
+
+        // English: upsert full daily OHLCV (updates existing row if present)
+        public async System.Threading.Tasks.Task SeedFullPriceAsync(
+            string symbol,
+            DateOnly date,
+            decimal open,
+            decimal high,
+            decimal low,
+            decimal close,
+            long volume,
+            System.Threading.CancellationToken ct)
+        {
+            var t = await EnsureTickerAsync(symbol, name: symbol, ct);
+
+            // English: find existing price row for (ticker, date)
+            var p = await _db.Prices.FirstOrDefaultAsync(
+                x => x.TickerId == t.Id && x.TradingDate == date, ct);
+
+            if (p is null)
+            {
+                p = new Price
+                {
+                    TickerId = t.Id,
+                    TradingDate = date,
+                    Source = "seed"
+                };
+                _db.Prices.Add(p);
+            }
+
+            // English: set OHLCV; keep AdjustedClose same as close for seed
+            p.Open = open;
+            p.High = high;
+            p.Low = low;
+            p.Close = close;
+            p.AdjustedClose = close;
+            p.Volume = (long)volume; // adjust cast if your column is int
+            p.Source = "seed";
+
+            await _db.SaveChangesAsync(ct);
+        }
+
     }
 }
