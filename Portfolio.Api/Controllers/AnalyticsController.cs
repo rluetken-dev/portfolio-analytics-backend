@@ -11,6 +11,10 @@ namespace Portfolio.Api.Controllers
     [Route("api/analytics")]
     public class AnalyticsController : ControllerBase
     {
+        private readonly AppDbContext _db;
+        public AnalyticsController(AppDbContext db) => _db = db;
+
+
         /// <summary>
         /// Returns latest annual ROE (Return on Equity).
         /// Uses average equity if a prior annual equity exists; otherwise falls back to end-of-period equity.
@@ -1081,42 +1085,46 @@ namespace Portfolio.Api.Controllers
         [ProducesResponseType(typeof(object), StatusCodes.Status400BadRequest)]
         [ProducesResponseType(typeof(object), StatusCodes.Status404NotFound)]
         [HttpGet("fcf")]
-        public async Task<IActionResult> GetFcf(
-                    [FromQuery] string symbol,
-                    [FromServices] AppDbContext db,
-                    CancellationToken ct = default)
+        [Produces("application/json")]
+        public async Task<IActionResult> GetFcf([FromQuery] string symbol, CancellationToken ct = default)
         {
-            if (string.IsNullOrWhiteSpace(symbol))
-                return BadRequest(new { error = "Missing ?symbol=..." });
+            // English: normalize input
+            var sym = (symbol ?? string.Empty).Trim().ToUpperInvariant();
+            if (string.IsNullOrWhiteSpace(sym))
+                return BadRequest(new { error = "symbol required" });
 
-            var ticker = symbol.Trim().ToUpperInvariant();
+            const string freq = "annual";
 
-            // English: pull latest annual cash flow row
-            var cf = await db.CashFlows.AsNoTracking()
-                .Where(c => c.Symbol == ticker && c.Frequency == "annual")
-                .OrderByDescending(c => c.Date)
-                .Select(c => new
-                {
-                    c.Date,
-                    c.OperatingCashFlow,
-                    c.CapitalExpenditure
-                })
+            // English: pick latest year where CFO/CapEx exist
+            var year = await _db.CashFlows
+                .Where(x => x.Symbol == sym && x.Frequency == freq)
+                .MaxAsync(x => (int?)x.Date.Year, ct);
+
+            if (year is null)
+                return Ok(new { ticker = sym, date = (string?)null, operatingCashFlow = (long?)null, capitalExpenditure = (long?)null, fcf = (double?)null });
+
+            // English: load CFO/CapEx for that year
+            var cf = await _db.CashFlows
+                .Where(x => x.Symbol == sym && x.Frequency == freq && x.Date.Year == year.Value)
+                .Select(x => new { x.Date, x.OperatingCashFlow, x.CapitalExpenditure })
                 .FirstOrDefaultAsync(ct);
 
             if (cf is null)
-                return NotFound(new { error = $"No annual cash flow row for {ticker}." });
+                return Ok(new { ticker = sym, date = (string?)null, operatingCashFlow = (long?)null, capitalExpenditure = (long?)null, fcf = (double?)null });
 
-            long? fcf = null;
-            if (cf.OperatingCashFlow.HasValue && cf.CapitalExpenditure.HasValue)
+            // English: FCF = CFO - |CapEx| (CapEx as positive outflow magnitude)
+            double? fcf = null;
+            if (cf.OperatingCashFlow.HasValue || cf.CapitalExpenditure.HasValue)
             {
-                // Note: CapEx is typically negative in statements; subtracting a negative adds.
-                fcf = cf.OperatingCashFlow.Value - cf.CapitalExpenditure.Value;
+                var cfo = (double)(cf.OperatingCashFlow ?? 0);
+                var capexAbs = Math.Abs((double)(cf.CapitalExpenditure ?? 0));
+                fcf = Portfolio.Api.Services.Analytics.FinanceMath.Fcf(cfo, capexAbs);
             }
 
             return Ok(new
             {
-                ticker,
-                date = cf.Date,
+                ticker = sym,
+                date = cf.Date.ToString("yyyy-MM-dd"),
                 operatingCashFlow = cf.OperatingCashFlow,
                 capitalExpenditure = cf.CapitalExpenditure,
                 fcf
@@ -1170,83 +1178,100 @@ namespace Portfolio.Api.Controllers
         [ProducesResponseType(typeof(object), StatusCodes.Status400BadRequest)]
         [ProducesResponseType(typeof(object), StatusCodes.Status404NotFound)]
         [HttpGet("fcf-yield")]
-        public async Task<IActionResult> GetFcfYield(
-                    [FromQuery] string symbol,
-                    [FromServices] AppDbContext db,
-                    CancellationToken ct = default)
+        [Produces("application/json")]
+        public async Task<IActionResult> GetFcfYield([FromQuery] string symbol, CancellationToken ct = default)
         {
-            if (string.IsNullOrWhiteSpace(symbol))
-                return BadRequest(new { error = "Missing ?symbol=..." });
-            var ticker = symbol.Trim().ToUpperInvariant();
+            var sym = (symbol ?? string.Empty).Trim().ToUpperInvariant();
+            if (string.IsNullOrWhiteSpace(sym))
+                return BadRequest(new { error = "symbol required" });
 
-            // 1) Cash flow (annual)
-            var cf = await db.CashFlows.AsNoTracking()
-                .Where(c => c.Symbol == ticker && c.Frequency == "annual")
-                .OrderByDescending(c => c.Date)
-                .Select(c => new { c.Date, c.OperatingCashFlow, c.CapitalExpenditure })
+            const string freq = "annual";
+
+            // Resolve ticker
+            var ticker = await _db.Tickers
+                .Where(t => t.Symbol == sym)
+                .Select(t => new { t.Id, t.Symbol })
                 .FirstOrDefaultAsync(ct);
-            if (cf is null || !cf.OperatingCashFlow.HasValue || !cf.CapitalExpenditure.HasValue)
-                return NotFound(new { error = $"No annual cash flow row with OCF+CapEx for {ticker}." });
+            if (ticker is null)
+                return NotFound(new { title = "Ticker not found", symbol = sym });
 
-            var fcf = cf.OperatingCashFlow.Value - cf.CapitalExpenditure.Value; // CapEx is typically negative
+            // Choose most recent year with cash flow (CFO/CapEx)
+            var year = await _db.CashFlows
+                .Where(x => x.Symbol == sym && x.Frequency == freq)
+                .MaxAsync(x => (int?)x.Date.Year, ct);
+            if (year is null)
+                return Ok(new { ticker = sym, fcfYield = (double?)null, note = "No cash flow data." });
 
-            // 2) Shares: latest annual income <= CF date; fallback to latest annual
-            var inc = await db.IncomeStatements.AsNoTracking()
-                .Where(i => i.Symbol == ticker && i.Frequency == "annual" && i.WeightedAverageShsOut.HasValue)
-                .OrderByDescending(i => i.Date)
-                .ToListAsync(ct);
-
-            var incOnOrBefore = inc.FirstOrDefault(i => i.Date <= cf.Date);
-            var shares = (incOnOrBefore ?? inc.FirstOrDefault())?.WeightedAverageShsOut;
-
-            if (!shares.HasValue || shares.Value <= 0)
-                return NotFound(new { error = $"No valid shares (WeightedAverageShsOut) for {ticker} around {cf.Date}." });
-
-            // 3) TickerId for prices
-            var tid = await db.Tickers.AsNoTracking()
-                .Where(t => t.Symbol == ticker)
-                .Select(t => t.Id)
+            // Load CFO/CapEx for that year
+            var cf = await _db.CashFlows
+                .Where(x => x.Symbol == sym && x.Frequency == freq && x.Date.Year == year.Value)
+                .Select(x => new { x.Date, x.OperatingCashFlow, x.CapitalExpenditure })
                 .FirstOrDefaultAsync(ct);
-            if (tid == 0)
-                return NotFound(new { error = $"Ticker {ticker} not found in Tickers." });
 
-            // 4) Price: first on/after CF date; fallback to latest overall
-            var pxAfter = await db.Prices.AsNoTracking()
-                .Where(p => p.TickerId == tid && p.TradingDate >= cf.Date)
+            if (cf is null)
+                return Ok(new { ticker = sym, fcfYield = (double?)null, note = "No cash flow row for selected year." });
+
+            // Price: first on/after CF date; fallback to latest
+            var pxAfter = await _db.Prices
+                .Where(p => p.TickerId == ticker.Id && p.TradingDate >= cf.Date)
                 .OrderBy(p => p.TradingDate)
                 .Select(p => new { p.TradingDate, p.Close })
                 .FirstOrDefaultAsync(ct);
 
-            var pxLatest = pxAfter ?? await db.Prices.AsNoTracking()
-                .Where(p => p.TickerId == tid)
+            var priceRow = pxAfter ?? await _db.Prices
+                .Where(p => p.TickerId == ticker.Id)
                 .OrderByDescending(p => p.TradingDate)
                 .Select(p => new { p.TradingDate, p.Close })
                 .FirstOrDefaultAsync(ct);
 
-            if (pxLatest is null)
-                return NotFound(new { error = $"No price data available for {ticker}." });
+            if (priceRow is null)
+                return Ok(new { ticker = sym, fcfYield = (double?)null, note = "No price data." });
 
-            double marketCap = (double)pxLatest.Close * (double)shares.Value;
+            // Load shares for same year (from income statements)
+            var inc = await _db.IncomeStatements
+                .Where(x => x.Symbol == sym && x.Frequency == freq && x.Date.Year == year.Value)
+                .Select(x => new { x.WeightedAverageShsOut })
+                .FirstOrDefaultAsync(ct);
 
-            // Use pure helper (null when invalid, e.g., marketCap == 0)
-            double? fcfYield = FinanceMath.FcfYield((double)fcf, marketCap);
+            // Compute FCF = CFO - |CapEx|
+            double? fcf = null;
+            if (cf is not null && (cf.OperatingCashFlow.HasValue || cf.CapitalExpenditure.HasValue))
+            {
+                var cfo = (double)(cf.OperatingCashFlow ?? 0);
+                var capexAbs = Math.Abs((double)(cf.CapitalExpenditure ?? 0)); // treat as positive outflow
+                fcf = Portfolio.Api.Services.Analytics.FinanceMath.Fcf(cfo, capexAbs);
+            }
+
+            // Compute MarketCap = price * shares
+            double? marketCap = null;
+            if (inc?.WeightedAverageShsOut is long sh && sh > 0)
+            {
+                marketCap = Portfolio.Api.Services.Analytics.FinanceMath.MarketCap(
+                    (double)priceRow.Close, (double)sh);
+
+            }
+
+            // Compute FCF Yield = FCF / MarketCap
+            double? yield = (fcf.HasValue && marketCap.HasValue)
+                ? Portfolio.Api.Services.Analytics.FinanceMath.FcfYield(fcf.Value, marketCap.Value)
+                : null;
 
             return Ok(new
             {
-                ticker,
-                cfDate = cf.Date,
-                operatingCashFlow = cf.OperatingCashFlow,
-                capitalExpenditure = cf.CapitalExpenditure,
+                ticker = sym,
+                datePrice = priceRow.TradingDate.ToString("yyyy-MM-dd"),
+                year,
+                close = priceRow.Close,
+                shares = inc?.WeightedAverageShsOut,
+                operatingCashFlow = cf?.OperatingCashFlow,
+                capitalExpenditure = cf?.CapitalExpenditure,
                 fcf,
-                shares = shares,
-                priceDateUsed = pxLatest.TradingDate,
-                priceUsed = pxLatest.Close,
                 marketCap,
-                fcfYield,
-                fcfYieldPct = fcfYield.HasValue ? fcfYield.Value * 100.0 : (double?)null,
-                fcfYieldRounded = fcfYield.HasValue ? Math.Round(fcfYield.Value, 4) : (double?)null
+                fcfYield = yield,
+                fcfYieldPct = yield.HasValue ? yield.Value * 100.0 : (double?)null
             });
         }
+
 
         /// <summary>
         /// Returns latest annual Free Cash Flow (FCF) Margin = FCF / Revenue.
@@ -1307,7 +1332,9 @@ namespace Portfolio.Api.Controllers
             if (cf is null || !cf.OperatingCashFlow.HasValue || !cf.CapitalExpenditure.HasValue)
                 return NotFound(new { error = $"No annual cash flow row with OCF+CapEx for {ticker}." });
 
-            long fcf = cf.OperatingCashFlow.Value - cf.CapitalExpenditure.Value; // CapEx often negative
+            var capexAbs = Math.Abs(cf.CapitalExpenditure.Value); // treat CapEx as positive outflow
+            long fcf = cf.OperatingCashFlow.Value - capexAbs;
+
 
             // 2) Revenue from the latest annual income on/before CF date (fallback: latest annual)
             var incRows = await db.IncomeStatements.AsNoTracking()
@@ -1403,15 +1430,14 @@ namespace Portfolio.Api.Controllers
 
             // Normalize inputs (treat CapEx as positive outflow)
             double ocf = (double)cf.OperatingCashFlow!.Value;
-            double capexAbs = Math.Abs((double)cf.CapitalExpenditure!.Value);
+            double capexAbs = Math.Abs((double)cf.CapitalExpenditure!.Value); // CapEx as positive outflow
             double deltaWc = cf.ChangeInWorkingCapital.HasValue ? (double)cf.ChangeInWorkingCapital.Value : 0.0;
 
-            // Compute via helper: OE = OCF - CapEx + ΔWC  (matches your current semantics)
-            double? ownerEarnings = FinanceMath.OwnerEarningsFromCashFlow(ocf, capexAbs, deltaWc);
+            // English: assume +ΔWC = cash outflow → subtract it
+            double? ownerEarnings = FinanceMath.OwnerEarningsFromCashFlow(ocf, capexAbs, -deltaWc);
 
-            // For reference: FCF = OCF - CapEx (same semantics as before)
+            // Reference: FCF = OCF - CapEx (already using capexAbs)
             double fcf = ocf - capexAbs;
-
 
             return Ok(new
             {
@@ -1492,7 +1518,9 @@ namespace Portfolio.Api.Controllers
             double capexAbs = Math.Abs((double)cf.CapitalExpenditure!.Value); // treat CapEx as positive outflow
             double deltaWc = cf.ChangeInWorkingCapital ?? 0.0;
 
-            double? ownerEarningsOpt = FinanceMath.OwnerEarningsFromCashFlow(ocf, capexAbs, deltaWc);
+            // English: +ΔWC consumes cash → subtract it
+            double? ownerEarningsOpt = FinanceMath.OwnerEarningsFromCashFlow(ocf, capexAbs, -deltaWc);
+
             if (ownerEarningsOpt is null)
                 return BadRequest(new { error = "Cannot compute Owner Earnings." });
             double ownerEarnings = ownerEarningsOpt.Value;
@@ -1615,7 +1643,9 @@ namespace Portfolio.Api.Controllers
             if (cf is null || !cf.OperatingCashFlow.HasValue || !cf.CapitalExpenditure.HasValue)
                 return NotFound(new { error = $"No annual CF row with OCF+CapEx for {ticker}." });
 
-            long owner = (cf.OperatingCashFlow.Value - cf.CapitalExpenditure.Value) + (cf.ChangeInWorkingCapital ?? 0);
+            long capexAbs = Math.Abs(cf.CapitalExpenditure.Value); // CapEx as positive outflow
+            long deltaWc = cf.ChangeInWorkingCapital ?? 0;         // +ΔWC = outflow → subtract
+            long owner = cf.OperatingCashFlow.Value - capexAbs - deltaWc;
 
             // Shares: latest annual income on/before OE date; fallback to latest annual
             var incRows = await db.IncomeStatements.AsNoTracking()
@@ -1734,8 +1764,9 @@ namespace Portfolio.Api.Controllers
             double capexAbs = Math.Abs((double)cf.CapitalExpenditure!.Value);
             double deltaWc = cf.ChangeInWorkingCapital ?? 0.0;
 
-            // Owner Earnings via helper (OCF - CapEx + ΔWC)
-            double? owner = FinanceMath.OwnerEarningsFromCashFlow(ocf, capexAbs, deltaWc);
+            // English: assume +ΔWC = cash outflow → subtract it
+            double? owner = FinanceMath.OwnerEarningsFromCashFlow(ocf, capexAbs, -deltaWc);
+
             if (owner is null) return BadRequest(new { error = "Cannot compute Owner Earnings." });
 
             // Shares already validated; lift to non-null local
