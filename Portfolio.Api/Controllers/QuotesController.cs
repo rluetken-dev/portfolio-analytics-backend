@@ -304,9 +304,11 @@ namespace Portfolio.Api.Controllers
         /// Returns daily close time series for a symbol within an optional date range.
         /// </summary>
         /// <remarks>
-        /// Example:
-        /// <br/>GET <c>/api/quotes/timeseries?symbol=AAPL&amp;from=2024-01-01&amp;to=2025-09-09</c>
-        /// <br/>If no dates are provided, defaults to the last 365 days up to today.
+        /// <para>Examples:</para>
+        /// <para>GET <c>/api/quotes/timeseries?symbol=AAPL&amp;from=2024-01-01&amp;to=2025-09-09</c></para>
+        /// <para>If no dates are provided, the endpoint defaults to the last 365 days up to today.</para>
+        /// <para>If that window returns no rows and the client did not provide <c>from</c>/<c>to</c>,
+        /// we fallback to the last 365 days relative to the DB max date for that symbol.</para>
         /// </remarks>
         [HttpGet("timeseries")]
         [Produces("application/json")]
@@ -343,22 +345,43 @@ namespace Portfolio.Api.Controllers
             if (fromDate > toDate)
                 return BadRequest(new { error = "'from' must be <= 'to'" });
 
-            // Optional hard guard to avoid accidental huge ranges (tune as you like)
+            // Optional guard to avoid accidental huge ranges
             var maxSpanDays = 3650; // ~10 years
             if ((toDate.DayNumber - fromDate.DayNumber) > maxSpanDays)
                 return BadRequest(new { error = $"date range too large (> {maxSpanDays} days)" });
 
-            // ----- Query DB and project to lightweight DTO -----
-            // Fetch all price records for the given ticker symbol within the date range.
-            // Note: Symbol now comes from the Ticker entity, and AsOfDate is replaced by TradingDate.
+            // English: track if caller explicitly set a range
+            bool explicitRange = !string.IsNullOrWhiteSpace(from) || !string.IsNullOrWhiteSpace(to);
+
+            // ----- Primary query: requested (or default) window relative to 'today' -----
             var data = await _db.Prices
                 .Where(p => p.Ticker.Symbol == sym && p.TradingDate >= fromDate && p.TradingDate <= toDate)
                 .OrderBy(p => p.TradingDate)
-                .Select(p => new TimeseriesPoint { Date = p.TradingDate, Close = p.Close })
+                .Select(p => new TimeseriesPoint { Date = p.TradingDate, Close = p.Close }) // English: lightweight projection
                 .ToListAsync(ct);
+
+            // English: Fallback only if client did not set from/to AND result is empty
+            if (!explicitRange && data.Count == 0)
+            {
+                // English: find DB max date for this symbol
+                var maxDate = await _db.Prices
+                    .Where(p => p.Ticker.Symbol == sym)
+                    .MaxAsync(p => (DateOnly?)p.TradingDate, ct);
+
+                if (maxDate is null)
+                    return Ok(Array.Empty<TimeseriesPoint>()); // English: still no data in DB
+
+                var fbFrom = maxDate.Value.AddDays(-365); // same default span
+                data = await _db.Prices
+                    .Where(p => p.Ticker.Symbol == sym && p.TradingDate >= fbFrom && p.TradingDate <= maxDate.Value)
+                    .OrderBy(p => p.TradingDate)
+                    .Select(p => new TimeseriesPoint { Date = p.TradingDate, Close = p.Close })
+                    .ToListAsync(ct);
+            }
 
             return Ok(data);
         }
+
 
         // ---- helpers ----
 
@@ -405,24 +428,29 @@ namespace Portfolio.Api.Controllers
         /// Daily OHLCV time series in ascending order.
         /// </summary>
         /// <remarks>
-        /// Examples:
-        /// GET /api/quotes/ohlc?symbol=AAPL
-        /// GET /api/quotes/ohlc?symbol=AAPL&amp;from=2025-03-01&amp;to=2025-09-15
+        /// <para>Examples:</para>
+        /// <para>GET <c>/api/quotes/ohlc?symbol=AAPL</c></para>
+        /// <para>GET <c>/api/quotes/ohlc?symbol=AAPL&amp;from=2025-03-01&amp;to=2025-09-15</c></para>
+        /// <para>Fallback: if <c>from</c>/<c>to</c> are omitted and the default window is empty,
+        /// the endpoint returns the last 180 days relative to the DB max date.</para>
         /// </remarks>
         [HttpGet("ohlc")]
         [Produces("application/json")]
         public async Task<IActionResult> Ohlc(
-            [FromQuery/*, Required*/] string symbol,
+            [FromQuery] string symbol,
             [FromQuery] DateTime? from = null,
             [FromQuery] DateTime? to = null,
             CancellationToken ct = default)
         {
-            // Normalize inputs
+            // English: normalize inputs
             var sym = (symbol ?? string.Empty).Trim().ToUpperInvariant();
             if (string.IsNullOrWhiteSpace(sym))
                 return BadRequest(new { error = "symbol required" });
 
-            // Default window: last 180 calendar days
+            // English: track if caller explicitly set a range
+            bool explicitRange = from.HasValue || to.HasValue;
+
+            // Default window: last 180 calendar days relative to 'today'
             var toDt = (to ?? DateTime.UtcNow.Date).Date;
             var fromDt = (from ?? toDt.AddDays(-180)).Date;
 
@@ -438,23 +466,32 @@ namespace Portfolio.Api.Controllers
             if (tickerId == 0)
                 return Ok(Array.Empty<OhlcRowDto>()); // no ticker → empty array
 
-            // Query OHLCV and return ascending by date
-            var rowsRaw = await _db.Prices
-                .AsNoTracking()
-                .Where(p => p.TickerId == tickerId && p.TradingDate >= fromD && p.TradingDate <= toD)
+            // Base query
+            var baseQ = _db.Prices.AsNoTracking().Where(p => p.TickerId == tickerId);
+
+            // Primary window (today-relative or explicit)
+            var rowsRaw = await baseQ
+                .Where(p => p.TradingDate >= fromD && p.TradingDate <= toD)
                 .OrderBy(p => p.TradingDate)
-                .Select(p => new
-                {
-                    p.TradingDate,
-                    p.Open,
-                    p.High,
-                    p.Low,
-                    p.Close,
-                    p.Volume
-                })
+                .Select(p => new { p.TradingDate, p.Open, p.High, p.Low, p.Close, p.Volume })
                 .ToListAsync(ct);
 
-            // Jetzt clientseitig formatieren + positionale Argumente (keine named args!)
+            // Fallback only when client did NOT provide from/to AND result is empty
+            if (!explicitRange && rowsRaw.Count == 0)
+            {
+                var maxDate = await baseQ.MaxAsync(p => (DateOnly?)p.TradingDate, ct);
+                if (maxDate is null)
+                    return Ok(Array.Empty<OhlcRowDto>());
+
+                var fbFrom = maxDate.Value.AddDays(-180);
+                rowsRaw = await baseQ
+                    .Where(p => p.TradingDate >= fbFrom && p.TradingDate <= maxDate.Value)
+                    .OrderBy(p => p.TradingDate)
+                    .Select(p => new { p.TradingDate, p.Open, p.High, p.Low, p.Close, p.Volume })
+                    .ToListAsync(ct);
+            }
+
+            // Map to DTO
             var rows = rowsRaw.Select(p => new OhlcRowDto(
                 Iso(p.TradingDate),   // date "YYYY-MM-DD"
                 p.Open,
@@ -464,7 +501,7 @@ namespace Portfolio.Api.Controllers
                 p.Volume
             )).ToList();
 
-            return Ok(rows);            
+            return Ok(rows);
         }
     }
 }

@@ -25,14 +25,12 @@ namespace Portfolio.Api.Services.Analytics
 
         /// <summary>
         /// Free Cash Flow Yield = FreeCashFlow / MarketCap.
+        /// Returns null if market cap &lt;= 0.
         /// </summary>
-        /// <param name="freeCashFlow">FCF for the last TTM or fiscal year.</param>
-        /// <param name="marketCap">Current market capitalization.</param>
-        /// <returns>FCF yield as decimal fraction (e.g., 0.05 for 5%), or null if invalid.</returns>
         public static double? FcfYield(double freeCashFlow, double marketCap)
         {
             if (double.IsNaN(freeCashFlow) || double.IsNaN(marketCap)) return null;
-            if (Math.Abs(marketCap) < 1e-12) return null;
+            if (marketCap <= 0) return null; // English: require positive market cap
             return freeCashFlow / marketCap;
         }
 
@@ -48,44 +46,34 @@ namespace Portfolio.Api.Services.Analytics
 
         /// <summary>
         /// Price/Earnings ratio = Price / EPS.
-        /// Returns null for invalid inputs (e.g., EPS == 0).
-        /// Note: You may want to use TTM EPS for comparability.
+        /// Returns null for EPS &lt;= 0 (negative or zero EPS not meaningful).
         /// </summary>
-        /// <param name="price">Current or reference price.</param>
-        /// <param name="eps">Earnings per share (FY or TTM).</param>
-        /// <returns>P/E as a raw multiple, or null if invalid.</returns>
         public static double? Pe(double price, double eps)
         {
             if (double.IsNaN(price) || double.IsNaN(eps)) return null;
-            if (Math.Abs(eps) < 1e-12) return null; // avoid division by zero
+            if (eps <= 0) return null; // English: avoid negative/zero EPS
             return price / eps;
         }
 
         /// <summary>
         /// Price-to-Book ratio (P/B) = Price per Share / BookValuePerShare.
-        /// Returns null if book value is zero or invalid.
+        /// Returns null if BVPS &lt;= 0 (negative book value not meaningful for PB).
         /// </summary>
-        /// <param name="price">Current or reference price per share.</param>
-        /// <param name="bookValuePerShare">Book value per share (equity / shares outstanding).</param>
-        /// <returns>P/B multiple, or null if invalid.</returns>
         public static double? Pb(double price, double bookValuePerShare)
         {
             if (double.IsNaN(price) || double.IsNaN(bookValuePerShare)) return null;
-            if (Math.Abs(bookValuePerShare) < 1e-12) return null;
+            if (bookValuePerShare <= 0) return null; // English: require positive BVPS
             return price / bookValuePerShare;
         }
 
         /// <summary>
         /// Debt-to-Equity ratio = TotalLiabilities / Equity.
-        /// Returns null if equity is zero or invalid.
+        /// Returns null if equity &lt;= 0 (negative/zero equity -> ratio not meaningful).
         /// </summary>
-        /// <param name="liabilities">Total liabilities.</param>
-        /// <param name="equity">Total shareholders' equity.</param>
-        /// <returns>D/E multiple, or null if invalid.</returns>
         public static double? DebtToEquity(double liabilities, double equity)
         {
             if (double.IsNaN(liabilities) || double.IsNaN(equity)) return null;
-            if (Math.Abs(equity) < 1e-12) return null;
+            if (equity <= 0) return null; // English: require positive equity
             return liabilities / equity;
         }
 
@@ -208,12 +196,12 @@ namespace Portfolio.Api.Services.Analytics
 
         /// <summary>
         /// Price-to-Owner-Earnings (P/OE) = Price per Share / OEPS.
-        /// Returns null if OEPS == 0 or invalid.
+        /// Returns null if OEPS &lt;= 0 (negative/zero OEPS not meaningful).
         /// </summary>
         public static double? PriceToOwnerEarnings(double pricePerShare, double ownerEarningsPerShare)
         {
             if (double.IsNaN(pricePerShare) || double.IsNaN(ownerEarningsPerShare)) return null;
-            if (Math.Abs(ownerEarningsPerShare) < 1e-12) return null;
+            if (ownerEarningsPerShare <= 0) return null; // English: require positive OEPS
             return pricePerShare / ownerEarningsPerShare;
         }
 
