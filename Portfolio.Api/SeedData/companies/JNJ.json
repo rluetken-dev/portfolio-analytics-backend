@@ -1,0 +1,185 @@
+{
+  "symbol": "JNJ",
+  "profile": {
+    "name": "Johnson & Johnson",
+    "sector": "Health Care"
+  },
+  "quotes": {
+    "currency": "USD",
+    "rows": [
+      {
+        "date": "2024-12-02",
+        "open": 155.0,
+        "high": 156.8,
+        "low": 153.6,
+        "close": 155.9,
+        "volume": 12000000
+      },
+      {
+        "date": "2024-12-03",
+        "open": 156.2,
+        "high": 158.0,
+        "low": 154.8,
+        "close": 156.5,
+        "volume": 12800000
+      },
+      {
+        "date": "2024-12-04",
+        "open": 156.8,
+        "high": 158.6,
+        "low": 155.4,
+        "close": 157.1,
+        "volume": 13600000
+      },
+      {
+        "date": "2024-12-05",
+        "open": 157.4,
+        "high": 159.2,
+        "low": 156.0,
+        "close": 157.9,
+        "volume": 14400000
+      },
+      {
+        "date": "2024-12-06",
+        "open": 158.2,
+        "high": 160.0,
+        "low": 156.8,
+        "close": 158.5,
+        "volume": 15200000
+      },
+      {
+        "date": "2024-12-09",
+        "open": 158.8,
+        "high": 160.6,
+        "low": 157.4,
+        "close": 159.5,
+        "volume": 16000000
+      },
+      {
+        "date": "2024-12-10",
+        "open": 159.8,
+        "high": 161.6,
+        "low": 158.4,
+        "close": 160.3,
+        "volume": 16800000
+      },
+      {
+        "date": "2024-12-11",
+        "open": 160.6,
+        "high": 162.4,
+        "low": 159.2,
+        "close": 160.9,
+        "volume": 12000000
+      },
+      {
+        "date": "2024-12-12",
+        "open": 161.2,
+        "high": 163.0,
+        "low": 159.8,
+        "close": 161.5,
+        "volume": 12800000
+      },
+      {
+        "date": "2024-12-13",
+        "open": 161.8,
+        "high": 163.6,
+        "low": 160.4,
+        "close": 162.3,
+        "volume": 13600000
+      },
+      {
+        "date": "2024-12-16",
+        "open": 162.6,
+        "high": 164.4,
+        "low": 161.2,
+        "close": 163.3,
+        "volume": 14400000
+      },
+      {
+        "date": "2024-12-17",
+        "open": 163.6,
+        "high": 165.4,
+        "low": 162.2,
+        "close": 163.9,
+        "volume": 15200000
+      },
+      {
+        "date": "2024-12-18",
+        "open": 164.2,
+        "high": 166.0,
+        "low": 162.8,
+        "close": 164.7,
+        "volume": 16000000
+      },
+      {
+        "date": "2024-12-19",
+        "open": 165.0,
+        "high": 166.8,
+        "low": 163.6,
+        "close": 165.3,
+        "volume": 16800000
+      },
+      {
+        "date": "2024-12-20",
+        "open": 165.6,
+        "high": 167.4,
+        "low": 164.2,
+        "close": 165.9,
+        "volume": 12000000
+      },
+      {
+        "date": "2024-12-23",
+        "open": 166.2,
+        "high": 168.0,
+        "low": 164.8,
+        "close": 167.1,
+        "volume": 12800000
+      },
+      {
+        "date": "2024-12-26",
+        "open": 167.4,
+        "high": 169.2,
+        "low": 166.0,
+        "close": 167.7,
+        "volume": 13600000
+      },
+      {
+        "date": "2024-12-27",
+        "open": 168.0,
+        "high": 169.8,
+        "low": 166.6,
+        "close": 168.3,
+        "volume": 14400000
+      }
+    ]
+  },
+  "fundamentals": {
+    "currency": "USD",
+    "annual": [
+      {
+        "year": 2023,
+        "revenue": 98000000000,
+        "netIncome": 21500000000,
+        "totalAssets": 187000000000,
+        "totalLiabilities": 97000000000,
+        "equity": 90000000000,
+        "shares": 2600000000,
+        "operatingCashFlow": 27000000000,
+        "capitalExpenditures": -14000000000,
+        "changeInWorkingCapital": -800000000
+      },
+      {
+        "year": 2024,
+        "revenue": 103880000000,
+        "netIncome": 24080000000,
+        "totalAssets": 192610000000,
+        "totalLiabilities": 98940000000,
+        "equity": 94500000000,
+        "shares": 2574000000,
+        "operatingCashFlow": 29160000000,
+        "capitalExpenditures": -14700000000,
+        "changeInWorkingCapital": -640000000
+      }
+    ]
+  }
+}

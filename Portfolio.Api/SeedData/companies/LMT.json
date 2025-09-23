@@ -1,0 +1,185 @@
+{
+  "symbol": "LMT",
+  "profile": {
+    "name": "Lockheed Martin Corporation",
+    "sector": "Industrials"
+  },
+  "quotes": {
+    "currency": "USD",
+    "rows": [
+      {
+        "date": "2024-12-02",
+        "open": 455.0,
+        "high": 456.8,
+        "low": 453.6,
+        "close": 455.9,
+        "volume": 3000000
+      },
+      {
+        "date": "2024-12-03",
+        "open": 456.2,
+        "high": 458.0,
+        "low": 454.8,
+        "close": 456.5,
+        "volume": 3800000
+      },
+      {
+        "date": "2024-12-04",
+        "open": 456.8,
+        "high": 458.6,
+        "low": 455.4,
+        "close": 457.1,
+        "volume": 4600000
+      },
+      {
+        "date": "2024-12-05",
+        "open": 457.4,
+        "high": 459.2,
+        "low": 456.0,
+        "close": 457.9,
+        "volume": 5400000
+      },
+      {
+        "date": "2024-12-06",
+        "open": 458.2,
+        "high": 460.0,
+        "low": 456.8,
+        "close": 458.5,
+        "volume": 6200000
+      },
+      {
+        "date": "2024-12-09",
+        "open": 458.8,
+        "high": 460.6,
+        "low": 457.4,
+        "close": 459.5,
+        "volume": 7000000
+      },
+      {
+        "date": "2024-12-10",
+        "open": 459.8,
+        "high": 461.6,
+        "low": 458.4,
+        "close": 460.3,
+        "volume": 7800000
+      },
+      {
+        "date": "2024-12-11",
+        "open": 460.6,
+        "high": 462.4,
+        "low": 459.2,
+        "close": 460.9,
+        "volume": 3000000
+      },
+      {
+        "date": "2024-12-12",
+        "open": 461.2,
+        "high": 463.0,
+        "low": 459.8,
+        "close": 461.5,
+        "volume": 3800000
+      },
+      {
+        "date": "2024-12-13",
+        "open": 461.8,
+        "high": 463.6,
+        "low": 460.4,
+        "close": 462.3,
+        "volume": 4600000
+      },
+      {
+        "date": "2024-12-16",
+        "open": 462.6,
+        "high": 464.4,
+        "low": 461.2,
+        "close": 463.3,
+        "volume": 5400000
+      },
+      {
+        "date": "2024-12-17",
+        "open": 463.6,
+        "high": 465.4,
+        "low": 462.2,
+        "close": 463.9,
+        "volume": 6200000
+      },
+      {
+        "date": "2024-12-18",
+        "open": 464.2,
+        "high": 466.0,
+        "low": 462.8,
+        "close": 464.7,
+        "volume": 7000000
+      },
+      {
+        "date": "2024-12-19",
+        "open": 465.0,
+        "high": 466.8,
+        "low": 463.6,
+        "close": 465.3,
+        "volume": 7800000
+      },
+      {
+        "date": "2024-12-20",
+        "open": 465.6,
+        "high": 467.4,
+        "low": 464.2,
+        "close": 465.9,
+        "volume": 3000000
+      },
+      {
+        "date": "2024-12-23",
+        "open": 466.2,
+        "high": 468.0,
+        "low": 464.8,
+        "close": 467.1,
+        "volume": 3800000
+      },
+      {
+        "date": "2024-12-26",
+        "open": 467.4,
+        "high": 469.2,
+        "low": 466.0,
+        "close": 467.7,
+        "volume": 4600000
+      },
+      {
+        "date": "2024-12-27",
+        "open": 468.0,
+        "high": 469.8,
+        "low": 466.6,
+        "close": 468.3,
+        "volume": 5400000
+      }
+    ]
+  },
+  "fundamentals": {
+    "currency": "USD",
+    "annual": [
+      {
+        "year": 2023,
+        "revenue": 72000000000,
+        "netIncome": 7000000000,
+        "totalAssets": 60000000000,
+        "totalLiabilities": 45000000000,
+        "equity": 15000000000,
+        "shares": 250000000,
+        "operatingCashFlow": 9500000000,
+        "capitalExpenditures": -1600000000,
+        "changeInWorkingCapital": -200000000
+      },
+      {
+        "year": 2024,
+        "revenue": 76320000000,
+        "netIncome": 7840000000,
+        "totalAssets": 61800000000,
+        "totalLiabilities": 45900000000,
+        "equity": 15750000000,
+        "shares": 247500000,
+        "operatingCashFlow": 10260000000,
+        "capitalExpenditures": -1680000000,
+        "changeInWorkingCapital": -160000000
+      }
+    ]
+  }
+}

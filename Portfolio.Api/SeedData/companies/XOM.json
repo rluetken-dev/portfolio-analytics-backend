@@ -1,0 +1,185 @@
+{
+  "symbol": "XOM",
+  "profile": {
+    "name": "Exxon Mobil Corporation",
+    "sector": "Energy"
+  },
+  "quotes": {
+    "currency": "USD",
+    "rows": [
+      {
+        "date": "2024-12-02",
+        "open": 105.0,
+        "high": 106.8,
+        "low": 103.6,
+        "close": 105.9,
+        "volume": 28000000
+      },
+      {
+        "date": "2024-12-03",
+        "open": 106.2,
+        "high": 108.0,
+        "low": 104.8,
+        "close": 106.5,
+        "volume": 28800000
+      },
+      {
+        "date": "2024-12-04",
+        "open": 106.8,
+        "high": 108.6,
+        "low": 105.4,
+        "close": 107.1,
+        "volume": 29600000
+      },
+      {
+        "date": "2024-12-05",
+        "open": 107.4,
+        "high": 109.2,
+        "low": 106.0,
+        "close": 107.9,
+        "volume": 30400000
+      },
+      {
+        "date": "2024-12-06",
+        "open": 108.2,
+        "high": 110.0,
+        "low": 106.8,
+        "close": 108.5,
+        "volume": 31200000
+      },
+      {
+        "date": "2024-12-09",
+        "open": 108.8,
+        "high": 110.6,
+        "low": 107.4,
+        "close": 109.5,
+        "volume": 32000000
+      },
+      {
+        "date": "2024-12-10",
+        "open": 109.8,
+        "high": 111.6,
+        "low": 108.4,
+        "close": 110.3,
+        "volume": 32800000
+      },
+      {
+        "date": "2024-12-11",
+        "open": 110.6,
+        "high": 112.4,
+        "low": 109.2,
+        "close": 110.9,
+        "volume": 28000000
+      },
+      {
+        "date": "2024-12-12",
+        "open": 111.2,
+        "high": 113.0,
+        "low": 109.8,
+        "close": 111.5,
+        "volume": 28800000
+      },
+      {
+        "date": "2024-12-13",
+        "open": 111.8,
+        "high": 113.6,
+        "low": 110.4,
+        "close": 112.3,
+        "volume": 29600000
+      },
+      {
+        "date": "2024-12-16",
+        "open": 112.6,
+        "high": 114.4,
+        "low": 111.2,
+        "close": 113.3,
+        "volume": 30400000
+      },
+      {
+        "date": "2024-12-17",
+        "open": 113.6,
+        "high": 115.4,
+        "low": 112.2,
+        "close": 113.9,
+        "volume": 31200000
+      },
+      {
+        "date": "2024-12-18",
+        "open": 114.2,
+        "high": 116.0,
+        "low": 112.8,
+        "close": 114.7,
+        "volume": 32000000
+      },
+      {
+        "date": "2024-12-19",
+        "open": 115.0,
+        "high": 116.8,
+        "low": 113.6,
+        "close": 115.3,
+        "volume": 32800000
+      },
+      {
+        "date": "2024-12-20",
+        "open": 115.6,
+        "high": 117.4,
+        "low": 114.2,
+        "close": 115.9,
+        "volume": 28000000
+      },
+      {
+        "date": "2024-12-23",
+        "open": 116.2,
+        "high": 118.0,
+        "low": 114.8,
+        "close": 117.1,
+        "volume": 28800000
+      },
+      {
+        "date": "2024-12-26",
+        "open": 117.4,
+        "high": 119.2,
+        "low": 116.0,
+        "close": 117.7,
+        "volume": 29600000
+      },
+      {
+        "date": "2024-12-27",
+        "open": 118.0,
+        "high": 119.8,
+        "low": 116.6,
+        "close": 118.3,
+        "volume": 30400000
+      }
+    ]
+  },
+  "fundamentals": {
+    "currency": "USD",
+    "annual": [
+      {
+        "year": 2023,
+        "revenue": 352000000000,
+        "netIncome": 33000000000,
+        "totalAssets": 396000000000,
+        "totalLiabilities": 172000000000,
+        "equity": 224000000000,
+        "shares": 4000000000,
+        "operatingCashFlow": 69000000000,
+        "capitalExpenditures": -23000000000,
+        "changeInWorkingCapital": 1200000000
+      },
+      {
+        "year": 2024,
+        "revenue": 373120000000,
+        "netIncome": 36960000000,
+        "totalAssets": 407880000000,
+        "totalLiabilities": 175440000000,
+        "equity": 235200000000,
+        "shares": 3960000000,
+        "operatingCashFlow": 74520000000,
+        "capitalExpenditures": -24150000000,
+        "changeInWorkingCapital": 960000000
+      }
+    ]
+  }
+}

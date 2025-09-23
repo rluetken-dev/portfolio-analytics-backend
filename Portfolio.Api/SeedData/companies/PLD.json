@@ -1,0 +1,185 @@
+{
+  "symbol": "PLD",
+  "profile": {
+    "name": "Prologis, Inc.",
+    "sector": "Real Estate"
+  },
+  "quotes": {
+    "currency": "USD",
+    "rows": [
+      {
+        "date": "2024-12-02",
+        "open": 125.0,
+        "high": 126.8,
+        "low": 123.6,
+        "close": 125.9,
+        "volume": 7000000
+      },
+      {
+        "date": "2024-12-03",
+        "open": 126.2,
+        "high": 128.0,
+        "low": 124.8,
+        "close": 126.5,
+        "volume": 7800000
+      },
+      {
+        "date": "2024-12-04",
+        "open": 126.8,
+        "high": 128.6,
+        "low": 125.4,
+        "close": 127.1,
+        "volume": 8600000
+      },
+      {
+        "date": "2024-12-05",
+        "open": 127.4,
+        "high": 129.2,
+        "low": 126.0,
+        "close": 127.9,
+        "volume": 9400000
+      },
+      {
+        "date": "2024-12-06",
+        "open": 128.2,
+        "high": 130.0,
+        "low": 126.8,
+        "close": 128.5,
+        "volume": 10200000
+      },
+      {
+        "date": "2024-12-09",
+        "open": 128.8,
+        "high": 130.6,
+        "low": 127.4,
+        "close": 129.5,
+        "volume": 11000000
+      },
+      {
+        "date": "2024-12-10",
+        "open": 129.8,
+        "high": 131.6,
+        "low": 128.4,
+        "close": 130.3,
+        "volume": 11800000
+      },
+      {
+        "date": "2024-12-11",
+        "open": 130.6,
+        "high": 132.4,
+        "low": 129.2,
+        "close": 130.9,
+        "volume": 7000000
+      },
+      {
+        "date": "2024-12-12",
+        "open": 131.2,
+        "high": 133.0,
+        "low": 129.8,
+        "close": 131.5,
+        "volume": 7800000
+      },
+      {
+        "date": "2024-12-13",
+        "open": 131.8,
+        "high": 133.6,
+        "low": 130.4,
+        "close": 132.3,
+        "volume": 8600000
+      },
+      {
+        "date": "2024-12-16",
+        "open": 132.6,
+        "high": 134.4,
+        "low": 131.2,
+        "close": 133.3,
+        "volume": 9400000
+      },
+      {
+        "date": "2024-12-17",
+        "open": 133.6,
+        "high": 135.4,
+        "low": 132.2,
+        "close": 133.9,
+        "volume": 10200000
+      },
+      {
+        "date": "2024-12-18",
+        "open": 134.2,
+        "high": 136.0,
+        "low": 132.8,
+        "close": 134.7,
+        "volume": 11000000
+      },
+      {
+        "date": "2024-12-19",
+        "open": 135.0,
+        "high": 136.8,
+        "low": 133.6,
+        "close": 135.3,
+        "volume": 11800000
+      },
+      {
+        "date": "2024-12-20",
+        "open": 135.6,
+        "high": 137.4,
+        "low": 134.2,
+        "close": 135.9,
+        "volume": 7000000
+      },
+      {
+        "date": "2024-12-23",
+        "open": 136.2,
+        "high": 138.0,
+        "low": 134.8,
+        "close": 137.1,
+        "volume": 7800000
+      },
+      {
+        "date": "2024-12-26",
+        "open": 137.4,
+        "high": 139.2,
+        "low": 136.0,
+        "close": 137.7,
+        "volume": 8600000
+      },
+      {
+        "date": "2024-12-27",
+        "open": 138.0,
+        "high": 139.8,
+        "low": 136.6,
+        "close": 138.3,
+        "volume": 9400000
+      }
+    ]
+  },
+  "fundamentals": {
+    "currency": "USD",
+    "annual": [
+      {
+        "year": 2023,
+        "revenue": 10500000000,
+        "netIncome": 4000000000,
+        "totalAssets": 120000000000,
+        "totalLiabilities": 55000000000,
+        "equity": 65000000000,
+        "shares": 920000000,
+        "operatingCashFlow": 6800000000,
+        "capitalExpenditures": -4200000000,
+        "changeInWorkingCapital": -150000000
+      },
+      {
+        "year": 2024,
+        "revenue": 11130000000,
+        "netIncome": 4480000000,
+        "totalAssets": 123600000000,
+        "totalLiabilities": 56100000000,
+        "equity": 68250000000,
+        "shares": 910800000,
+        "operatingCashFlow": 7344000000,
+        "capitalExpenditures": -4410000000,
+        "changeInWorkingCapital": -120000000
+      }
+    ]
+  }
+}

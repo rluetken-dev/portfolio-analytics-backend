@@ -1,0 +1,56 @@
+{
+  "symbol": "MSFT",
+  "profile": { "name": "Microsoft Corporation", "sector": "Technology" },
+  "quotes": {
+    "currency": "USD",
+    "rows": [
+      { "date": "2024-12-02", "open": 371.20, "high": 374.00, "low": 370.50, "close": 373.10, "volume": 22450000 },
+      { "date": "2024-12-03", "open": 373.00, "high": 375.20, "low": 371.80, "close": 374.60, "volume": 21900000 },
+      { "date": "2024-12-04", "open": 374.80, "high": 377.00, "low": 373.50, "close": 376.20, "volume": 23100000 },
+      { "date": "2024-12-05", "open": 376.00, "high": 378.50, "low": 375.00, "close": 377.40, "volume": 24300000 },
+      { "date": "2024-12-06", "open": 377.50, "high": 379.00, "low": 375.90, "close": 376.10, "volume": 27500000 },
+      { "date": "2024-12-09", "open": 376.30, "high": 379.30, "low": 375.80, "close": 378.80, "volume": 22800000 },
+      { "date": "2024-12-10", "open": 379.00, "high": 381.20, "low": 378.40, "close": 380.50, "volume": 24000000 },
+      { "date": "2024-12-11", "open": 381.00, "high": 382.60, "low": 379.70, "close": 380.90, "volume": 22100000 },
+      { "date": "2024-12-12", "open": 381.20, "high": 383.40, "low": 380.40, "close": 382.70, "volume": 22600000 },
+      { "date": "2024-12-13", "open": 382.90, "high": 385.10, "low": 382.00, "close": 384.80, "volume": 23550000 },
+      { "date": "2024-12-16", "open": 385.00, "high": 387.20, "low": 383.80, "close": 386.40, "volume": 24800000 },
+      { "date": "2024-12-17", "open": 386.50, "high": 389.00, "low": 385.60, "close": 388.20, "volume": 25200000 },
+      { "date": "2024-12-18", "open": 388.00, "high": 390.50, "low": 387.10, "close": 389.70, "volume": 26000000 },
+      { "date": "2024-12-19", "open": 389.90, "high": 392.10, "low": 388.70, "close": 391.30, "volume": 24500000 },
+      { "date": "2024-12-20", "open": 391.50, "high": 394.00, "low": 390.60, "close": 393.20, "volume": 27000000 },
+      { "date": "2024-12-23", "open": 393.00, "high": 396.20, "low": 392.40, "close": 395.60, "volume": 21800000 },
+      { "date": "2024-12-26", "open": 395.80, "high": 399.00, "low": 395.10, "close": 398.20, "volume": 21000000 },
+      { "date": "2024-12-27", "open": 398.00, "high": 402.10, "low": 397.60, "close": 401.50, "volume": 26500000 }
+    ]
+  },
+  "fundamentals": {
+    "currency": "USD",
+    "annual": [
+      {
+        "year": 2023,
+        "revenue": 211000000000,
+        "netIncome": 72000000000,
+        "totalAssets": 450000000000,
+        "totalLiabilities": 190000000000,
+        "equity": 260000000000,
+        "shares": 7500000000,
+        "operatingCashFlow": 110000000000,
+        "capitalExpenditures": -45000000000,
+        "changeInWorkingCapital": 2000000000
+      },
+      {
+        "year": 2024,
+        "revenue": 245000000000,
+        "netIncome": 88000000000,
+        "totalAssets": 520000000000,
+        "totalLiabilities": 220000000000,
+        "equity": 300000000000,
+        "shares": 7400000000,
+        "operatingCashFlow": 125000000000,
+        "capitalExpenditures": -50000000000,
+        "changeInWorkingCapital": 1500000000
+      }
+    ]
+  }
+}

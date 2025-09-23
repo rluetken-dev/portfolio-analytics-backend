@@ -1,0 +1,56 @@
+{
+  "symbol": "NVDA",
+  "profile": { "name": "NVIDIA Corporation", "sector": "Technology" },
+  "quotes": {
+    "currency": "USD",
+    "rows": [
+      { "date": "2024-12-02", "open": 468.00, "high": 474.00, "low": 466.50, "close": 472.30, "volume": 42000000 },
+      { "date": "2024-12-03", "open": 472.00, "high": 476.50, "low": 470.20, "close": 475.10, "volume": 39000000 },
+      { "date": "2024-12-04", "open": 475.00, "high": 479.80, "low": 473.60, "close": 477.90, "volume": 41000000 },
+      { "date": "2024-12-05", "open": 478.00, "high": 481.20, "low": 475.40, "close": 476.60, "volume": 45000000 },
+      { "date": "2024-12-06", "open": 476.80, "high": 482.00, "low": 475.00, "close": 481.30, "volume": 47000000 },
+      { "date": "2024-12-09", "open": 481.50, "high": 487.90, "low": 480.20, "close": 486.40, "volume": 52000000 },
+      { "date": "2024-12-10", "open": 486.20, "high": 490.30, "low": 484.60, "close": 488.70, "volume": 51000000 },
+      { "date": "2024-12-11", "open": 488.80, "high": 494.10, "low": 487.50, "close": 492.60, "volume": 49500000 },
+      { "date": "2024-12-12", "open": 492.40, "high": 498.60, "low": 491.80, "close": 497.90, "volume": 53000000 },
+      { "date": "2024-12-13", "open": 498.00, "high": 503.20, "low": 496.70, "close": 501.50, "volume": 56000000 },
+      { "date": "2024-12-16", "open": 502.00, "high": 507.50, "low": 500.60, "close": 505.90, "volume": 54500000 },
+      { "date": "2024-12-17", "open": 506.00, "high": 511.20, "low": 504.90, "close": 509.80, "volume": 57000000 },
+      { "date": "2024-12-18", "open": 509.50, "high": 514.70, "low": 508.10, "close": 512.60, "volume": 59000000 },
+      { "date": "2024-12-19", "open": 512.80, "high": 518.00, "low": 511.50, "close": 516.20, "volume": 60000000 },
+      { "date": "2024-12-20", "open": 516.00, "high": 521.40, "low": 514.90, "close": 520.30, "volume": 61500000 },
+      { "date": "2024-12-23", "open": 520.00, "high": 523.80, "low": 517.60, "close": 522.10, "volume": 48000000 },
+      { "date": "2024-12-26", "open": 522.20, "high": 526.50, "low": 521.00, "close": 525.40, "volume": 50000000 },
+      { "date": "2024-12-27", "open": 525.00, "high": 528.90, "low": 523.50, "close": 527.80, "volume": 51000000 }
+    ]
+  },
+  "fundamentals": {
+    "currency": "USD",
+    "annual": [
+      {
+        "year": 2023,
+        "revenue": 27000000000,
+        "netIncome": 4400000000,
+        "totalAssets": 41000000000,
+        "totalLiabilities": 19000000000,
+        "equity": 22000000000,
+        "shares": 2500000000,
+        "operatingCashFlow": 5600000000,
+        "capitalExpenditures": -1500000000,
+        "changeInWorkingCapital": 500000000
+      },
+      {
+        "year": 2024,
+        "revenue": 60000000000,
+        "netIncome": 29000000000,
+        "totalAssets": 65000000000,
+        "totalLiabilities": 25000000000,
+        "equity": 40000000000,
+        "shares": 2460000000,
+        "operatingCashFlow": 30000000000,
+        "capitalExpenditures": -6000000000,
+        "changeInWorkingCapital": 1000000000
+      }
+    ]
+  }
+}

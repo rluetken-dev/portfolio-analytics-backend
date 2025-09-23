@@ -1,0 +1,185 @@
+{
+  "symbol": "DIS",
+  "profile": {
+    "name": "The Walt Disney Company",
+    "sector": "Communication Services"
+  },
+  "quotes": {
+    "currency": "USD",
+    "rows": [
+      {
+        "date": "2024-12-02",
+        "open": 95.0,
+        "high": 96.8,
+        "low": 93.6,
+        "close": 95.9,
+        "volume": 16000000
+      },
+      {
+        "date": "2024-12-03",
+        "open": 96.2,
+        "high": 98.0,
+        "low": 94.8,
+        "close": 96.5,
+        "volume": 16800000
+      },
+      {
+        "date": "2024-12-04",
+        "open": 96.8,
+        "high": 98.6,
+        "low": 95.4,
+        "close": 97.1,
+        "volume": 17600000
+      },
+      {
+        "date": "2024-12-05",
+        "open": 97.4,
+        "high": 99.2,
+        "low": 96.0,
+        "close": 97.9,
+        "volume": 18400000
+      },
+      {
+        "date": "2024-12-06",
+        "open": 98.2,
+        "high": 100.0,
+        "low": 96.8,
+        "close": 98.5,
+        "volume": 19200000
+      },
+      {
+        "date": "2024-12-09",
+        "open": 98.8,
+        "high": 100.6,
+        "low": 97.4,
+        "close": 99.5,
+        "volume": 20000000
+      },
+      {
+        "date": "2024-12-10",
+        "open": 99.8,
+        "high": 101.6,
+        "low": 98.4,
+        "close": 100.3,
+        "volume": 20800000
+      },
+      {
+        "date": "2024-12-11",
+        "open": 100.6,
+        "high": 102.4,
+        "low": 99.2,
+        "close": 100.9,
+        "volume": 16000000
+      },
+      {
+        "date": "2024-12-12",
+        "open": 101.2,
+        "high": 103.0,
+        "low": 99.8,
+        "close": 101.5,
+        "volume": 16800000
+      },
+      {
+        "date": "2024-12-13",
+        "open": 101.8,
+        "high": 103.6,
+        "low": 100.4,
+        "close": 102.3,
+        "volume": 17600000
+      },
+      {
+        "date": "2024-12-16",
+        "open": 102.6,
+        "high": 104.4,
+        "low": 101.2,
+        "close": 103.3,
+        "volume": 18400000
+      },
+      {
+        "date": "2024-12-17",
+        "open": 103.6,
+        "high": 105.4,
+        "low": 102.2,
+        "close": 103.9,
+        "volume": 19200000
+      },
+      {
+        "date": "2024-12-18",
+        "open": 104.2,
+        "high": 106.0,
+        "low": 102.8,
+        "close": 104.7,
+        "volume": 20000000
+      },
+      {
+        "date": "2024-12-19",
+        "open": 105.0,
+        "high": 106.8,
+        "low": 103.6,
+        "close": 105.3,
+        "volume": 20800000
+      },
+      {
+        "date": "2024-12-20",
+        "open": 105.6,
+        "high": 107.4,
+        "low": 104.2,
+        "close": 105.9,
+        "volume": 16000000
+      },
+      {
+        "date": "2024-12-23",
+        "open": 106.2,
+        "high": 108.0,
+        "low": 104.8,
+        "close": 107.1,
+        "volume": 16800000
+      },
+      {
+        "date": "2024-12-26",
+        "open": 107.4,
+        "high": 109.2,
+        "low": 106.0,
+        "close": 107.7,
+        "volume": 17600000
+      },
+      {
+        "date": "2024-12-27",
+        "open": 108.0,
+        "high": 109.8,
+        "low": 106.6,
+        "close": 108.3,
+        "volume": 18400000
+      }
+    ]
+  },
+  "fundamentals": {
+    "currency": "USD",
+    "annual": [
+      {
+        "year": 2023,
+        "revenue": 90000000000,
+        "netIncome": 8200000000,
+        "totalAssets": 210000000000,
+        "totalLiabilities": 120000000000,
+        "equity": 90000000000,
+        "shares": 1830000000,
+        "operatingCashFlow": 14000000000,
+        "capitalExpenditures": -7000000000,
+        "changeInWorkingCapital": 900000000
+      },
+      {
+        "year": 2024,
+        "revenue": 95400000000,
+        "netIncome": 9184000000,
+        "totalAssets": 216300000000,
+        "totalLiabilities": 122400000000,
+        "equity": 94500000000,
+        "shares": 1811700000,
+        "operatingCashFlow": 15120000000,
+        "capitalExpenditures": -7350000000,
+        "changeInWorkingCapital": 720000000
+      }
+    ]
+  }
+}

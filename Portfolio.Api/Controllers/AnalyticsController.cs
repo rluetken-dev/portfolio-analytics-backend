@@ -647,19 +647,19 @@ namespace Portfolio.Api.Controllers
         /// </code>
         /// </remarks>
         [SwaggerOperation(
-            Summary = "Price-to-Earnings ratio (P/E)",
-            Description = "Computes latest annual P/E = Price per Share / EPS (annual).",
-            OperationId = "Analytics_GetPe",
-            Tags = new[] { "Analytics" }
-        )]
+        Summary = "Price-to-Earnings ratio (P/E)",
+        Description = "Computes latest annual P/E = Price per Share / EPS (annual).",
+        OperationId = "Analytics_GetPe",
+        Tags = new[] { "Analytics" }
+    )]
         [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
         [ProducesResponseType(typeof(object), StatusCodes.Status400BadRequest)]
         [ProducesResponseType(typeof(object), StatusCodes.Status404NotFound)]
         [HttpGet("pe")]
         public async Task<IActionResult> GetPe(
-                    [FromQuery] string symbol,
-                    [FromServices] AppDbContext db,
-                    CancellationToken ct = default)
+                [FromQuery] string symbol,
+                [FromServices] AppDbContext db,
+                CancellationToken ct = default)
         {
             if (string.IsNullOrWhiteSpace(symbol))
                 return BadRequest(new { error = "Missing ?symbol=..." });
@@ -674,7 +674,7 @@ namespace Portfolio.Api.Controllers
             if (t is null)
                 return NotFound(new { error = $"Ticker {ticker} not found." });
 
-            // 2) Latest annual EPS = NetIncome / WeightedAverageShsOut (via helper)
+            // 2) Latest annual EPS = NetIncome / WeightedAverageShsOut
             var inc = await db.IncomeStatements.AsNoTracking()
                 .Where(i => i.Symbol == ticker && i.Frequency == "annual")
                 .OrderByDescending(i => i.Date)
@@ -690,16 +690,29 @@ namespace Portfolio.Api.Controllers
 
             double eps = epsOpt.Value;
 
-            // 3) Price on/after EPS date
-            var price = await db.Prices.AsNoTracking()
+            // 3) Price near EPS date (first try ON/AFTER; fallback to ON/BEFORE)
+            // English: prefer the first close on/after EPS date; if none, take the latest before.
+            var priceOnOrAfter = await db.Prices.AsNoTracking()
                 .Where(p => p.TickerId == t.Id && p.TradingDate >= inc.Date)
-                .OrderBy(p => p.TradingDate)
+                .OrderBy(p => p.TradingDate) // earliest after EPS date
                 .Select(p => new { p.TradingDate, p.Close })
                 .FirstOrDefaultAsync(ct);
-            if (price is null)
-                return NotFound(new { error = $"No price data for {ticker} on/after {inc.Date}." });
 
-            double priceVal = (double)price.Close;
+            var priceRow = priceOnOrAfter;
+
+            if (priceRow is null)
+            {
+                priceRow = await db.Prices.AsNoTracking()
+                    .Where(p => p.TickerId == t.Id && p.TradingDate <= inc.Date)
+                    .OrderByDescending(p => p.TradingDate) // latest before EPS date
+                    .Select(p => new { p.TradingDate, p.Close })
+                    .FirstOrDefaultAsync(ct);
+            }
+
+            if (priceRow is null)
+                return NotFound(new { error = $"No price data for {ticker} around {inc.Date:yyyy-MM-dd}." });
+
+            double priceVal = (double)priceRow.Close;
 
             // Helper (null-safe)
             double? pe = FinanceMath.Pe(priceVal, eps);
@@ -711,7 +724,7 @@ namespace Portfolio.Api.Controllers
                 price = priceVal,
                 pe,
                 dateEps = inc.Date,
-                datePrice = price.TradingDate,
+                datePrice = priceRow.TradingDate,
                 peRounded = pe is null ? (double?)null : Math.Round(pe.Value, 4)
             });
         }
@@ -814,6 +827,9 @@ namespace Portfolio.Api.Controllers
         /// }
         /// </code>
         /// </remarks>
+        /// <summary>
+        /// Returns the latest Price-to-Book ratio (P/B).
+        /// </summary>
         [SwaggerOperation(
             Summary = "Price-to-Book ratio (P/B)",
             Description = "Computes the latest P/B ratio = Price per Share / Book Value per Share (BVPS).",
@@ -834,7 +850,7 @@ namespace Portfolio.Api.Controllers
 
             var ticker = symbol.Trim().ToUpperInvariant();
 
-            // 1) Equity + Shares (für BVPS)
+            // 1) Equity + Shares (for BVPS)
             var bal = await db.BalanceSheets.AsNoTracking()
                 .Where(b => b.Symbol == ticker && b.Frequency == "annual")
                 .OrderByDescending(b => b.Date)
@@ -861,22 +877,36 @@ namespace Portfolio.Api.Controllers
                 return BadRequest(new { error = "Cannot compute BVPS (invalid inputs)." });
             double bvps = bvpsOpt.Value;
 
-            // 2) Last price from this date
+            // 2) Price near this equity date
             var t = await db.Tickers.AsNoTracking()
                 .Where(x => x.Symbol == ticker)
                 .Select(x => new { x.Id })
                 .FirstOrDefaultAsync(ct);
+            if (t is null)
+                return NotFound(new { error = $"Ticker {ticker} not found." });
 
-            if (t is null) return NotFound(new { error = $"Ticker {ticker} not found." });
-
-            var price = await db.Prices.AsNoTracking()
+            // English: prefer the first close ON/AFTER the equity date; if none, take the latest BEFORE it.
+            var priceOnOrAfter = await db.Prices.AsNoTracking()
                 .Where(p => p.TickerId == t.Id && p.TradingDate >= bal.Date)
-                .OrderBy(p => p.TradingDate)
+                .OrderBy(p => p.TradingDate) // earliest after equity date
                 .Select(p => new { p.TradingDate, p.Close })
                 .FirstOrDefaultAsync(ct);
-            if (price is null) return NotFound(new { error = $"No price data for {ticker}." });
 
-            double priceVal = (double)price.Close;
+            var priceRow = priceOnOrAfter;
+
+            if (priceRow is null)
+            {
+                priceRow = await db.Prices.AsNoTracking()
+                    .Where(p => p.TickerId == t.Id && p.TradingDate <= bal.Date)
+                    .OrderByDescending(p => p.TradingDate) // latest before equity date
+                    .Select(p => new { p.TradingDate, p.Close })
+                    .FirstOrDefaultAsync(ct);
+            }
+
+            if (priceRow is null)
+                return NotFound(new { error = $"No price data for {ticker} around {bal.Date:yyyy-MM-dd}." });
+
+            double priceVal = (double)priceRow.Close;
 
             // 3) P/B via helper (null if BVPS invalid/zero)
             double? pb = FinanceMath.Pb(priceVal, bvps);
@@ -889,9 +919,10 @@ namespace Portfolio.Api.Controllers
                 pb,
                 pbRounded = pb is null ? (double?)null : Math.Round(pb.Value, 2),
                 dateEquity = bal.Date,
-                datePrice = price.TradingDate
+                datePrice = priceRow.TradingDate
             });
         }
+
 
         /// <summary>
         /// Returns the latest annual Asset Turnover.

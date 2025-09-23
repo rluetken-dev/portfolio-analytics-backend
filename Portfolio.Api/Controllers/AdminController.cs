@@ -392,6 +392,16 @@ public class AdminController : ControllerBase
 
 
 
+    /// <summary>
+/// Seed dry-run: parse &amp; validate seed JSON; no DB writes.
+/// English: Reads SeedData/companies/{SYMBOL}.json and returns a compact summary (symbol, profile, quotes range, fundamentals snapshot).
+/// </summary>
+[SwaggerOperation(
+    Summary = "Validate seed file (dry-run)",
+    Description = "Parses SeedData/companies/{SYMBOL}.json and returns a compact summary without writing to the DB.",
+    OperationId = "Seed_ValidateCompanyFile",
+    Tags = new[] { "Admin", "Seed" }
+)]
 
     [HttpPost("seed/company-file/{symbol}")]
     public async Task<IActionResult> SeedCompanyFileDryRun([FromRoute] string symbol, CancellationToken ct)

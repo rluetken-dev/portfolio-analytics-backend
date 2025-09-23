@@ -1,0 +1,56 @@
+{
+  "symbol": "TSLA",
+  "profile": { "name": "Tesla, Inc.", "sector": "Consumer Discretionary" },
+  "quotes": {
+    "currency": "USD",
+    "rows": [
+      { "date": "2024-12-02", "open": 238.50, "high": 242.00, "low": 237.20, "close": 240.80, "volume": 101000000 },
+      { "date": "2024-12-03", "open": 240.60, "high": 244.10, "low": 239.80, "close": 242.90, "volume": 98000000 },
+      { "date": "2024-12-04", "open": 243.10, "high": 246.20, "low": 242.40, "close": 245.60, "volume": 103500000 },
+      { "date": "2024-12-05", "open": 245.40, "high": 247.80, "low": 244.20, "close": 246.10, "volume": 109000000 },
+      { "date": "2024-12-06", "open": 246.20, "high": 249.00, "low": 245.30, "close": 248.40, "volume": 115000000 },
+      { "date": "2024-12-09", "open": 248.60, "high": 251.30, "low": 247.90, "close": 250.70, "volume": 104000000 },
+      { "date": "2024-12-10", "open": 250.50, "high": 253.20, "low": 249.80, "close": 251.60, "volume": 100000000 },
+      { "date": "2024-12-11", "open": 251.40, "high": 254.00, "low": 250.60, "close": 253.30, "volume": 102500000 },
+      { "date": "2024-12-12", "open": 253.10, "high": 256.40, "low": 252.50, "close": 255.80, "volume": 108000000 },
+      { "date": "2024-12-13", "open": 256.00, "high": 259.20, "low": 255.10, "close": 258.60, "volume": 112000000 },
+      { "date": "2024-12-16", "open": 258.80, "high": 261.50, "low": 258.00, "close": 260.40, "volume": 106000000 },
+      { "date": "2024-12-17", "open": 260.30, "high": 263.10, "low": 259.70, "close": 262.50, "volume": 110000000 },
+      { "date": "2024-12-18", "open": 262.40, "high": 265.30, "low": 261.80, "close": 263.90, "volume": 114000000 },
+      { "date": "2024-12-19", "open": 264.10, "high": 267.20, "low": 263.30, "close": 266.50, "volume": 118000000 },
+      { "date": "2024-12-20", "open": 266.40, "high": 269.80, "low": 265.70, "close": 268.90, "volume": 125000000 },
+      { "date": "2024-12-23", "open": 268.70, "high": 271.10, "low": 268.00, "close": 270.20, "volume": 99000000 },
+      { "date": "2024-12-26", "open": 270.10, "high": 272.80, "low": 269.60, "close": 271.90, "volume": 93000000 },
+      { "date": "2024-12-27", "open": 272.00, "high": 274.10, "low": 271.50, "close": 273.40, "volume": 97000000 }
+    ]
+  },
+  "fundamentals": {
+    "currency": "USD",
+    "annual": [
+      {
+        "year": 2023,
+        "revenue": 97000000000,
+        "netIncome": 15000000000,
+        "totalAssets": 110000000000,
+        "totalLiabilities": 40000000000,
+        "equity": 70000000000,
+        "shares": 3200000000,
+        "operatingCashFlow": 13000000000,
+        "capitalExpenditures": -8000000000,
+        "changeInWorkingCapital": 500000000
+      },
+      {
+        "year": 2024,
+        "revenue": 105000000000,
+        "netIncome": 16000000000,
+        "totalAssets": 120000000000,
+        "totalLiabilities": 43000000000,
+        "equity": 77000000000,
+        "shares": 3250000000,
+        "operatingCashFlow": 14000000000,
+        "capitalExpenditures": -9000000000,
+        "changeInWorkingCapital": 300000000
+      }
+    ]
+  }
+}

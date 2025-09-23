@@ -1,0 +1,56 @@
+{
+  "symbol": "GOOGL",
+  "profile": { "name": "Alphabet Inc. (Class A)", "sector": "Communication Services" },
+  "quotes": {
+    "currency": "USD",
+    "rows": [
+      { "date": "2024-12-02", "open": 142.20, "high": 144.00, "low": 141.60, "close": 143.10, "volume": 30500000 },
+      { "date": "2024-12-03", "open": 143.00, "high": 144.80, "low": 142.30, "close": 144.20, "volume": 29800000 },
+      { "date": "2024-12-04", "open": 144.40, "high": 145.90, "low": 143.70, "close": 145.10, "volume": 31200000 },
+      { "date": "2024-12-05", "open": 145.00, "high": 146.60, "low": 144.20, "close": 144.60, "volume": 35500000 },
+      { "date": "2024-12-06", "open": 144.70, "high": 146.00, "low": 143.50, "close": 145.70, "volume": 34000000 },
+      { "date": "2024-12-09", "open": 145.90, "high": 147.20, "low": 145.40, "close": 146.80, "volume": 33000000 },
+      { "date": "2024-12-10", "open": 146.90, "high": 148.30, "low": 146.10, "close": 147.50, "volume": 32500000 },
+      { "date": "2024-12-11", "open": 147.40, "high": 148.90, "low": 146.80, "close": 148.20, "volume": 31800000 },
+      { "date": "2024-12-12", "open": 148.30, "high": 149.70, "low": 147.90, "close": 149.10, "volume": 28900000 },
+      { "date": "2024-12-13", "open": 149.00, "high": 150.40, "low": 148.50, "close": 150.00, "volume": 30000000 },
+      { "date": "2024-12-16", "open": 150.20, "high": 151.60, "low": 149.80, "close": 151.10, "volume": 31000000 },
+      { "date": "2024-12-17", "open": 151.00, "high": 152.30, "low": 150.40, "close": 151.80, "volume": 29500000 },
+      { "date": "2024-12-18", "open": 151.90, "high": 153.10, "low": 151.20, "close": 152.60, "volume": 32000000 },
+      { "date": "2024-12-19", "open": 152.70, "high": 153.90, "low": 152.00, "close": 153.40, "volume": 33500000 },
+      { "date": "2024-12-20", "open": 153.30, "high": 154.60, "low": 152.80, "close": 154.10, "volume": 34200000 },
+      { "date": "2024-12-23", "open": 154.00, "high": 155.20, "low": 153.50, "close": 154.70, "volume": 28000000 },
+      { "date": "2024-12-26", "open": 154.80, "high": 156.10, "low": 154.30, "close": 155.60, "volume": 27500000 },
+      { "date": "2024-12-27", "open": 155.70, "high": 156.80, "low": 155.20, "close": 156.20, "volume": 29000000 }
+    ]
+  },
+  "fundamentals": {
+    "currency": "USD",
+    "annual": [
+      {
+        "year": 2023,
+        "revenue": 300000000000,
+        "netIncome": 74000000000,
+        "totalAssets": 400000000000,
+        "totalLiabilities": 120000000000,
+        "equity": 280000000000,
+        "shares": 13000000000,
+        "operatingCashFlow": 100000000000,
+        "capitalExpenditures": -32000000000,
+        "changeInWorkingCapital": 3000000000
+      },
+      {
+        "year": 2024,
+        "revenue": 330000000000,
+        "netIncome": 85000000000,
+        "totalAssets": 410000000000,
+        "totalLiabilities": 125000000000,
+        "equity": 285000000000,
+        "shares": 12900000000,
+        "operatingCashFlow": 115000000000,
+        "capitalExpenditures": -40000000000,
+        "changeInWorkingCapital": 2000000000
+      }
+    ]
+  }
+}
