@@ -12,11 +12,26 @@ namespace Portfolio.Api.Controllers
     {
         private readonly AppDbContext _db;
         private readonly FmpClient _fmp;
+        private readonly ILogger<CompaniesController> _logger;
 
-        public CompaniesController(AppDbContext db, FmpClient fmp) // <-- inject FmpClient
+
+        /// <summary>
+        /// Lightweight DTO for the frontend list.
+        /// </summary>
+        public record CompanySummaryDto
+        {
+            public string? Id { get; init; }
+            public string? Symbol { get; init; }
+            public string? Name { get; init; }
+            public string? Sector { get; init; }
+        }
+
+        public CompaniesController(AppDbContext db, FmpClient fmp, ILogger<CompaniesController> logger)
         {
             _db = db;
             _fmp = fmp;
+            _logger = logger;
+
         }
 
         /// <summary>
@@ -223,16 +238,381 @@ namespace Portfolio.Api.Controllers
 
             return Ok(new { count = updated.Count, items = updated });
         }
-    }
 
-    /// <summary>
-    /// Lightweight DTO for the frontend list.
-    /// </summary>
-    public record CompanySummaryDto
-    {
-        public string? Id { get; init; }
-        public string? Symbol { get; init; }
-        public string? Name { get; init; }
-        public string? Sector { get; init; }
+        /// <summary>
+        /// Search external API for companies (not in local DB yet)
+        /// </summary>
+        [HttpGet("search")]
+        public async Task<ActionResult<CompanySearchResponse>> SearchCompanies(
+            [FromQuery] string? q,    // search term
+            [FromQuery] int? limit,   // max results
+            CancellationToken ct)
+        {
+            // validate input
+            if (string.IsNullOrWhiteSpace(q) || q.Trim().Length < 2)
+                return BadRequest(new { error = "Query must be at least 2 characters" });
+
+            var query = q.Trim();
+            var take = Math.Clamp(limit ?? 10, 1, 50);
+
+            try
+            {
+                // search external FMP API
+                var searchResults = await _fmp.SearchCompaniesAsync(query, take, ct);
+
+                // check which ones we already have locally
+                var symbols = searchResults.Select(r => r.Symbol).ToList();
+                var existingSymbols = await _db.Tickers
+                    .Where(t => symbols.Contains(t.Symbol))
+                    .Select(t => t.Symbol)
+                    .ToListAsync(ct);
+
+                // mark existing vs addable companies
+                var results = searchResults.Select(r => new CompanySearchResult
+                {
+                    Symbol = r.Symbol,
+                    Name = r.Name,
+                    Exchange = r.Exchange,
+                    Sector = r.Sector,
+                    IsInDatabase = existingSymbols.Contains(r.Symbol)
+                }).ToList();
+
+                return Ok(new CompanySearchResponse
+                {
+                    Query = query,
+                    Results = results,
+                    TotalFound = results.Count()
+                });
+            }
+            catch (HttpRequestException ex) when (ex.Message.Contains("429"))
+            {
+                return StatusCode(429, new { error = "API rate limit exceeded. Try again later." });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Company search failed for: {Query}", query);
+                return StatusCode(500, new { error = "Search failed. Please try again." });
+            }
+        }
+
+        /// <summary>
+        /// Add single company to local database
+        /// </summary>
+        [HttpPost("add")]
+        public async Task<ActionResult<CompanySummaryDto>> AddCompany(
+            [FromBody] AddCompanyRequest request,
+            CancellationToken ct)
+        {
+            if (string.IsNullOrWhiteSpace(request.Symbol))
+                return BadRequest(new { error = "Symbol is required" });
+
+            var symbol = request.Symbol.Trim().ToUpperInvariant();
+
+            // check for duplicates
+            var existing = await _db.Tickers.FirstOrDefaultAsync(t => t.Symbol == symbol, ct);
+            if (existing != null)
+                return Conflict(new { error = $"Company {symbol} already exists" });
+
+            try
+            {
+                // fetch from external API
+                var profile = await _fmp.GetCompanyProfileAsync(symbol, ct);
+                if (profile == null)
+                    return NotFound(new { error = $"Company {symbol} not found in external API" });
+
+                // create and save ticker
+                var ticker = new Ticker
+                {
+                    Symbol = symbol,
+                    Name = profile.Name ?? symbol,
+                    Sector = profile.Sector
+                };
+
+                _db.Tickers.Add(ticker);
+                await _db.SaveChangesAsync(ct);
+
+                return CreatedAtAction(
+                    nameof(GetCompanies),
+                    new { q = symbol },
+                    new CompanySummaryDto
+                    {
+                        Id = ticker.Id.ToString(),
+                        Symbol = ticker.Symbol,
+                        Name = ticker.Name,
+                        Sector = ticker.Sector
+                    });
+            }
+            catch (HttpRequestException ex) when (ex.Message.Contains("429"))
+            {
+                return StatusCode(429, new { error = "API rate limit exceeded" });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to add company: {Symbol}", symbol);
+                return StatusCode(500, new { error = "Failed to add company" });
+            }
+        }
+
+        /// <summary>
+        /// Bulk add popular companies from predefined lists
+        /// </summary>
+        [HttpPost("add-popular")]
+        public async Task<ActionResult<BulkAddResponse>> AddPopularCompanies(
+            [FromBody] AddPopularRequest request,
+            CancellationToken ct)
+        {
+            // get predefined stock list
+            var popularStocks = GetPopularStocksList(request.Category);
+            var added = new List<CompanySummaryDto>();
+            var errors = new List<string>();
+
+            foreach (var symbol in popularStocks.Take(request.Limit ?? 20))
+            {
+                try
+                {
+                    // skip if already exists
+                    var existing = await _db.Tickers.FirstOrDefaultAsync(t => t.Symbol == symbol, ct);
+                    if (existing != null) continue;
+
+                    // use fallback data to avoid API calls
+                    var ticker = new Ticker
+                    {
+                        Symbol = symbol,
+                        Name = GetFallbackCompanyName(symbol),
+                        Sector = GetFallbackSector(symbol)
+                    };
+
+                    _db.Tickers.Add(ticker);
+                    added.Add(new CompanySummaryDto
+                    {
+                        Symbol = ticker.Symbol,
+                        Name = ticker.Name,
+                        Sector = ticker.Sector
+                    });
+
+                    await Task.Delay(100, ct); // be nice to APIs
+                }
+                catch (Exception ex)
+                {
+                    errors.Add($"{symbol}: {ex.Message}");
+                }
+            }
+
+            // save all changes
+            if (added.Count > 0)
+                await _db.SaveChangesAsync(ct);
+
+            return Ok(new BulkAddResponse
+            {
+                Added = added,
+                Errors = errors,
+                TotalAdded = added.Count
+            });
+        }
+
+        /// <summary>
+        /// Remove company (with safety checks for existing data)
+        /// </summary>
+        [HttpDelete("{symbol}")]
+        public async Task<IActionResult> RemoveCompany([FromRoute] string symbol, CancellationToken ct)
+        {
+            if (string.IsNullOrWhiteSpace(symbol))
+                return BadRequest(new { error = "Symbol is required" });
+
+            var sym = symbol.Trim().ToUpperInvariant();
+            var ticker = await _db.Tickers.FirstOrDefaultAsync(t => t.Symbol == sym, ct);
+
+            if (ticker == null)
+                return NotFound(new { error = $"Company {sym} not found" });
+
+            // safety check: don't delete if has financial data
+            var hasData = await _db.IncomeStatements.AnyAsync(i => i.Symbol == sym, ct) ||
+                         await _db.BalanceSheets.AnyAsync(b => b.Symbol == sym, ct) ||
+                         await _db.CashFlows.AnyAsync(c => c.Symbol == sym, ct) ||
+                         await _db.Prices.AnyAsync(p => p.TickerId == ticker.Id, ct);
+
+            if (hasData)
+                return Conflict(new { error = $"Cannot delete {sym}: has financial data" });
+
+            _db.Tickers.Remove(ticker);
+            await _db.SaveChangesAsync(ct);
+
+            return Ok(new { message = $"Company {sym} removed successfully" });
+        }
+
+        // ============= HELPER METHODS =============
+
+        /// <summary>
+        /// Get predefined lists of popular stocks by category
+        /// </summary>
+        private static List<string> GetPopularStocksList(string? category = null) =>
+            category?.ToLower() switch
+            {
+                "megacap" => new() { "AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "TSLA", "META", "BRK.B" },
+                "dow30" => new() { "AAPL", "MSFT", "BA", "CAT", "CVX", "CSCO", "KO", "DIS", "JPM", "HD" },
+                "buffett" => new() { "BRK.B", "AAPL", "BAC", "AXP", "KO", "CVX", "OXY", "MCO" },
+                "tech" => new() { "AAPL", "MSFT", "GOOGL", "AMZN", "META", "TSLA", "NVDA", "CRM" },
+                "etf" => new() { "VOO", "VTI", "QQQ", "SPY", "VEA", "VWO", "BND" },
+                _ => new() { "AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "TSLA", "META", "BRK.B", "JNJ", "JPM" }
+            };
+
+        /// <summary>
+        /// Fallback company names to avoid API calls for well-known stocks
+        /// </summary>
+        private static string GetFallbackCompanyName(string symbol) =>
+        symbol switch
+        {
+            // Mega-Cap & Tech
+            "AAPL" => "Apple Inc.",
+            "MSFT" => "Microsoft Corporation",
+            "GOOGL" => "Alphabet Inc.",
+            "AMZN" => "Amazon.com Inc.",
+            "TSLA" => "Tesla Inc.",
+            "META" => "Meta Platforms Inc.",
+            "NVDA" => "NVIDIA Corporation",
+            "BRK.B" => "Berkshire Hathaway Inc.",
+            "CRM" => "Salesforce Inc.",
+            "ORCL" => "Oracle Corporation",
+            "ADBE" => "Adobe Inc.",
+
+            // Dow 30 additions
+            "BA" => "Boeing Co.",
+            "CAT" => "Caterpillar Inc.",
+            "CVX" => "Chevron Corporation",
+            "CSCO" => "Cisco Systems Inc.",
+            "KO" => "Coca-Cola Co.",
+            "DIS" => "Walt Disney Co.",
+            "DOW" => "Dow Inc.",
+            "GS" => "Goldman Sachs Group Inc.",
+            "HD" => "Home Depot Inc.",
+            "IBM" => "International Business Machines Corp.",
+            "INTC" => "Intel Corporation",
+            "JNJ" => "Johnson & Johnson",
+            "JPM" => "JPMorgan Chase & Co.",
+            "MCD" => "McDonald's Corp.",
+            "MMM" => "3M Co.",
+            "MRK" => "Merck & Co Inc.",
+            "NKE" => "Nike Inc.",
+            "PG" => "Procter & Gamble Co.",
+            "TRV" => "Travelers Companies Inc.",
+            "UNH" => "UnitedHealth Group Inc.",
+            "V" => "Visa Inc.",
+            "VZ" => "Verizon Communications Inc.",
+            "WMT" => "Walmart Inc.",
+            "WBA" => "Walgreens Boots Alliance Inc.",
+
+            // Buffett Holdings additions
+            "BAC" => "Bank of America Corp.",
+            "AXP" => "American Express Co.",
+            "OXY" => "Occidental Petroleum Corp.",
+            "MCO" => "Moody's Corp.",
+
+            // ETFs
+            "VOO" => "Vanguard S&P 500 ETF",
+            "VTI" => "Vanguard Total Stock Market ETF",
+            "QQQ" => "Invesco QQQ Trust",
+            "SPY" => "SPDR S&P 500 ETF Trust",
+            "VEA" => "Vanguard FTSE Developed Markets ETF",
+            "VWO" => "Vanguard FTSE Emerging Markets ETF",
+            "BND" => "Vanguard Total Bond Market ETF",
+
+            _ => symbol
+        };
+
+        /// <summary>
+        /// Fallback sector mapping for popular stocks
+        /// </summary>
+        private static string? GetFallbackSector(string symbol) =>
+        symbol switch
+        {
+            // Technology
+            "AAPL" or "MSFT" or "GOOGL" or "META" or "NVDA" or "CRM" or "ORCL" or "ADBE" or "CSCO" or "IBM" or "INTC" => "Technology",
+            
+            // Consumer Cyclical
+            "AMZN" or "TSLA" or "HD" or "NKE" or "MCD" => "Consumer Cyclical",
+            
+            // Healthcare
+            "JNJ" or "UNH" or "MRK" => "Healthcare",
+            
+            // Financial Services
+            "JPM" or "V" or "BRK.B" or "GS" or "BAC" or "AXP" or "MCO" or "TRV" => "Financial Services",
+            
+            // Consumer Defensive
+            "KO" or "PG" or "WMT" or "WBA" => "Consumer Defensive",
+            
+            // Communication Services
+            "DIS" or "VZ" => "Communication Services",
+            
+            // Energy
+            "CVX" or "OXY" => "Energy",
+            
+            // Industrials
+            "BA" or "CAT" or "DOW" or "MMM" => "Industrials",
+            
+            // ETFs (special category)
+            "VOO" or "VTI" or "QQQ" or "SPY" or "VEA" or "VWO" or "BND" => "ETF",
+            
+            _ => null
+        };
+
+        // ============= NEW DTOs - Create file: Portfolio.Api/Models/CompanyDiscoveryDtos.cs =============
+
+        public record AddCompanyRequest
+        {
+            public string Symbol { get; init; } = string.Empty;
+        }
+
+        public record AddPopularRequest
+        {
+            public string? Category { get; init; }
+            public int? Limit { get; init; } = 20;
+        }
+
+        public record CompanySearchResult
+        {
+            public string Symbol { get; init; } = string.Empty;
+            public string Name { get; init; } = string.Empty;
+            public string? Exchange { get; init; }
+            public string? Sector { get; init; }
+            public bool IsInDatabase { get; init; }
+        }
+
+        public record CompanySearchResponse
+        {
+            public string Query { get; init; } = string.Empty;
+            public List<CompanySearchResult> Results { get; init; } = new();
+            public int TotalFound { get; init; }
+        }
+
+        public record BulkAddResponse
+        {
+            public List<CompanySummaryDto> Added { get; init; } = new();
+            public List<string> Errors { get; init; } = new();
+            public int TotalAdded { get; init; }
+        }
+
+
+
+
+
+        // Temporary mock until we add real SearchCompaniesAsync to FmpClient
+        private async Task<List<CompanySearchResult>> MockSearchAsync(string query, int limit)
+        {
+            await Task.Delay(200); // simulate API call
+
+            var mockResults = new List<CompanySearchResult>
+            {
+                new() { Symbol = "AAPL", Name = "Apple Inc.", Exchange = "NASDAQ" },
+                new() { Symbol = "MSFT", Name = "Microsoft Corporation", Exchange = "NASDAQ" },
+                new() { Symbol = "TSLA", Name = "Tesla Inc.", Exchange = "NASDAQ" }
+            };
+
+            return mockResults
+                .Where(r => r.Symbol.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+                           r.Name.Contains(query, StringComparison.OrdinalIgnoreCase))
+                .Take(limit)
+                .ToList();
+        }
+
     }
 }

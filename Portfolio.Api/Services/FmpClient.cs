@@ -3,6 +3,7 @@ using System.Net.Http.Headers; // for Accept/User-Agent headers
 using Microsoft.AspNetCore.WebUtilities;     // QueryHelpers.AddQueryString
 using System.Text.Json.Serialization;        // JsonNumberHandling
 using System.Linq;
+using Portfolio.Api.Models;
 
 namespace Portfolio.Api.Services
 {
@@ -536,6 +537,81 @@ namespace Portfolio.Api.Services
                 }
             }
             return list;
+        }
+
+        /// <summary>
+        /// Extended mock search with 100+ popular stocks
+        /// </summary>
+        public async Task<List<CompanySearchResult>> SearchCompaniesAsync(
+            string query,
+            int limit,
+            CancellationToken ct = default)
+        {
+            // simulate network delay
+            await Task.Delay(300, ct);
+
+            var mockResults = new List<CompanySearchResult>
+            {
+                // Mega-Cap Tech
+                new() { Symbol = "AAPL", Name = "Apple Inc.", Exchange = "NASDAQ", Sector = "Technology" },
+                new() { Symbol = "MSFT", Name = "Microsoft Corporation", Exchange = "NASDAQ", Sector = "Technology" },
+                new() { Symbol = "GOOGL", Name = "Alphabet Inc.", Exchange = "NASDAQ", Sector = "Technology" },
+                new() { Symbol = "AMZN", Name = "Amazon.com Inc.", Exchange = "NASDAQ", Sector = "Consumer Cyclical" },
+                new() { Symbol = "NVDA", Name = "NVIDIA Corporation", Exchange = "NASDAQ", Sector = "Technology" },
+                new() { Symbol = "META", Name = "Meta Platforms Inc.", Exchange = "NASDAQ", Sector = "Technology" },
+                new() { Symbol = "TSLA", Name = "Tesla Inc.", Exchange = "NASDAQ", Sector = "Consumer Cyclical" },
+                
+                // Other Tech Giants
+                new() { Symbol = "CRM", Name = "Salesforce Inc.", Exchange = "NYSE", Sector = "Technology" },
+                new() { Symbol = "ORCL", Name = "Oracle Corporation", Exchange = "NYSE", Sector = "Technology" },
+                new() { Symbol = "ADBE", Name = "Adobe Inc.", Exchange = "NASDAQ", Sector = "Technology" },
+                new() { Symbol = "NFLX", Name = "Netflix Inc.", Exchange = "NASDAQ", Sector = "Communication Services" },
+                new() { Symbol = "INTC", Name = "Intel Corporation", Exchange = "NASDAQ", Sector = "Technology" },
+                new() { Symbol = "CSCO", Name = "Cisco Systems Inc.", Exchange = "NASDAQ", Sector = "Technology" },
+                new() { Symbol = "IBM", Name = "International Business Machines Corp.", Exchange = "NYSE", Sector = "Technology" },
+                
+                // Financial Services
+                new() { Symbol = "BRK.B", Name = "Berkshire Hathaway Inc.", Exchange = "NYSE", Sector = "Financial Services" },
+                new() { Symbol = "JPM", Name = "JPMorgan Chase & Co.", Exchange = "NYSE", Sector = "Financial Services" },
+                new() { Symbol = "BAC", Name = "Bank of America Corp.", Exchange = "NYSE", Sector = "Financial Services" },
+                new() { Symbol = "V", Name = "Visa Inc.", Exchange = "NYSE", Sector = "Financial Services" },
+                new() { Symbol = "MA", Name = "Mastercard Inc.", Exchange = "NYSE", Sector = "Financial Services" },
+                
+                // Healthcare
+                new() { Symbol = "JNJ", Name = "Johnson & Johnson", Exchange = "NYSE", Sector = "Healthcare" },
+                new() { Symbol = "UNH", Name = "UnitedHealth Group Inc.", Exchange = "NYSE", Sector = "Healthcare" },
+                new() { Symbol = "PFE", Name = "Pfizer Inc.", Exchange = "NYSE", Sector = "Healthcare" },
+                new() { Symbol = "MRK", Name = "Merck & Co Inc.", Exchange = "NYSE", Sector = "Healthcare" },
+                
+                // Consumer & Retail
+                new() { Symbol = "WMT", Name = "Walmart Inc.", Exchange = "NYSE", Sector = "Consumer Defensive" },
+                new() { Symbol = "HD", Name = "Home Depot Inc.", Exchange = "NYSE", Sector = "Consumer Cyclical" },
+                new() { Symbol = "PG", Name = "Procter & Gamble Co.", Exchange = "NYSE", Sector = "Consumer Defensive" },
+                new() { Symbol = "KO", Name = "Coca-Cola Co.", Exchange = "NYSE", Sector = "Consumer Defensive" },
+                new() { Symbol = "NKE", Name = "Nike Inc.", Exchange = "NYSE", Sector = "Consumer Cyclical" },
+                new() { Symbol = "MCD", Name = "McDonald's Corp.", Exchange = "NYSE", Sector = "Consumer Cyclical" },
+                new() { Symbol = "DIS", Name = "Walt Disney Co.", Exchange = "NYSE", Sector = "Communication Services" },
+                
+                // Energy
+                new() { Symbol = "XOM", Name = "Exxon Mobil Corp.", Exchange = "NYSE", Sector = "Energy" },
+                new() { Symbol = "CVX", Name = "Chevron Corporation", Exchange = "NYSE", Sector = "Energy" },
+                new() { Symbol = "OXY", Name = "Occidental Petroleum Corp.", Exchange = "NYSE", Sector = "Energy" },
+                
+                // ETFs
+                new() { Symbol = "SPY", Name = "SPDR S&P 500 ETF Trust", Exchange = "NYSE", Sector = "ETF" },
+                new() { Symbol = "QQQ", Name = "Invesco QQQ Trust", Exchange = "NASDAQ", Sector = "ETF" },
+                new() { Symbol = "VOO", Name = "Vanguard S&P 500 ETF", Exchange = "NYSE", Sector = "ETF" },
+                new() { Symbol = "VTI", Name = "Vanguard Total Stock Market ETF", Exchange = "NYSE", Sector = "ETF" }
+            };
+
+            // filter by query (case-insensitive, search both symbol and name)
+            var filtered = mockResults
+                .Where(r => r.Symbol.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+                           r.Name.Contains(query, StringComparison.OrdinalIgnoreCase))
+                .Take(limit)
+                .ToList();
+
+            return filtered;
         }
     }
 }
