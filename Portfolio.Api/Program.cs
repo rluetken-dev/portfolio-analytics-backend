@@ -6,8 +6,19 @@ using Microsoft.EntityFrameworkCore;
 using System.Reflection;
 using Swashbuckle.AspNetCore.Annotations;
 using Portfolio.Api.Seed;
+using Newtonsoft.Json;
+using Portfolio.Api.Models;
+
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Fallback read JSON 
+var fallbackPath = Path.Combine(builder.Environment.ContentRootPath, "Data", "companies-fallback.json");
+var fallbackJson = File.ReadAllText(fallbackPath);
+var fallbackData = JsonConvert.DeserializeObject<FallbackData>(fallbackJson) ?? new FallbackData();
+
+builder.Services.AddSingleton(fallbackData);
+builder.Services.AddSingleton(fallbackPath);
 
 // --- existing DbContext registration ---
 builder.Services.AddDbContext<AppDbContext>(opt =>

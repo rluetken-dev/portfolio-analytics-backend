@@ -1,0 +1,444 @@
+{
+  "PopularLists": {
+    "megacap": [
+      "AAPL",
+      "MSFT",
+      "GOOGL",
+      "AMZN",
+      "NVDA",
+      "TSLA",
+      "META",
+      "BRK.B"
+    ],
+    "dow30": [
+      "AAPL",
+      "MSFT",
+      "BA",
+      "CAT",
+      "CVX",
+      "CSCO",
+      "KO",
+      "DIS",
+      "JPM",
+      "HD"
+    ],
+    "buffett": [
+      "BRK.B",
+      "AAPL",
+      "BAC",
+      "AXP",
+      "KO",
+      "CVX",
+      "OXY",
+      "MCO"
+    ],
+    "tech": [
+      "AAPL",
+      "MSFT",
+      "GOOGL",
+      "AMZN",
+      "META",
+      "TSLA",
+      "NVDA",
+      "CRM"
+    ],
+    "etf": [
+      "VOO",
+      "VTI",
+      "QQQ",
+      "SPY",
+      "VEA",
+      "VWO",
+      "BND"
+    ],
+    "default": [
+      "AAPL",
+      "MSFT",
+      "GOOGL",
+      "AMZN",
+      "NVDA",
+      "TSLA",
+      "META",
+      "BRK.B",
+      "JNJ",
+      "JPM"
+    ]
+  },
+  "Companies": [
+    {
+      "Symbol": "AAPL",
+      "Name": "Apple Inc.",
+      "Sector": "Technology"
+    },
+    {
+      "Symbol": "GOOGL",
+      "Name": "Alphabet Inc.",
+      "Sector": "Technology"
+    },
+    {
+      "Symbol": "AMZN",
+      "Name": "Amazon.com Inc.",
+      "Sector": "Consumer Cyclical"
+    },
+    {
+      "Symbol": "TSLA",
+      "Name": "Tesla Inc.",
+      "Sector": "Consumer Cyclical"
+    },
+    {
+      "Symbol": "META",
+      "Name": "Meta Platforms Inc.",
+      "Sector": "Technology"
+    },
+    {
+      "Symbol": "NVDA",
+      "Name": "NVIDIA Corporation",
+      "Sector": "Technology"
+    },
+    {
+      "Symbol": "BRK.B",
+      "Name": "Berkshire Hathaway Inc.",
+      "Sector": "Financial Services"
+    },
+    {
+      "Symbol": "CRM",
+      "Name": "Salesforce Inc.",
+      "Sector": "Technology"
+    },
+    {
+      "Symbol": "ORCL",
+      "Name": "Oracle Corporation",
+      "Sector": "Technology"
+    },
+    {
+      "Symbol": "ADBE",
+      "Name": "Adobe Inc.",
+      "Sector": "Technology"
+    },
+    {
+      "Symbol": "BA",
+      "Name": "Boeing Co.",
+      "Sector": "Industrials"
+    },
+    {
+      "Symbol": "CAT",
+      "Name": "Caterpillar Inc.",
+      "Sector": "Industrials"
+    },
+    {
+      "Symbol": "CVX",
+      "Name": "Chevron Corporation",
+      "Sector": "Energy"
+    },
+    {
+      "Symbol": "CSCO",
+      "Name": "Cisco Systems Inc.",
+      "Sector": "Technology"
+    },
+    {
+      "Symbol": "KO",
+      "Name": "Coca-Cola Co.",
+      "Sector": "Consumer Defensive"
+    },
+    {
+      "Symbol": "DIS",
+      "Name": "Walt Disney Co.",
+      "Sector": "Communication Services"
+    },
+    {
+      "Symbol": "DOW",
+      "Name": "Dow Inc.",
+      "Sector": "Industrials"
+    },
+    {
+      "Symbol": "GS",
+      "Name": "Goldman Sachs Group Inc.",
+      "Sector": "Financial Services"
+    },
+    {
+      "Symbol": "HD",
+      "Name": "Home Depot Inc.",
+      "Sector": "Consumer Cyclical"
+    },
+    {
+      "Symbol": "IBM",
+      "Name": "International Business Machines Corp.",
+      "Sector": "Technology"
+    },
+    {
+      "Symbol": "INTC",
+      "Name": "Intel Corporation",
+      "Sector": "Technology"
+    },
+    {
+      "Symbol": "JNJ",
+      "Name": "Johnson & Johnson",
+      "Sector": "Healthcare"
+    },
+    {
+      "Symbol": "JPM",
+      "Name": "JPMorgan Chase & Co.",
+      "Sector": "Financial Services"
+    },
+    {
+      "Symbol": "MCD",
+      "Name": "McDonald's Corp.",
+      "Sector": "Consumer Cyclical"
+    },
+    {
+      "Symbol": "MMM",
+      "Name": "3M Co.",
+      "Sector": "Industrials"
+    },
+    {
+      "Symbol": "MRK",
+      "Name": "Merck & Co Inc.",
+      "Sector": "Healthcare"
+    },
+    {
+      "Symbol": "NKE",
+      "Name": "Nike Inc.",
+      "Sector": "Consumer Cyclical"
+    },
+    {
+      "Symbol": "PG",
+      "Name": "Procter & Gamble Co.",
+      "Sector": "Consumer Defensive"
+    },
+    {
+      "Symbol": "TRV",
+      "Name": "Travelers Companies Inc.",
+      "Sector": "Financial Services"
+    },
+    {
+      "Symbol": "UNH",
+      "Name": "UnitedHealth Group Inc.",
+      "Sector": "Healthcare"
+    },
+    {
+      "Symbol": "V",
+      "Name": "Visa Inc.",
+      "Sector": "Financial Services"
+    },
+    {
+      "Symbol": "VZ",
+      "Name": "Verizon Communications Inc.",
+      "Sector": "Communication Services"
+    },
+    {
+      "Symbol": "WMT",
+      "Name": "Walmart Inc.",
+      "Sector": "Consumer Defensive"
+    },
+    {
+      "Symbol": "WBA",
+      "Name": "Walgreens Boots Alliance Inc.",
+      "Sector": "Consumer Defensive"
+    },
+    {
+      "Symbol": "BAC",
+      "Name": "Bank of America Corp.",
+      "Sector": "Financial Services"
+    },
+    {
+      "Symbol": "AXP",
+      "Name": "American Express Co.",
+      "Sector": "Financial Services"
+    },
+    {
+      "Symbol": "OXY",
+      "Name": "Occidental Petroleum Corp.",
+      "Sector": "Energy"
+    },
+    {
+      "Symbol": "MCO",
+      "Name": "Moody's Corp.",
+      "Sector": "Financial Services"
+    },
+    {
+      "Symbol": "VOO",
+      "Name": "Vanguard S&P 500 ETF",
+      "Sector": "ETF"
+    },
+    {
+      "Symbol": "VTI",
+      "Name": "Vanguard Total Stock Market ETF",
+      "Sector": "ETF"
+    },
+    {
+      "Symbol": "QQQ",
+      "Name": "Invesco QQQ Trust",
+      "Sector": "ETF"
+    },
+    {
+      "Symbol": "SPY",
+      "Name": "SPDR S&P 500 ETF Trust",
+      "Sector": "ETF"
+    },
+    {
+      "Symbol": "VEA",
+      "Name": "Vanguard FTSE Developed Markets ETF",
+      "Sector": "ETF"
+    },
+    {
+      "Symbol": "VWO",
+      "Name": "Vanguard FTSE Emerging Markets ETF",
+      "Sector": "ETF"
+    },
+    {
+      "Symbol": "BND",
+      "Name": "Vanguard Total Bond Market ETF",
+      "Sector": "ETF"
+    },
+    {
+      "Symbol": "059090.KS",
+      "Name": "MiCo Ltd",
+      "Sector": null
+    },
+    {
+      "Symbol": "059090.KQ",
+      "Name": "MiCo Ltd.",
+      "Sector": null
+    },
+    {
+      "Symbol": "UMICY",
+      "Name": "Umicore S.A.",
+      "Sector": null
+    },
+    {
+      "Symbol": "UMICF",
+      "Name": "Umicore S.A.",
+      "Sector": null
+    },
+    {
+      "Symbol": "UMI.BR",
+      "Name": "Umicore S.A.",
+      "Sector": null
+    },
+    {
+      "Symbol": "NVJP.DE",
+      "Name": "Umicore S.A.",
+      "Sector": null
+    },
+    {
+      "Symbol": "092040.KQ",
+      "Name": "Amicogen, Inc.",
+      "Sector": null
+    },
+    {
+      "Symbol": "AMIF.L",
+      "Name": "Amicorp FS (UK) plc",
+      "Sector": null
+    },
+    {
+      "Symbol": "SOMICONV.BO",
+      "Name": "Somi Conveyor Beltings Limited",
+      "Sector": null
+    },
+    {
+      "Symbol": "SOMICONVEY.NS",
+      "Name": "Somi Conveyor Beltings Limited",
+      "Sector": null
+    },
+    {
+      "Symbol": "MIC",
+      "Name": "Macquarie Infrastructure Holdings, LLC",
+      "Sector": null
+    },
+    {
+      "Symbol": "MICT",
+      "Name": "MICT, Inc.",
+      "Sector": null
+    },
+    {
+      "Symbol": "MICS",
+      "Name": "The Singing Machine Company, Inc.",
+      "Sector": null
+    },
+    {
+      "Symbol": "MICR",
+      "Name": "Micron Solutions, Inc.",
+      "Sector": null
+    },
+    {
+      "Symbol": "MICTW",
+      "Name": "Micronet Enertec Technologies Inc. Warrant",
+      "Sector": null
+    },
+    {
+      "Symbol": "MICRD",
+      "Name": "Micron Solutions, Inc.",
+      "Sector": null
+    },
+    {
+      "Symbol": "MICLF",
+      "Name": "Mycronic AB (publ)",
+      "Sector": null
+    },
+    {
+      "Symbol": "MICGX",
+      "Name": "Mirae Asset Discovery Fds Emerging Markets Great Consumer Fd Cl I",
+      "Sector": null
+    },
+    {
+      "Symbol": "MICFX",
+      "Name": "Matthews China Instl",
+      "Sector": null
+    },
+    {
+      "Symbol": "MICDX",
+      "Name": "Matthews China Dividend Fund",
+      "Sector": null
+    },
+    {
+      "Symbol": "MICROSE.BO",
+      "Name": "Microse India Ltd.",
+      "Sector": null
+    },
+    {
+      "Symbol": "SALT.L",
+      "Name": "MicroSalt Plc",
+      "Sector": null
+    },
+    {
+      "Symbol": "MSCC",
+      "Name": "Microsemi Corp.",
+      "Sector": null
+    },
+    {
+      "Symbol": "MSYS.L",
+      "Name": "Microsaic Systems plc",
+      "Sector": null
+    },
+    {
+      "Symbol": "MSFT.NE",
+      "Name": "Microsoft Corporation",
+      "Sector": null
+    },
+    {
+      "Symbol": "MSFT",
+      "Name": "Microsoft Corporation",
+      "Sector": null
+    },
+    {
+      "Symbol": "MSF.F",
+      "Name": "Microsoft Corporation",
+      "Sector": null
+    },
+    {
+      "Symbol": "MSF.DE",
+      "Name": "Microsoft Corporation",
+      "Sector": null
+    },
+    {
+      "Symbol": "MSF.BR",
+      "Name": "Microsoft Corporation",
+      "Sector": null
+    },
+    {
+      "Symbol": "4338.HK",
+      "Name": "Microsoft Corporation",
+      "Sector": null
+    }
+  ]
+}

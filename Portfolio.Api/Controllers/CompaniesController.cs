@@ -13,7 +13,7 @@ namespace Portfolio.Api.Controllers
         private readonly AppDbContext _db;
         private readonly FmpClient _fmp;
         private readonly ILogger<CompaniesController> _logger;
-
+        private readonly FallbackData _fallbackData;
 
         /// <summary>
         /// Lightweight DTO for the frontend list.
@@ -26,12 +26,16 @@ namespace Portfolio.Api.Controllers
             public string? Sector { get; init; }
         }
 
-        public CompaniesController(AppDbContext db, FmpClient fmp, ILogger<CompaniesController> logger)
+        public CompaniesController(
+            AppDbContext db,
+            FmpClient fmp,
+            ILogger<CompaniesController> logger,
+            FallbackData fallbackData)
         {
             _db = db;
             _fmp = fmp;
             _logger = logger;
-
+            _fallbackData = fallbackData;
         }
 
         /// <summary>
@@ -445,115 +449,37 @@ namespace Portfolio.Api.Controllers
         /// <summary>
         /// Get predefined lists of popular stocks by category
         /// </summary>
-        private static List<string> GetPopularStocksList(string? category = null) =>
-            category?.ToLower() switch
-            {
-                "megacap" => new() { "AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "TSLA", "META", "BRK.B" },
-                "dow30" => new() { "AAPL", "MSFT", "BA", "CAT", "CVX", "CSCO", "KO", "DIS", "JPM", "HD" },
-                "buffett" => new() { "BRK.B", "AAPL", "BAC", "AXP", "KO", "CVX", "OXY", "MCO" },
-                "tech" => new() { "AAPL", "MSFT", "GOOGL", "AMZN", "META", "TSLA", "NVDA", "CRM" },
-                "etf" => new() { "VOO", "VTI", "QQQ", "SPY", "VEA", "VWO", "BND" },
-                _ => new() { "AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "TSLA", "META", "BRK.B", "JNJ", "JPM" }
-            };
+        private List<string> GetPopularStocksList(string? category = null)
+        {
+            if (string.IsNullOrEmpty(category)) 
+                return _fallbackData.PopularLists.GetValueOrDefault("default") ?? new List<string>();
+
+            var key = category.ToLower();
+            return _fallbackData.PopularLists.GetValueOrDefault(key) ?? new List<string>();
+        }
 
         /// <summary>
         /// Fallback company names to avoid API calls for well-known stocks
         /// </summary>
-        private static string GetFallbackCompanyName(string symbol) =>
-        symbol switch
+        private string GetFallbackCompanyName(string symbol)
         {
-            // Mega-Cap & Tech
-            "AAPL" => "Apple Inc.",
-            "MSFT" => "Microsoft Corporation",
-            "GOOGL" => "Alphabet Inc.",
-            "AMZN" => "Amazon.com Inc.",
-            "TSLA" => "Tesla Inc.",
-            "META" => "Meta Platforms Inc.",
-            "NVDA" => "NVIDIA Corporation",
-            "BRK.B" => "Berkshire Hathaway Inc.",
-            "CRM" => "Salesforce Inc.",
-            "ORCL" => "Oracle Corporation",
-            "ADBE" => "Adobe Inc.",
+            var company = _fallbackData.Companies
+                .FirstOrDefault(c => string.Equals(c.Symbol, symbol, StringComparison.OrdinalIgnoreCase));
 
-            // Dow 30 additions
-            "BA" => "Boeing Co.",
-            "CAT" => "Caterpillar Inc.",
-            "CVX" => "Chevron Corporation",
-            "CSCO" => "Cisco Systems Inc.",
-            "KO" => "Coca-Cola Co.",
-            "DIS" => "Walt Disney Co.",
-            "DOW" => "Dow Inc.",
-            "GS" => "Goldman Sachs Group Inc.",
-            "HD" => "Home Depot Inc.",
-            "IBM" => "International Business Machines Corp.",
-            "INTC" => "Intel Corporation",
-            "JNJ" => "Johnson & Johnson",
-            "JPM" => "JPMorgan Chase & Co.",
-            "MCD" => "McDonald's Corp.",
-            "MMM" => "3M Co.",
-            "MRK" => "Merck & Co Inc.",
-            "NKE" => "Nike Inc.",
-            "PG" => "Procter & Gamble Co.",
-            "TRV" => "Travelers Companies Inc.",
-            "UNH" => "UnitedHealth Group Inc.",
-            "V" => "Visa Inc.",
-            "VZ" => "Verizon Communications Inc.",
-            "WMT" => "Walmart Inc.",
-            "WBA" => "Walgreens Boots Alliance Inc.",
-
-            // Buffett Holdings additions
-            "BAC" => "Bank of America Corp.",
-            "AXP" => "American Express Co.",
-            "OXY" => "Occidental Petroleum Corp.",
-            "MCO" => "Moody's Corp.",
-
-            // ETFs
-            "VOO" => "Vanguard S&P 500 ETF",
-            "VTI" => "Vanguard Total Stock Market ETF",
-            "QQQ" => "Invesco QQQ Trust",
-            "SPY" => "SPDR S&P 500 ETF Trust",
-            "VEA" => "Vanguard FTSE Developed Markets ETF",
-            "VWO" => "Vanguard FTSE Emerging Markets ETF",
-            "BND" => "Vanguard Total Bond Market ETF",
-
-            _ => symbol
-        };
+            return company?.Name ?? symbol;
+        }
 
         /// <summary>
         /// Fallback sector mapping for popular stocks
         /// </summary>
-        private static string? GetFallbackSector(string symbol) =>
-        symbol switch
+        private string? GetFallbackSector(string symbol)
         {
-            // Technology
-            "AAPL" or "MSFT" or "GOOGL" or "META" or "NVDA" or "CRM" or "ORCL" or "ADBE" or "CSCO" or "IBM" or "INTC" => "Technology",
-            
-            // Consumer Cyclical
-            "AMZN" or "TSLA" or "HD" or "NKE" or "MCD" => "Consumer Cyclical",
-            
-            // Healthcare
-            "JNJ" or "UNH" or "MRK" => "Healthcare",
-            
-            // Financial Services
-            "JPM" or "V" or "BRK.B" or "GS" or "BAC" or "AXP" or "MCO" or "TRV" => "Financial Services",
-            
-            // Consumer Defensive
-            "KO" or "PG" or "WMT" or "WBA" => "Consumer Defensive",
-            
-            // Communication Services
-            "DIS" or "VZ" => "Communication Services",
-            
-            // Energy
-            "CVX" or "OXY" => "Energy",
-            
-            // Industrials
-            "BA" or "CAT" or "DOW" or "MMM" => "Industrials",
-            
-            // ETFs (special category)
-            "VOO" or "VTI" or "QQQ" or "SPY" or "VEA" or "VWO" or "BND" => "ETF",
-            
-            _ => null
-        };
+            var company = _fallbackData.Companies
+                .FirstOrDefault(c => string.Equals(c.Symbol, symbol, StringComparison.OrdinalIgnoreCase));
+
+            return company?.Sector;
+        }
+
 
         // ============= NEW DTOs - Create file: Portfolio.Api/Models/CompanyDiscoveryDtos.cs =============
 

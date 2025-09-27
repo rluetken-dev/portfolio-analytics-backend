@@ -1,9 +1,10 @@
-using System.Text.Json;
+//using System.Text.Json;
 using System.Net.Http.Headers; // for Accept/User-Agent headers
 using Microsoft.AspNetCore.WebUtilities;     // QueryHelpers.AddQueryString
 using System.Text.Json.Serialization;        // JsonNumberHandling
 using System.Linq;
 using Portfolio.Api.Models;
+using Newtonsoft.Json;
 
 namespace Portfolio.Api.Services
 {
@@ -16,14 +17,8 @@ namespace Portfolio.Api.Services
         private readonly HttpClient _http;
         private readonly ILogger<FmpClient> _log;
         private readonly string _apiKey;
-
-        // JSON options: case-insensitive so PascalCase C# properties can bind to camelCase JSON.
-        // Also enable strict number handling to surface bad numeric payloads early.
-        private static readonly JsonSerializerOptions _jsonStable = new()
-        {
-            PropertyNameCaseInsensitive = true,
-            NumberHandling = JsonNumberHandling.Strict
-        };
+        private readonly FallbackData _fallback;
+        private readonly string _fallbackPath;
 
         /// <summary>
         /// Minimal DTO for /stable/income-statement. Add fields as you need them.
@@ -139,7 +134,10 @@ namespace Portfolio.Api.Services
                 throw new HttpRequestException($"FMP GET {relative} failed: {(int)res.StatusCode} {res.ReasonPhrase}. Body: {body}");
 
             await using var stream = await res.Content.ReadAsStreamAsync(ct);
-            var arr = await JsonSerializer.DeserializeAsync<FmpProfileRaw[]>(stream, _jsonStable, ct);
+            using var reader = new StreamReader(stream);
+            var json = await reader.ReadToEndAsync();
+            var arr = JsonConvert.DeserializeObject<FmpProfileRaw[]>(json);
+
 
             var first = arr?.FirstOrDefault();
             if (first is null) return null;
@@ -152,10 +150,12 @@ namespace Portfolio.Api.Services
             };
         }
 
-        public FmpClient(HttpClient http, IConfiguration config, ILogger<FmpClient> log)
+        public FmpClient(HttpClient http, IConfiguration config, ILogger<FmpClient> log, FallbackData fallback, string fallbackPath)
         {
             _http = http;
             _log = log;
+            _fallback = fallback;
+            _fallbackPath = fallbackPath;
 
             // Read API key from user-secrets or env vars.
             _apiKey = config["Fmp:ApiKey"] ?? throw new InvalidOperationException(
@@ -331,7 +331,9 @@ namespace Portfolio.Api.Services
 
             // Deserialize the JSON stream into the requested type.
             await using var stream = await res.Content.ReadAsStreamAsync(ct);
-            var data = await JsonSerializer.DeserializeAsync<T>(stream, _jsonStable, ct);
+            using var reader = new StreamReader(stream);
+            var json = await reader.ReadToEndAsync();
+            var data = JsonConvert.DeserializeObject<T>(json);
             if (data is null)
                 throw new InvalidOperationException($"Empty/invalid JSON returned by {url}");
 
@@ -523,7 +525,10 @@ namespace Portfolio.Api.Services
                 throw new HttpRequestException($"FMP GET {relative} failed: {(int)res.StatusCode} {res.ReasonPhrase}. Body: {body}");
 
             await using var stream = await res.Content.ReadAsStreamAsync(ct);
-            var arr = await JsonSerializer.DeserializeAsync<FmpSp500Row[]>(stream, _jsonStable, ct);
+            using var reader = new StreamReader(stream);
+            var json = await reader.ReadToEndAsync();
+            var arr = JsonConvert.DeserializeObject<FmpSp500Row[]>(json);
+
 
             var list = new List<(string Symbol, string? Name)>(arr?.Length ?? 0);
             if (arr != null)
@@ -543,75 +548,69 @@ namespace Portfolio.Api.Services
         /// Extended mock search with 100+ popular stocks
         /// </summary>
         public async Task<List<CompanySearchResult>> SearchCompaniesAsync(
-            string query,
-            int limit,
-            CancellationToken ct = default)
+     string query,
+     int limit,
+     CancellationToken ct = default)
         {
-            // simulate network delay
-            await Task.Delay(300, ct);
+            if (string.IsNullOrWhiteSpace(query))
+                return new List<CompanySearchResult>();
 
-            var mockResults = new List<CompanySearchResult>
-            {
-                // Mega-Cap Tech
-                new() { Symbol = "AAPL", Name = "Apple Inc.", Exchange = "NASDAQ", Sector = "Technology" },
-                new() { Symbol = "MSFT", Name = "Microsoft Corporation", Exchange = "NASDAQ", Sector = "Technology" },
-                new() { Symbol = "GOOGL", Name = "Alphabet Inc.", Exchange = "NASDAQ", Sector = "Technology" },
-                new() { Symbol = "AMZN", Name = "Amazon.com Inc.", Exchange = "NASDAQ", Sector = "Consumer Cyclical" },
-                new() { Symbol = "NVDA", Name = "NVIDIA Corporation", Exchange = "NASDAQ", Sector = "Technology" },
-                new() { Symbol = "META", Name = "Meta Platforms Inc.", Exchange = "NASDAQ", Sector = "Technology" },
-                new() { Symbol = "TSLA", Name = "Tesla Inc.", Exchange = "NASDAQ", Sector = "Consumer Cyclical" },
-                
-                // Other Tech Giants
-                new() { Symbol = "CRM", Name = "Salesforce Inc.", Exchange = "NYSE", Sector = "Technology" },
-                new() { Symbol = "ORCL", Name = "Oracle Corporation", Exchange = "NYSE", Sector = "Technology" },
-                new() { Symbol = "ADBE", Name = "Adobe Inc.", Exchange = "NASDAQ", Sector = "Technology" },
-                new() { Symbol = "NFLX", Name = "Netflix Inc.", Exchange = "NASDAQ", Sector = "Communication Services" },
-                new() { Symbol = "INTC", Name = "Intel Corporation", Exchange = "NASDAQ", Sector = "Technology" },
-                new() { Symbol = "CSCO", Name = "Cisco Systems Inc.", Exchange = "NASDAQ", Sector = "Technology" },
-                new() { Symbol = "IBM", Name = "International Business Machines Corp.", Exchange = "NYSE", Sector = "Technology" },
-                
-                // Financial Services
-                new() { Symbol = "BRK.B", Name = "Berkshire Hathaway Inc.", Exchange = "NYSE", Sector = "Financial Services" },
-                new() { Symbol = "JPM", Name = "JPMorgan Chase & Co.", Exchange = "NYSE", Sector = "Financial Services" },
-                new() { Symbol = "BAC", Name = "Bank of America Corp.", Exchange = "NYSE", Sector = "Financial Services" },
-                new() { Symbol = "V", Name = "Visa Inc.", Exchange = "NYSE", Sector = "Financial Services" },
-                new() { Symbol = "MA", Name = "Mastercard Inc.", Exchange = "NYSE", Sector = "Financial Services" },
-                
-                // Healthcare
-                new() { Symbol = "JNJ", Name = "Johnson & Johnson", Exchange = "NYSE", Sector = "Healthcare" },
-                new() { Symbol = "UNH", Name = "UnitedHealth Group Inc.", Exchange = "NYSE", Sector = "Healthcare" },
-                new() { Symbol = "PFE", Name = "Pfizer Inc.", Exchange = "NYSE", Sector = "Healthcare" },
-                new() { Symbol = "MRK", Name = "Merck & Co Inc.", Exchange = "NYSE", Sector = "Healthcare" },
-                
-                // Consumer & Retail
-                new() { Symbol = "WMT", Name = "Walmart Inc.", Exchange = "NYSE", Sector = "Consumer Defensive" },
-                new() { Symbol = "HD", Name = "Home Depot Inc.", Exchange = "NYSE", Sector = "Consumer Cyclical" },
-                new() { Symbol = "PG", Name = "Procter & Gamble Co.", Exchange = "NYSE", Sector = "Consumer Defensive" },
-                new() { Symbol = "KO", Name = "Coca-Cola Co.", Exchange = "NYSE", Sector = "Consumer Defensive" },
-                new() { Symbol = "NKE", Name = "Nike Inc.", Exchange = "NYSE", Sector = "Consumer Cyclical" },
-                new() { Symbol = "MCD", Name = "McDonald's Corp.", Exchange = "NYSE", Sector = "Consumer Cyclical" },
-                new() { Symbol = "DIS", Name = "Walt Disney Co.", Exchange = "NYSE", Sector = "Communication Services" },
-                
-                // Energy
-                new() { Symbol = "XOM", Name = "Exxon Mobil Corp.", Exchange = "NYSE", Sector = "Energy" },
-                new() { Symbol = "CVX", Name = "Chevron Corporation", Exchange = "NYSE", Sector = "Energy" },
-                new() { Symbol = "OXY", Name = "Occidental Petroleum Corp.", Exchange = "NYSE", Sector = "Energy" },
-                
-                // ETFs
-                new() { Symbol = "SPY", Name = "SPDR S&P 500 ETF Trust", Exchange = "NYSE", Sector = "ETF" },
-                new() { Symbol = "QQQ", Name = "Invesco QQQ Trust", Exchange = "NASDAQ", Sector = "ETF" },
-                new() { Symbol = "VOO", Name = "Vanguard S&P 500 ETF", Exchange = "NYSE", Sector = "ETF" },
-                new() { Symbol = "VTI", Name = "Vanguard Total Stock Market ETF", Exchange = "NYSE", Sector = "ETF" }
-            };
-
-            // filter by query (case-insensitive, search both symbol and name)
-            var filtered = mockResults
-                .Where(r => r.Symbol.Contains(query, StringComparison.OrdinalIgnoreCase) ||
-                           r.Name.Contains(query, StringComparison.OrdinalIgnoreCase))
+            // 1️⃣ First: try to find matches in local fallback data (fast & no API usage)
+            var localMatches = _fallback.Companies
+                .Where(c =>
+                    c.Symbol.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+                    c.Name.Contains(query, StringComparison.OrdinalIgnoreCase))
                 .Take(limit)
+                .Select(c => new CompanySearchResult
+                {
+                    Symbol = c.Symbol,
+                    Name = c.Name,
+                    Exchange = "Fallback",
+                    Sector = c.Sector
+                })
                 .ToList();
 
-            return filtered;
+            if (localMatches.Any())
+                return localMatches;
+
+            // 2️⃣ If nothing found locally → call the remote FMP API
+            try
+            {
+                var url = $"api/v3/search?query={Uri.EscapeDataString(query)}&limit={limit}&apikey={_apiKey}";
+                var response = await _http.GetFromJsonAsync<List<CompanySearchResult>>(url, ct);
+
+                if (response == null || response.Count == 0)
+                    return new List<CompanySearchResult>();
+
+                // 3️⃣ Add newly discovered companies into fallback data for future offline use
+                foreach (var apiResult in response)
+                {
+                    if (!_fallback.Companies.Any(c => c.Symbol.Equals(apiResult.Symbol, StringComparison.OrdinalIgnoreCase)))
+                    {
+                        _fallback.Companies.Add(new CompanyFallbackInfo
+                        {
+                            Symbol = apiResult.Symbol,
+                            Name = apiResult.Name,
+                            Sector = apiResult.Sector
+                        });
+                    }
+                }
+
+                // 4️⃣ Persist updated fallback data back into JSON file
+                var json = JsonConvert.SerializeObject(_fallback, Formatting.Indented);
+                await File.WriteAllTextAsync(_fallbackPath, json, ct);
+
+                return response;
+            }
+            catch (Exception ex)
+            {
+                // 5️⃣ Log errors but return empty list (avoid breaking client flow)
+                _log.LogError(ex, "FMP search failed for query {Query}", query);
+                return new List<CompanySearchResult>();
+            }
         }
+
+
+
     }
 }
