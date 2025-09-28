@@ -70,6 +70,8 @@ namespace Portfolio.Api.Services
             // 1) Fetch from FMP /stable
             var rows = await _fmp.GetIncomeStatementStableAsync(sym, limit, period, ct);
 
+            //_log.LogInformation("FMP returned {Count} rows for {Symbol} ({Period})", rows?.Count ?? -1, sym, period);
+
             if (rows is null || rows.Count == 0)
             {
                 _log.LogInformation("No income rows from FMP for {Symbol} ({Period})", sym, period);

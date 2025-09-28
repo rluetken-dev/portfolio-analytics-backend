@@ -439,6 +439,201 @@
       "Symbol": "4338.HK",
       "Name": "Microsoft Corporation",
       "Sector": null
+    },
+    {
+      "Symbol": "GJT",
+      "Name": "Strats(SM) Trust For Allstate Corp Securities, Series 2006-3 06-3 ASSET BKD",
+      "Sector": null
+    },
+    {
+      "Symbol": "GJS",
+      "Name": "STRATS Trust for Goldman Sachs Group Securities, Series 2006-2",
+      "Sector": null
+    },
+    {
+      "Symbol": "GJR",
+      "Name": "Strats Trust For Procter & Gambel Security CTF 2006-1",
+      "Sector": null
+    },
+    {
+      "Symbol": "GJP",
+      "Name": "STRATS Trust For Dominion Resources Inc. Securities, Series 2005-6",
+      "Sector": null
+    },
+    {
+      "Symbol": "GJO",
+      "Name": "Strats Trust Wal Mart Stores Inc. STRT CTF 05-4",
+      "Sector": null
+    },
+    {
+      "Symbol": "GJH",
+      "Name": "STRATS Trust for United States Cellular Corp. Securities, Series 2004-6 STRATS 6.375",
+      "Sector": null
+    },
+    {
+      "Symbol": "GJUN",
+      "Name": "FT Vest U.S. Equity Moderate Buffer ETF - June",
+      "Sector": null
+    },
+    {
+      "Symbol": "GJUL",
+      "Name": "FT Vest U.S. Equity Moderate Buffer ETF - July",
+      "Sector": null
+    },
+    {
+      "Symbol": "GJST",
+      "Name": "GEO JS Tech Group Corp.",
+      "Sector": null
+    },
+    {
+      "Symbol": "GJCU",
+      "Name": "NP Life Sciences Health Industry Group Inc.",
+      "Sector": null
+    },
+    {
+      "Symbol": "GJGB.L",
+      "Name": "VanEck Junior Gold Miners UCITS ETF",
+      "Sector": null
+    },
+    {
+      "Symbol": "LGJG.L",
+      "Name": "L&G Japan Equity UCITS ETF",
+      "Sector": null
+    },
+    {
+      "Symbol": "AMD",
+      "Name": "Advanced Micro Devices, Inc.",
+      "Sector": null
+    },
+    {
+      "Symbol": "AMDY",
+      "Name": "YieldMax AMD Option Income Strategy ETF",
+      "Sector": null
+    },
+    {
+      "Symbol": "AMDU",
+      "Name": "Defiance Leveraged Long + Income AMD ETF",
+      "Sector": null
+    },
+    {
+      "Symbol": "AMDS",
+      "Name": "GraniteShares 1x Short AMD Daily ETF",
+      "Sector": null
+    },
+    {
+      "Symbol": "AMDL",
+      "Name": "GraniteShares 2x Long AMD Daily ETF",
+      "Sector": null
+    },
+    {
+      "Symbol": "AMDG",
+      "Name": "Leverage Shares 2X Long AMD Daily ETF",
+      "Sector": null
+    },
+    {
+      "Symbol": "AMDD",
+      "Name": "Direxion Daily AMD Bear 1X Shares",
+      "Sector": null
+    },
+    {
+      "Symbol": "AMDWX",
+      "Name": "Amana Mutual Funds Trust Developing World Fund",
+      "Sector": null
+    },
+    {
+      "Symbol": "AMDWF",
+      "Name": "Amada Co., Ltd.",
+      "Sector": null
+    },
+    {
+      "Symbol": "AMDVX",
+      "Name": "American Century Mid Cap Value Fund",
+      "Sector": null
+    },
+    {
+      "Symbol": "BMWYY",
+      "Name": "Bayerische Motoren Werke AG",
+      "Sector": null
+    },
+    {
+      "Symbol": "BMW.WA",
+      "Name": "Bayerische Motoren Werke AG",
+      "Sector": null
+    },
+    {
+      "Symbol": "BMW.SW",
+      "Name": "Bayerische Motoren Werke AG",
+      "Sector": null
+    },
+    {
+      "Symbol": "BMW.DE",
+      "Name": "Bayerische Motoren Werke AG",
+      "Sector": null
+    },
+    {
+      "Symbol": "BMW.BO",
+      "Name": "BMW Industries Ltd.",
+      "Sector": null
+    },
+    {
+      "Symbol": "BMW3.DE",
+      "Name": "Bayerische Motoren Werke AG",
+      "Sector": null
+    },
+    {
+      "Symbol": "PBMWW",
+      "Name": "Psyence Biomedical Ltd. Warrant",
+      "Sector": null
+    },
+    {
+      "Symbol": "PRBMW",
+      "Name": "Parabellum Acquisition Corp.",
+      "Sector": null
+    },
+    {
+      "Symbol": "MBGYY",
+      "Name": "Mercedes-Benz Group AG",
+      "Sector": null
+    },
+    {
+      "Symbol": "MBG.WA",
+      "Name": "Mercedes-Benz Group AG",
+      "Sector": null
+    },
+    {
+      "Symbol": "MBG.DE",
+      "Name": "Mercedes-Benz Group AG",
+      "Sector": null
+    },
+    {
+      "Symbol": "MBGAF",
+      "Name": "Mercedes-Benz Group AG",
+      "Sector": null
+    },
+    {
+      "Symbol": "DMLRY",
+      "Name": "Mercedes-Benz Group AG",
+      "Sector": null
+    },
+    {
+      "Symbol": "DDAIF",
+      "Name": "Mercedes-Benz Group AG",
+      "Sector": null
+    },
+    {
+      "Symbol": "DAI.DE",
+      "Name": "Mercedes-Benz Group AG",
+      "Sector": null
+    },
+    {
+      "Symbol": "3MBE.L",
+      "Name": "Leverage Shares 3x Long Mercedes Benz (MBG) ETP Securities",
+      "Sector": null
+    },
+    {
+      "Symbol": "SMBE.L",
+      "Name": "Leverage Shares 3x Short Mercedes Benz (MBG) ETP Securities",
+      "Sector": null
     }
   ]
 }

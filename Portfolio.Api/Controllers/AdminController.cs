@@ -366,7 +366,6 @@ public class AdminController : ControllerBase
     }
 
 
-    // AdminController.cs (Ergänzung)
     /// <summary>
     /// Admin-only: deletes a company by ticker symbol, including prices and fundamentals.
     /// English: Hard-delete all data for {symbol} in one atomic operation.

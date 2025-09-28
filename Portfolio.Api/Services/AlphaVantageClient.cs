@@ -198,8 +198,8 @@ namespace Portfolio.Api.Services
         /// <param name="ct">Cancellation token</param>
         /// <returns>Tuple: (symbol, price, latestTradingDay) or null if not available</returns>
         public async Task<(string Symbol, decimal Price, DateOnly LatestTradingDay)?> GetLatestPriceAsync(
-            string symbol,
-            CancellationToken ct = default)
+    string symbol,
+    CancellationToken ct = default)
         {
             if (string.IsNullOrWhiteSpace(symbol))
                 throw new ArgumentException("symbol is required", nameof(symbol));
@@ -216,6 +216,19 @@ namespace Portfolio.Api.Services
             using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: ct);
 
             var root = doc.RootElement;
+
+            // ⬇️ NEU: Prüfen auf Rate Limit Meldungen
+            if (root.TryGetProperty("Information", out var info))
+            {
+                var msg = info.GetString() ?? "Alpha Vantage returned Information";
+                throw new InvalidOperationException($"AlphaVantageInfo: {msg}");
+            }
+
+            if (root.TryGetProperty("Note", out var note))
+            {
+                var msg = note.GetString() ?? "Alpha Vantage returned Note";
+                throw new InvalidOperationException($"AlphaVantageNote: {msg}");
+            }
 
             if (!root.TryGetProperty("Global Quote", out var quote))
             {

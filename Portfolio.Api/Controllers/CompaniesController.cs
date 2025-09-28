@@ -517,28 +517,7 @@ namespace Portfolio.Api.Controllers
             public int TotalAdded { get; init; }
         }
 
-
-
-
-
-        // Temporary mock until we add real SearchCompaniesAsync to FmpClient
-        private async Task<List<CompanySearchResult>> MockSearchAsync(string query, int limit)
-        {
-            await Task.Delay(200); // simulate API call
-
-            var mockResults = new List<CompanySearchResult>
-            {
-                new() { Symbol = "AAPL", Name = "Apple Inc.", Exchange = "NASDAQ" },
-                new() { Symbol = "MSFT", Name = "Microsoft Corporation", Exchange = "NASDAQ" },
-                new() { Symbol = "TSLA", Name = "Tesla Inc.", Exchange = "NASDAQ" }
-            };
-
-            return mockResults
-                .Where(r => r.Symbol.Contains(query, StringComparison.OrdinalIgnoreCase) ||
-                           r.Name.Contains(query, StringComparison.OrdinalIgnoreCase))
-                .Take(limit)
-                .ToList();
-        }
+       
 
     }
 }

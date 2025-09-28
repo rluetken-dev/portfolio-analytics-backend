@@ -6,6 +6,8 @@ using Portfolio.Api.Data;
 using Portfolio.Api.Models;
 using Portfolio.Api.Services;
 using Swashbuckle.AspNetCore.Annotations;
+using Polly.RateLimit;
+
 
 namespace Portfolio.Api.Controllers
 {
@@ -149,11 +151,31 @@ namespace Portfolio.Api.Controllers
                     // Free-tier friendly delay (~5 req/min on Alpha Vantage).
                     await Task.Delay(1500, ct);
                 }
-                catch (OperationCanceledException) { throw; }
+                catch (RateLimitRejectedException ex)
+                {
+                    _log.LogWarning(ex, "Rate limit hit during fundamentals ingest for {Symbol}", sym);
+
+                    // ex.RetryAfter ist direkt ein TimeSpan
+                    Response.Headers["Retry-After"] = ex.RetryAfter.TotalSeconds.ToString("F0");
+
+                    return StatusCode(StatusCodes.Status429TooManyRequests, new ProblemDetails
+                    {
+                        Title = "Rate limit reached",
+                        Status = StatusCodes.Status429TooManyRequests,
+                        Detail = $"Please retry after {ex.RetryAfter.TotalSeconds:F0} seconds."
+                    });
+                }
                 catch (Exception ex)
                 {
-                    _log.LogWarning(ex, "Failed to refresh quotes for {Symbol}", sym);
+                    _log.LogError(ex, "Fundamentals ingest failed for {Symbol}", sym);
+                    return StatusCode(StatusCodes.Status500InternalServerError, new ProblemDetails
+                    {
+                        Title = "Fundamentals ingest failed",
+                        Status = StatusCodes.Status500InternalServerError,
+                        Detail = ex.Message
+                    });
                 }
+
             }
 
             // ✅ return a typed DTO instead of an anonymous object
@@ -227,24 +249,65 @@ namespace Portfolio.Api.Controllers
         [HttpGet("current")]
         [Produces("application/json")]
         [SwaggerOperation(
-            Summary = "Get current price",
-            Description = "Calls Alpha Vantage GLOBAL_QUOTE and returns the most recent price.")]
+     Summary = "Get current price",
+     Description = "Calls Alpha Vantage GLOBAL_QUOTE and returns the most recent price.")]
         [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
         [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+        [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status429TooManyRequests)]
+        [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
         public async Task<IActionResult> Current(
-            [FromQuery, Required] string symbol,
-            CancellationToken ct = default)
+    [FromQuery, Required] string symbol,
+    CancellationToken ct = default)
         {
-            var result = await _alpha.GetLatestPriceAsync(symbol.ToUpperInvariant(), ct);
-            if (result == null)
-                return NotFound(new { error = $"No quote found for {symbol}" });
-
-            return Ok(new
+            if (string.IsNullOrWhiteSpace(symbol))
             {
-                symbol = result.Value.Symbol,
-                price = result.Value.Price,
-                latestTradingDay = result.Value.LatestTradingDay
-            });
+                return BadRequest(new ProblemDetails
+                {
+                    Title = "Bad request",
+                    Detail = "Symbol is required",
+                    Status = StatusCodes.Status400BadRequest
+                });
+            }
+
+            try
+            {
+                var result = await _alpha.GetLatestPriceAsync(symbol.ToUpperInvariant(), ct);
+                if (result == null)
+                    return NotFound(new ProblemDetails
+                    {
+                        Title = "Not found",
+                        Detail = $"No quote found for {symbol}",
+                        Status = StatusCodes.Status404NotFound
+                    });
+
+                return Ok(new
+                {
+                    symbol = result.Value.Symbol,
+                    price = result.Value.Price,
+                    latestTradingDay = result.Value.LatestTradingDay
+                });
+            }
+            catch (InvalidOperationException ex) when (ex.Message.StartsWith("AlphaVantageInfo"))
+            {
+                // Daily limit reached (e.g., 25 calls/day in the Free Plan)
+                return StatusCode(StatusCodes.Status429TooManyRequests, new ProblemDetails
+                {
+                    Title = "Alpha Vantage daily limit reached",
+                    Detail = ex.Message.Replace("AlphaVantageInfo: ", ""),
+                    Status = StatusCodes.Status429TooManyRequests
+                });
+            }
+            catch (InvalidOperationException ex) when (ex.Message.StartsWith("AlphaVantageNote"))
+            {
+                // Per-minute limit reached (e.g., 5 calls/minute in the Free Plan)
+                return StatusCode(StatusCodes.Status429TooManyRequests, new ProblemDetails
+                {
+                    Title = "Alpha Vantage per-minute rate limit",
+                    Detail = ex.Message.Replace("AlphaVantageNote: ", ""),
+                    Status = StatusCodes.Status429TooManyRequests
+                });
+            }
         }
 
         /// <summary>

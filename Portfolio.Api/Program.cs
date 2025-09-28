@@ -9,10 +9,41 @@ using Portfolio.Api.Seed;
 using Newtonsoft.Json;
 using Portfolio.Api.Models;
 
-
 var builder = WebApplication.CreateBuilder(args);
 
-// Fallback read JSON 
+// --- Rate Limit & Retry Policies ---
+
+// AlphaVantage Policies
+var alphaVantageRateLimit = Policy.RateLimitAsync<HttpResponseMessage>(
+    4, // max 5 calls
+    TimeSpan.FromMinutes(1),
+    4
+);
+
+var alphaVantageRetry = HttpPolicyExtensions
+    .HandleTransientHttpError()
+    .OrResult(msg => msg.StatusCode == System.Net.HttpStatusCode.TooManyRequests)
+    .WaitAndRetryAsync(
+        5,
+        attempt => TimeSpan.FromSeconds(5 * attempt)
+    );
+
+// FMP Policies
+var fmpRateLimit = Policy.RateLimitAsync<HttpResponseMessage>(
+    5,
+    TimeSpan.FromMinutes(1),
+    5
+);
+
+var fmpRetry = HttpPolicyExtensions
+    .HandleTransientHttpError()
+    .OrResult(msg => msg.StatusCode == System.Net.HttpStatusCode.TooManyRequests)
+    .WaitAndRetryAsync(
+        3,
+        attempt => TimeSpan.FromSeconds(5 * attempt)
+    );
+
+// --- Fallback read JSON ---
 var fallbackPath = Path.Combine(builder.Environment.ContentRootPath, "Data", "companies-fallback.json");
 var fallbackJson = File.ReadAllText(fallbackPath);
 var fallbackData = JsonConvert.DeserializeObject<FallbackData>(fallbackJson) ?? new FallbackData();
@@ -24,11 +55,26 @@ builder.Services.AddSingleton(fallbackPath);
 builder.Services.AddDbContext<AppDbContext>(opt =>
     opt.UseSqlite(builder.Configuration.GetConnectionString("Default")));
 
-// Register HttpClients
+// --- HttpClients with Policies ---
+
+// AlphaVantage client
 builder.Services.AddHttpClient<AlphaVantageClient>(client =>
 {
+    client.BaseAddress = new Uri("https://www.alphavantage.co/");
     client.Timeout = TimeSpan.FromSeconds(10); // keep calls bounded
-});
+})
+.AddPolicyHandler(alphaVantageRateLimit)
+.AddPolicyHandler(alphaVantageRetry);
+
+// FMP client
+builder.Services.AddHttpClient<FmpClient>(client =>
+{
+    client.BaseAddress = new Uri("https://financialmodelingprep.com/");
+    client.DefaultRequestHeaders.Accept.ParseAdd("application/json");
+    client.DefaultRequestHeaders.UserAgent.ParseAdd("Portfolio.Api (+https://github.com/rluetken-dev)");
+})
+.AddPolicyHandler(fmpRateLimit)
+.AddPolicyHandler(fmpRetry);
 
 // Swagger / Controllers
 builder.Services.AddControllers();
@@ -57,13 +103,6 @@ builder.Services.AddCors(options =>
     );
 });
 // ---------------------------------------------------------------
-
-// FMP client
-builder.Services.AddHttpClient<Portfolio.Api.Services.FmpClient>(client =>
-{
-    // IMPORTANT: Leave the trailing slash to avoid bad relative-URL joins.
-    client.BaseAddress = new Uri("https://financialmodelingprep.com/");
-});
 
 // Domain services
 builder.Services.AddScoped<IncomeIngestService>();
