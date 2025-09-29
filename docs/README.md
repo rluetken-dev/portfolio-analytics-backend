@@ -1,202 +1,323 @@
-# 📖 Project Documentation – Portfolio Analytics Backend
+# 📊 Portfolio Analytics Backend — Detailed Guide
 
-This document provides a **deep dive** into the architecture, data model, and API of the Portfolio Analytics Backend.
+High-performance backend for stock analytics with **smart ingestion**, **local-first search**, and **clear APIs**.  
+This document is the single source of truth for setup, configuration, operations, and development.
 
----
-
-## 📚 Table of Contents
-1. [Highlights](#-highlights)
-2. [Getting Started](#-getting-started)
-3. [Configuration](#-configuration)
-4. [API Overview](#-api-overview)
-   - [Ingest](#ingest-writes-to-sql)
-   - [Read](#read-from-sql)
-   - [Companies (metadata)](#companies-metadata)
-   - [TTM](#ttm-trailing-twelve-months)
-   - [Live Fundamentals](#live-fundamentals-direct-fmp-calls)
-   - [Analytics](#analytics-buffett-metrics)
-   - [Admin & Maintenance](#admin--maintenance)
-   - [Demo Seeds](#demo-seeds-only-with-demomodetrue)
-5. [Data Model](#-data-model-ef-core)
-6. [Project Structure](#-project-structure)
-7. [Quick Test](#-quick-test)
-8. [Further Resources](#-further-resources)
+This document is the single source of truth for setup, configuration, operations, and development.
+For a quick overview and badges, see the root [README.md](./README.md).
 
 ---
 
-## ✨ Highlights (2025-09-11)
-- ✅ Migrated fundamentals to **FMP `/stable`**
-- ✅ Added **ingest services** (Income, Balance, Cash) + EF entities & migrations
-- ✅ Added **read endpoints** (SQL → JSON) for each statement
-- ✅ Added **TTM** endpoints (sums & ratios) computed from stored quarterlies
-- ✅ Added **Buffett metrics** (ROE, ROA, P/E, P/B, FCF Yield, Owner Earnings, Equity CAGR, etc.)
-- ✅ Added **admin ops** (vacuum, prune, truncate) + **demo seeding** (guarded by `DemoMode`)
-- ✅ Swagger UI for quick exploration
+## Table of Contents
+- [Overview](#overview)
+- [Architecture](#architecture)
+- [Data Sources](#data-sources)
+- [Rate Limits & Error Semantics](#rate-limits--error-semantics)
+- [Configuration](#configuration)
+- [Setup & Run](#setup--run)
+- [Database & Migrations](#database--migrations)
+- [Ingestion Workflows](#ingestion-workflows)
+- [Search & Discovery](#search--discovery)
+- [API Surface](#api-surface)
+- [Docs & Tooling](#docs--tooling)
+- [Testing](#testing)
+- [Operations](#operations)
+- [Troubleshooting](#troubleshooting)
+- [Security](#security)
+- [Docker & Deployment](#docker--deployment)
+- [Conventions](#conventions)
+- [Roadmap](#roadmap)
 
 ---
 
-## 🚀 Getting Started
+## Overview
+- **Purpose:** Serve financial statements, analytics (PE, ROE/ROA, FCF Yield, OE, ratios), and time-series data to the frontend.
+- **Storage:** SQLite via EF Core with lean indices and VACUUM/PRAGMA tuning.
+- **Resilience:** Graceful handling of **429** (rate limit) and **402** (free-tier) with fallbacks/caching.
+- **Observability:** Structured logs + admin endpoints for quick health checks and housekeeping.
 
-### Prerequisites
-- [.NET 8 SDK](https://dotnet.microsoft.com/en-us/download)
-- FMP API key ([financialmodelingprep.com](https://financialmodelingprep.com))
-- *(Optional)* Alpha Vantage API key (legacy fallback for revenue)
+---
 
-### Setup & Run
-```bash
-git clone https://github.com/rluetken-dev/portfolio-analytics-backend.git
-cd portfolio-analytics-backend/Portfolio.Api
-
-dotnet restore
-dotnet user-secrets init
-dotnet user-secrets set "Fmp:ApiKey" "YOUR_FMP_API_KEY"
-dotnet ef database update --project Portfolio.Api
-dotnet run
+## Architecture
 ```
+Frontend (Vite/React)
+        │
+        ▼
+  Portfolio.Api (.NET 8)
+        │
+        ├─ Controllers (REST)
+        │    ├─ Companies / Quotes / Fundamentals / Analytics / Data / Admin
+        │
+        ├─ Services
+        │    ├─ FmpClient / AlphaVantageClient / Ingest Services
+        │    └─ MaintenanceService (vacuum, backups, prune)
+        │
+        └─ Data (EF Core + SQLite)
+             ├─ DbContext, Entities, Migrations
+             └─ Indices for fast filters
+```
+> Optional diagrams: `docs/architecture.png`, `docs/erd.png`
 
-Swagger UI → `http://localhost:5046/swagger` (port may differ)
+**Key decisions**
+- Keep write paths simple (ingest → upsert); analytics are calculated on read.
+- Prefer **local data**; only hit external APIs when necessary.
+- Make errors **classifiable** so the frontend can show simple categories.
 
 ---
 
-## 🔐 Configuration
+## Data Sources
+- **Primary:** Financial Modeling Prep (FMP)
+- **Secondary:** Alpha Vantage (optional, fallback)
+- **Offline bundle:** 200+ popular tickers for discovery/search
 
+> Configure API keys via **user-secrets** or env vars. See [Configuration](#configuration).
+
+---
+
+## Rate Limits & Error Semantics
+The backend strives to return errors that the frontend can map into **simple categories**:
+
+| Situation                           | HTTP / Text markers                        | Frontend category |
+|------------------------------------|--------------------------------------------|-------------------|
+| Success                            | `200`                                      | ✔️ OK             |
+| Not found                          | `404`                                      | ❌ Not found      |
+| Bad request                        | `400`                                      | ⚠️ Bad request    |
+| Free tier exceeded / subscription  | `402`, `subscription`, `payment required`  | ⛔ Free-tier limit|
+| Rate limit                         | `429`, `too many requests`, `rate limit`   | ⏳ Rate limit     |
+| Server issue                       | `5xx` without 402/429 hints                | ⚠️ Server error   |
+
+**Notes**
+- When upstream wraps `402/429` inside `5xx`, the frontend still detects the inner cause.
+- `Retry-After` is propagated where available (used for e.g., `Rate limit (10s)`).
+
+---
+
+## Configuration
+### `appsettings.json` (excerpt)
 ```json
 {
   "ConnectionStrings": { "Default": "Data Source=portfolio.db" },
-  "Fmp": { "ApiKey": "override-with-user-secrets" },
-  "DemoMode": true
+  "Fmp": { "ApiKey": "YOUR_KEY_HERE", "BaseUrl": "https://financialmodelingprep.com/" },
+  "AlphaVantage": { "ApiKey": "YOUR_KEY_HERE" },
+  "DemoMode": false,
+  "Logging": {
+    "LogLevel": { "Default": "Information", "Microsoft.EntityFrameworkCore": "Warning" }
+  }
 }
 ```
 
-- **Fmp:ApiKey** – required for ingest/live endpoints  
-- **DemoMode** – enables `/api/admin/seed/*` and destructive ops (should be `false` in production)  
-- Free-tier FMP plans require `limit ≤ 5` on many calls  
+### Secrets (dev)
+```bash
+dotnet user-secrets init
+dotnet user-secrets set "Fmp:ApiKey" "YOUR_FMP_API_KEY"
+dotnet user-secrets set "AlphaVantage:ApiKey" "YOUR_AV_API_KEY"   # optional
+```
+
+### Environment variables (prod)
+```bash
+export ConnectionStrings__Default="Data Source=/data/portfolio.db"
+export Fmp__ApiKey="your-prod-key"
+export AlphaVantage__ApiKey="your-prod-key"   # optional
+export ASPNETCORE_URLS="http://0.0.0.0:5179"
+export ASPNETCORE_ENVIRONMENT="Production"
+```
 
 ---
 
-## 📚 API Overview
+## Setup & Run
+```bash
+# restore, migrate, run
+dotnet restore
+dotnet ef database update
+dotnet run
 
-### Ingest (writes to SQL)
+# Swagger UI
+# → http://localhost:5179/swagger
+```
+
+**Dev helpers**
+```bash
+# migrations
+dotnet ef migrations add Init
+dotnet ef database update
+
+# reset db (be careful)
+rm -f portfolio.db && dotnet ef database update
+```
+
+---
+
+## Database & Migrations
+- SQLite DB: `portfolio.db`
+- Indices (examples):
+```sql
+CREATE UNIQUE INDEX IX_Tickers_Symbol ON Tickers(Symbol);
+CREATE INDEX IX_IncomeStatements_Symbol ON IncomeStatements(Symbol);
+CREATE INDEX IX_Prices_TickerId_Date ON Prices(TickerId, Date);
+```
+- Vacuum/reindex available via Admin endpoints. See [Operations](#operations).
+
+---
+
+## Ingestion Workflows
+Endpoints (annual/quarter supported with `period` + `limit`):
+```http
+GET  /api/ingest/income/{symbol}?period=annual&limit=5
+GET  /api/ingest/balance/{symbol}?period=annual&limit=5
+GET  /api/ingest/cash/{symbol}?period=annual&limit=5
+```
+**Bulk/admin helpers**
 ```http
 POST /api/admin/ingest/fmp-annual?symbol=AAPL&limit=5
-POST /api/admin/ingest/fmp-cashflow-annual?symbol=AAPL&limit=5
 ```
+**Behavior**
+- Upserts based on `(symbol, period, date)`.
+- Pacing (≈350 ms) when batching to avoid 429.
+- Clear error signaling (see categories above).
 
-### Read (from SQL)
-```http
-GET /api/data/income/{symbol}?period=annual|quarter&limit=10
-GET /api/data/balance/{symbol}?period=annual|quarter&limit=10
-GET /api/data/cash/{symbol}?period=annual|quarter&limit=10
-```
+---
 
-### Companies (metadata)
+## Search & Discovery
 ```http
-GET  /api/companies?q=AAPL&limit=50
+GET /api/companies                     # list companies in DB
+GET /api/companies/search?q=AAPL&limit=10
+POST /api/companies/add                # { "symbol": "AAPL" }
+POST /api/companies/add-popular        # { "category":"megacap","limit":10 }
+DELETE /api/companies/{symbol}
 POST /api/companies/{symbol}/refresh-profile
-POST /api/companies/refresh-profiles?limit=25
 ```
-- **GET** → Simple search + list of companies from your `tickers` table  
-  - Supports `q` (search by symbol or name)  
-  - Supports `limit` (default 50, max 200)  
-  - Returns `id`, `symbol`, `name`, `sector` (if available)  
-- **POST /{symbol}/refresh-profile** → Fetches **Name + Sector** for a single ticker from FMP `/api/v3/profile/{symbol}` and stores it in DB.  
-- **POST /refresh-profiles** → Batch refresh for multiple tickers (default 25, configurable via `limit`). Returns `{ count, items }`.
 
-### TTM (Trailing Twelve Months)
+---
+
+## API Surface
+### Analytics
 ```http
+GET /api/analytics/pe?symbol=AAPL
+GET /api/analytics/pb?symbol=AAPL
+GET /api/analytics/roe?symbol=AAPL
+GET /api/analytics/roa?symbol=AAPL
+GET /api/analytics/fcf-yield?symbol=AAPL
+GET /api/analytics/owner-earnings?symbol=AAPL
+GET /api/analytics/owner-earnings-yield?symbol=AAPL
+GET /api/analytics/equity-cagr?symbol=AAPL
+GET /api/analytics/asset-turnover?symbol=AAPL
+GET /api/analytics/debt-to-equity?symbol=AAPL
+GET /api/analytics/debt-to-assets?symbol=AAPL
+GET /api/analytics/equity-ratio?symbol=AAPL
+GET /api/analytics/eps?symbol=AAPL
+GET /api/analytics/bvps?symbol=AAPL
+GET /api/analytics/oeps?symbol=AAPL
+GET /api/analytics/p-to-oe?symbol=AAPL
+GET /api/analytics/fcf-margin?symbol=AAPL
+```
+
+### Time Series & TTM
+```http
+GET /api/quotes/latest?symbol=AAPL&take=1
+GET /api/quotes/timeseries?symbol=AAPL&from=YYYY-MM-DD&to=YYYY-MM-DD
 GET /api/data/ttm/{symbol}
 GET /api/data/ttm/{symbol}/ratios
 ```
 
-### Live Fundamentals (direct FMP calls)
+### Data Export
 ```http
-GET /api/fundamentals/{symbol}/income-statement/stable
-GET /api/fundamentals/{symbol}/balance-sheet/stable
-GET /api/fundamentals/{symbol}/cash-flow/stable
-```
-
-### Analytics (Buffett metrics)
-
-The backend provides a wide range of analytics metrics (ROE, ROA, Net Margin, P/E, P/B, FCF Yield, Owner Earnings, Equity CAGR, and more).
-
-👉 See the full list in [analytics-endpoints.md](analytics-endpoints.md).
-
-Example:
-```http
-GET /api/analytics/roe?symbol=AAPL
-GET /api/analytics/pe?symbol=AAPL
-GET /api/analytics/fcf-yield?symbol=AAPL
+GET /api/data/income/{symbol}?period=quarter&limit=10
+GET /api/data/balance/{symbol}?period=quarter&limit=10
+GET /api/data/cash/{symbol}?period=quarter&limit=10
 ```
 
 ### Admin & Maintenance
 ```http
 GET  /api/admin/info
 POST /api/admin/vacuum
+POST /api/admin/backup
 POST /api/admin/prune
 ```
 
-### Demo Seeds (only with `DemoMode=true`)
-```http
-POST /api/admin/seed/ticker?symbol=AAPL&name=Apple%20Inc
-POST /api/admin/seed/price?symbol=AAPL&date=2024-09-30&close=200
+---
+
+## Docs & Tooling
+- **OpenAPI / Swagger UI:** http://localhost:5179/swagger
+- **Analytics endpoints (overview):** `docs/analytics-endpoints.md`
+- **Postman collection:** `docs/postman/collection.json`
+- **Architecture diagram:** `docs/architecture.png` (optional)
+- **ERD:** `docs/erd.png` (optional)
+
+---
+
+## Testing
+```bash
+dotnet test
+# Coverage:
+dotnet test /p:CollectCoverage=true
+# Focused:
+dotnet test --filter Category=Integration
 ```
 
 ---
 
-⚠️ **Note:**  
-This overview shows only selected endpoints. The **complete and always up-to-date list** is available via:  
-- Swagger UI (interactive): `http://localhost:5046/swagger`  
-- OpenAPI Spec (machine-readable, versioned in repo): `openapi.yaml`
+## Operations
+- **Backups:** `POST /api/admin/backup`
+- **Vacuum:** `POST /api/admin/vacuum`
+- **Prune old data:** `POST /api/admin/prune`
+- **Health & stats:** `GET /api/admin/info`
+
+**Tips**
+- Run `VACUUM` after large batch ingests.
+- Keep `portfolio.db` out of version control; back it up regularly in prod.
 
 ---
 
-## 🧱 Data Model (EF Core)
-
-Entities:
-- `income_statements` → `IncomeStatementEntity`
-- `balance_sheets` → `BalanceSheetEntity`
-- `cash_flows` → `CashFlowEntity`
-- `prices` → `Price`
-- `tickers` → `Ticker`
-  - **Id** (int): primary key
-  - **Symbol** (string, required): stock ticker symbol, e.g. "AAPL"
-  - **Name** (string?, optional): display name, e.g. "Apple Inc."
-  - **Sector** (string?, optional): sector/industry, e.g. "Technology"
-
-Constraints:
-- Unique `(Symbol, Date, Frequency)` per fundamentals table  
-- Dates stored as UTC `DateTime` in SQLite  
+## Troubleshooting
+- **404 No data:** Ensure company exists (`POST /api/companies/add`), then run ingestion.
+- **429 Rate limit:** Reduce pace or retry later; prefer bulk admin endpoints.
+- **402 Free tier:** Requires paid plan for the upstream provider.
+- **DB locked:** Check long-running processes; try `vacuum` and ensure single-writer pattern.
 
 ---
 
-## 📂 Project Structure
+## Security
+- API keys via user-secrets or env vars (never commit)
+- Validate inputs on all endpoints
+- EF Core parameterization prevents SQL injection
+- Restrict CORS to frontend origin
+- Consider simple rate limiting for public endpoints
 
+---
+
+## Docker & Deployment
+**Dockerfile example**
+```dockerfile
+FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
+WORKDIR /src
+COPY . .
+RUN dotnet restore && dotnet publish -c Release -o /app
+
+FROM mcr.microsoft.com/dotnet/aspnet:8.0
+WORKDIR /app
+COPY --from=build /app .
+ENV ASPNETCORE_URLS=http://0.0.0.0:5179
+ENTRYPOINT ["dotnet", "Portfolio.Api.dll"]
 ```
-Portfolio.Api/
-├─ Controllers/
-├─ Data/
-├─ Migrations/
-├─ Models/
-├─ Services/
-├─ Program.cs
-└─ appsettings.json
+**Environment variables**
+```bash
+export ConnectionStrings__Default="Data Source=/data/portfolio.db"
+export Fmp__ApiKey="your-production-key"
+export AlphaVantage__ApiKey="your-production-key"
+export ASPNETCORE_ENVIRONMENT="Production"
 ```
 
 ---
 
-## 🧪 Quick Test
-
-```powershell
-Invoke-RestMethod -Method Post "http://localhost:5046/api/admin/ingest/fmp-annual?symbol=AAPL&limit=5"
-Invoke-RestMethod "http://localhost:5046/api/analytics/roe?symbol=AAPL"
-# Companies metadata
-Invoke-RestMethod -Method Post "http://localhost:5046/api/companies/AAPL/refresh-profile"
-Invoke-RestMethod "http://localhost:5046/api/companies?q=AAPL&limit=10"
-```
+## Conventions
+- **Commit messages:** Conventional Commits (`feat:`, `fix:`, `docs:`, `refactor:`, …)
+- **Branching:** feature branches → PR
+- **Docs:** Keep Swagger and `docs/*.md` up to date with changes
 
 ---
 
-## 📎 Further Resources
-- [Commit Conventions](COMMITS.md)  
-- [OpenAPI Spec](openapi.yaml)  
-- [Postman Collection](portfolio_analytics_postman_collection.json)
+## Roadmap
+- Optional provider abstractions (plug additional sources)
+- Background jobs for scheduled ingestion
+- More analytics (quality of earnings, accruals, Piotroski F-score)
+- Export endpoints (CSV/Parquet) for more resources

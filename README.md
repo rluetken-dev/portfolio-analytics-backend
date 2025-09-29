@@ -1,7 +1,9 @@
 # 📊 Portfolio Analytics Backend (.NET 8 + EF Core + SQLite)
 
-![CI](https://github.com/rluetken-dev/portfolio-analytics-backend/actions/workflows/ci.yml/badge.svg?branch=main)
 ![.NET](https://img.shields.io/badge/.NET-8.0-blue)
+![EF Core](https://img.shields.io/badge/EF_Core-8.0-green)
+![SQLite](https://img.shields.io/badge/SQLite-3-lightgrey)
+![Swagger](https://img.shields.io/badge/Swagger-OpenAPI-85EA2D)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
 Backend service for ingesting and analyzing **fundamental data** (Income, Balance, Cashflow).  
@@ -52,3 +54,11 @@ portfolio-analytics-backend/
 ├─ .gitignore
 └─ README.md          # Project overview & quickstart
 ```
+
+## 📖 Documentation
+
+- **Detailed project documentation**: [README.DETAIL.md](./README.DETAIL.md)
+- **OpenAPI / Swagger UI**: http://localhost:5179/swagger
+- **Analytics endpoints (overview)**: [docs/analytics-endpoints.md](./docs/analytics-endpoints.md)
+- **Postman collection**: [docs/postman/collection.json](./docs/postman/collection.json)
+- **Commit conventions**: [Conventional Commits](https://www.conventionalcommits.org/)
