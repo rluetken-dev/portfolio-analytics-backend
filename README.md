@@ -62,3 +62,7 @@ portfolio-analytics-backend/
 - **Analytics endpoints (overview)**: [docs/analytics-endpoints.md](./docs/analytics-endpoints.md)
 - **Postman collection**: [docs/postman/collection.json](./docs/postman/collection.json)
 - **Commit conventions**: [Conventional Commits](https://www.conventionalcommits.org/)
+
+---
+
+**Built with ❤️ for the investment community**
