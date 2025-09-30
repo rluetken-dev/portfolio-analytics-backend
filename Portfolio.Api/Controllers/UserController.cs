@@ -3,6 +3,7 @@ using Portfolio.Api.Data;
 using Portfolio.Api.Models;
 using Portfolio.Api.Services;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.Authorization;
 
 
 namespace Portfolio.Api.Controllers
@@ -67,6 +68,20 @@ namespace Portfolio.Api.Controllers
 
             // Return token as JSON
             return Ok(new { Token = token });
+        }
+
+        [HttpGet("me")]
+        [Authorize] 
+        public IActionResult Me()
+        {
+            var username = User.Identity?.Name; 
+            var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+
+            return Ok(new
+            {
+                UserId = userId,
+                Username = username
+            });
         }
     }
 }
