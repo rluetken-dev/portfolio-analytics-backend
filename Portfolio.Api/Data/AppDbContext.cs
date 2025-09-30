@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Portfolio.Api.Models;
 using Portfolio.Api.Data.Entities; // for IncomeStatementEntity
+using PortfolioAnalytics.Models;
 
 namespace Portfolio.Api.Data;
 
@@ -195,5 +196,10 @@ public class AppDbContext : DbContext
                  dt => DateOnly.FromDateTime(DateTime.SpecifyKind(dt, DateTimeKind.Utc))
              );
         });
-    }
+    }  
+
+    /// <summary>
+    /// Users table for authentication and account management
+    /// </summary>
+    public DbSet<User> Users { get; set; } 
 }
