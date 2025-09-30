@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Mvc;
 using Portfolio.Api.Data;
 using Portfolio.Api.Models;
 using Portfolio.Api.Services;
+using Microsoft.EntityFrameworkCore;
 
 
 namespace Portfolio.Api.Controllers
@@ -41,6 +42,28 @@ namespace Portfolio.Api.Controllers
             await _context.SaveChangesAsync();
 
             return Ok("User registered successfully");
+        }
+
+        [HttpPost("login")]
+        public async Task<IActionResult> Login([FromBody] LoginRequest request)
+        {
+            // Find user by username
+            var user = await _context.Users
+                .FirstOrDefaultAsync(u => u.Username == request.Username);
+
+            if (user == null)
+            {
+                return Unauthorized("Invalid username or password");
+            }
+
+            // Verify password
+            if (!PasswordHasher.VerifyPassword(request.Password, user.PasswordHash))
+            {
+                return Unauthorized("Invalid username or password");
+            }
+
+            // Login successful
+            return Ok("Login successful");
         }
     }
 }
