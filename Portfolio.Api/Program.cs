@@ -8,6 +8,10 @@ using Swashbuckle.AspNetCore.Annotations;
 using Portfolio.Api.Seed;
 using Newtonsoft.Json;
 using Portfolio.Api.Models;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.IdentityModel.Tokens;
+using System.Text;
+
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -104,6 +108,27 @@ builder.Services.AddCors(options =>
 });
 // ---------------------------------------------------------------
 
+// --- JWT Authentication ---
+var secretKey = "my_ultra_secure_secret_key_1234567890!@#$"; // gleiche wie in JwtService
+var key = Encoding.UTF8.GetBytes(secretKey);
+
+builder.Services.AddAuthentication(options =>
+{
+    options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+    options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+})
+.AddJwtBearer(options =>
+{
+    options.TokenValidationParameters = new TokenValidationParameters
+    {
+        ValidateIssuer = false,
+        ValidateAudience = false,
+        ValidateIssuerSigningKey = true,
+        IssuerSigningKey = new SymmetricSecurityKey(key),
+        ClockSkew = TimeSpan.Zero
+    };
+});
+
 // Domain services
 builder.Services.AddScoped<IncomeIngestService>();
 builder.Services.AddScoped<BalanceSheetIngestService>();
@@ -153,7 +178,8 @@ app.UseCors("AllowViteDev");
 // (Optional) If you force HTTPS in production, keep this. For local dev over http you can comment out.
 // app.UseHttpsRedirection();
 
-app.UseAuthorization();
+app.UseAuthentication(); 
+app.UseAuthorization();  
 
 // ----- NEW: Minimal health endpoint for quick checks -----
 // Returns: { "status": "ok" }
