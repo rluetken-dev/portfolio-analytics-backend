@@ -62,8 +62,11 @@ namespace Portfolio.Api.Controllers
                 return Unauthorized("Invalid username or password");
             }
 
-            // Login successful
-            return Ok("Login successful");
+            // Generate JWT token
+            var token = JwtService.GenerateToken(user);
+
+            // Return token as JSON
+            return Ok(new { Token = token });
         }
     }
 }

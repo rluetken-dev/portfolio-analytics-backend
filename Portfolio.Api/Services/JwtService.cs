@@ -10,7 +10,7 @@ namespace Portfolio.Api.Services
     public static class JwtService
     {
         // Secret key for signing tokens (should be stored securely in appsettings.json)
-        private static readonly string SecretKey = "super_secret_key_12345"; 
+        private static readonly string SecretKey = "my_ultra_secure_secret_key_1234567890!@#$";
 
         public static string GenerateToken(User user)
         {
