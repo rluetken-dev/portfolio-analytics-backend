@@ -1,7 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Portfolio.Api.Models;
 using Portfolio.Api.Data.Entities; // for IncomeStatementEntity
-using PortfolioAnalytics.Models;
 
 namespace Portfolio.Api.Data;
 
@@ -39,6 +38,12 @@ public class AppDbContext : DbContext
     /// Table of cash flow observations (annual + quarterly).
     /// </summary>
     public DbSet<Portfolio.Api.Data.Entities.CashFlowEntity> CashFlows => Set<Portfolio.Api.Data.Entities.CashFlowEntity>();
+
+    /// <summary>
+    /// Users table for authentication and account management
+    /// </summary>
+    public DbSet<Portfolio.Api.Models.User> Users => Set<Portfolio.Api.Models.User>();
+
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -196,10 +201,5 @@ public class AppDbContext : DbContext
                  dt => DateOnly.FromDateTime(DateTime.SpecifyKind(dt, DateTimeKind.Utc))
              );
         });
-    }  
-
-    /// <summary>
-    /// Users table for authentication and account management
-    /// </summary>
-    public DbSet<User> Users { get; set; } 
+    }
 }

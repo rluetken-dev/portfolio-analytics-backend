@@ -1,4 +1,4 @@
-namespace PortfolioAnalytics.Models
+namespace Portfolio.Api.Models
 {
     public class User
     {

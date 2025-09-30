@@ -11,7 +11,7 @@ using Portfolio.Api.Data;
 namespace Portfolio.Api.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    [Migration("20250930191407_AddUsersTable")]
+    [Migration("20250930193901_AddUsersTable")]
     partial class AddUsersTable
     {
         /// <inheritdoc />
@@ -236,7 +236,7 @@ namespace Portfolio.Api.Migrations
                     b.ToTable("Tickers");
                 });
 
-            modelBuilder.Entity("PortfolioAnalytics.Models.User", b =>
+            modelBuilder.Entity("Portfolio.Api.Models.User", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()

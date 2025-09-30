@@ -233,7 +233,7 @@ namespace Portfolio.Api.Migrations
                     b.ToTable("Tickers");
                 });
 
-            modelBuilder.Entity("PortfolioAnalytics.Models.User", b =>
+            modelBuilder.Entity("Portfolio.Api.Models.User", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
