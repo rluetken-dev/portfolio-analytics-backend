@@ -71,10 +71,10 @@ namespace Portfolio.Api.Controllers
         }
 
         [HttpGet("me")]
-        [Authorize] 
+        [Authorize]
         public IActionResult Me()
         {
-            var username = User.Identity?.Name; 
+            var username = User.Identity?.Name;
             var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
 
             return Ok(new
@@ -83,5 +83,13 @@ namespace Portfolio.Api.Controllers
                 Username = username
             });
         }
+
+        [HttpPost("logout")]
+        [Authorize] 
+        public IActionResult Logout()
+        {           
+            return Ok(new { message = "Logged out successfully" });
+        }
+
     }
 }

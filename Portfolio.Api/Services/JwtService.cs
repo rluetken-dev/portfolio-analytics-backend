@@ -24,10 +24,11 @@ namespace Portfolio.Api.Services
                     new Claim(ClaimTypes.Name, user.Username),
                     new Claim(ClaimTypes.NameIdentifier, user.Id.ToString())
                 }),
-                Expires = DateTime.UtcNow.AddHours(1), // token valid for 1 hour
+                Expires = DateTime.UtcNow.AddMinutes(15), // token valid for 15 minutes (was 1 hour)
                 SigningCredentials = new SigningCredentials(new SymmetricSecurityKey(key),
-                                                            SecurityAlgorithms.HmacSha256Signature)
+                                                 SecurityAlgorithms.HmacSha256Signature)
             };
+
 
             var token = tokenHandler.CreateToken(tokenDescriptor);
             return tokenHandler.WriteToken(token);
