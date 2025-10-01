@@ -44,6 +44,10 @@ public class AppDbContext : DbContext
     /// </summary>
     public DbSet<Portfolio.Api.Models.User> Users => Set<Portfolio.Api.Models.User>();
 
+    /// <summary>
+    /// Table for storing refresh tokens linked to users
+    /// </summary>
+    public DbSet<RefreshToken> RefreshTokens { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
