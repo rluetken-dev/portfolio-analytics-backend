@@ -21,6 +21,7 @@ cd portfolio-analytics-backend/Portfolio.Api
 
 # Set API key (once)
 dotnet user-secrets set "Fmp:ApiKey" "<your_api_key>"
+dotnet user-secrets set "AlphaVantage:ApiKey" "<your_av_api_key>"   # optional
 
 # Run the API
 dotnet run
