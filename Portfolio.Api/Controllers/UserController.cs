@@ -63,12 +63,21 @@ namespace Portfolio.Api.Controllers
                 return Unauthorized("Invalid username or password");
             }
 
-            // Generate JWT token
-            var token = JwtService.GenerateToken(user);
+            // Generate JWT access token
+            var accessToken = JwtService.GenerateToken(user);
 
-            // Return token as JSON
-            return Ok(new { Token = token });
+            // Generate and save refresh token
+            var refreshToken = await RefreshTokenService.GenerateAndSaveAsync(user, _context);
+
+            // Return both tokens
+            return Ok(new
+            {
+                AccessToken = accessToken,
+                RefreshToken = refreshToken.Token,
+                RefreshTokenExpiresAt = refreshToken.ExpiresAt
+            });
         }
+
 
         [HttpGet("me")]
         [Authorize]
@@ -85,9 +94,9 @@ namespace Portfolio.Api.Controllers
         }
 
         [HttpPost("logout")]
-        [Authorize] 
+        [Authorize]
         public IActionResult Logout()
-        {           
+        {
             return Ok(new { message = "Logged out successfully" });
         }
 
