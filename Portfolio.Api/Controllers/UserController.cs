@@ -69,15 +69,22 @@ namespace Portfolio.Api.Controllers
             // Generate and save refresh token
             var refreshToken = await RefreshTokenService.GenerateAndSaveAsync(user, _context);
 
-            // Return both tokens
+            // Set refresh token as HttpOnly Secure cookie
+            Response.Cookies.Append("refreshToken", refreshToken.Token, new CookieOptions
+            {
+                HttpOnly = true,   // cannot be accessed by JavaScript
+                Secure = true,     // only sent via HTTPS
+                SameSite = SameSiteMode.Strict, // prevents CSRF
+                Expires = refreshToken.ExpiresAt
+            });
+
+            // Return only the access token + user info
             return Ok(new
             {
                 AccessToken = accessToken,
-                RefreshToken = refreshToken.Token,
-                RefreshTokenExpiresAt = refreshToken.ExpiresAt
+                User = new { Id = user.Id, Username = user.Username }
             });
         }
-
 
         [HttpGet("me")]
         [Authorize]
@@ -101,8 +108,16 @@ namespace Portfolio.Api.Controllers
         }
 
         [HttpPost("refresh")]
-        public async Task<IActionResult> Refresh([FromBody] string refreshToken)
+        public async Task<IActionResult> Refresh()
         {
+            // Get refresh token from cookies
+            var refreshToken = Request.Cookies["refreshToken"];
+
+            if (string.IsNullOrEmpty(refreshToken))
+            {
+                return Unauthorized(new { message = "Refresh token missing" });
+            }
+
             // Find token in DB
             var storedToken = await _context.RefreshTokens
                 .Include(rt => rt.User)
@@ -119,22 +134,28 @@ namespace Portfolio.Api.Controllers
                 return Unauthorized(new { message = "Refresh token expired or revoked" });
             }
 
-            // Generate new access token for the user
+            // Generate new access token
             var newAccessToken = JwtService.GenerateToken(storedToken.User);
 
-            // Optional: Rolling refresh tokens → revoke old and issue new one
-            var newRefreshToken = await RefreshTokenService.GenerateAndSaveAsync(storedToken.User, _context);
-
-            // Revoke old token
+            // Optional: rolling refresh → revoke old + set new cookie
             storedToken.RevokedAt = DateTime.UtcNow;
+            var newRefreshToken = await RefreshTokenService.GenerateAndSaveAsync(storedToken.User, _context);
             await _context.SaveChangesAsync();
+
+            // Set new refresh token as cookie
+            Response.Cookies.Append("refreshToken", newRefreshToken.Token, new CookieOptions
+            {
+                HttpOnly = true,
+                Secure = true,
+                SameSite = SameSiteMode.Strict,
+                Expires = newRefreshToken.ExpiresAt
+            });
 
             return Ok(new
             {
-                accessToken = newAccessToken,
-                refreshToken = newRefreshToken.Token,
-                refreshTokenExpiresAt = newRefreshToken.ExpiresAt
+                AccessToken = newAccessToken
             });
         }
+
     }
 }
