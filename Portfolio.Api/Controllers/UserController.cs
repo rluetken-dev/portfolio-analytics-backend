@@ -100,5 +100,41 @@ namespace Portfolio.Api.Controllers
             return Ok(new { message = "Logged out successfully" });
         }
 
+        [HttpPost("refresh")]
+        public async Task<IActionResult> Refresh([FromBody] string refreshToken)
+        {
+            // Find token in DB
+            var storedToken = await _context.RefreshTokens
+                .Include(rt => rt.User)
+                .FirstOrDefaultAsync(rt => rt.Token == refreshToken);
+
+            if (storedToken == null)
+            {
+                return Unauthorized(new { message = "Invalid refresh token" });
+            }
+
+            // Check if token is expired or revoked
+            if (storedToken.ExpiresAt <= DateTime.UtcNow || storedToken.RevokedAt != null)
+            {
+                return Unauthorized(new { message = "Refresh token expired or revoked" });
+            }
+
+            // Generate new access token for the user
+            var newAccessToken = JwtService.GenerateToken(storedToken.User);
+
+            // Optional: Rolling refresh tokens → revoke old and issue new one
+            var newRefreshToken = await RefreshTokenService.GenerateAndSaveAsync(storedToken.User, _context);
+
+            // Revoke old token
+            storedToken.RevokedAt = DateTime.UtcNow;
+            await _context.SaveChangesAsync();
+
+            return Ok(new
+            {
+                accessToken = newAccessToken,
+                refreshToken = newRefreshToken.Token,
+                refreshTokenExpiresAt = newRefreshToken.ExpiresAt
+            });
+        }
     }
 }
