@@ -25,7 +25,7 @@ namespace Portfolio.Api.Controllers
             // Check if username already exists
             if (_context.Users.Any(u => u.Username == request.Username))
             {
-                return BadRequest("Username already taken");
+                return BadRequest(new { message = "Username already taken" });
             }
 
             // Hash the password
@@ -42,7 +42,33 @@ namespace Portfolio.Api.Controllers
             _context.Users.Add(user);
             await _context.SaveChangesAsync();
 
-            return Ok("User registered successfully");
+            // Generate JWT access token
+            var accessToken = JwtService.GenerateToken(user);
+
+            // Generate and save refresh token
+            var refreshToken = await RefreshTokenService.GenerateAndSaveAsync(user, _context);
+
+            // Set refresh token as HttpOnly cookie
+            Response.Cookies.Append("refreshToken", refreshToken.Token, new CookieOptions
+            {
+                HttpOnly = true,
+                Secure = true,
+                SameSite = SameSiteMode.None,
+                Expires = refreshToken.ExpiresAt
+            });
+
+            // Return tokens and user info
+            return Ok(new
+            {
+                accessToken,
+                refreshToken = refreshToken.Token,
+                refreshTokenExpiresAt = refreshToken.ExpiresAt,
+                user = new
+                {
+                    id = user.Id,
+                    username = user.Username
+                }
+            });
         }
 
         [HttpPost("login")]
@@ -72,9 +98,9 @@ namespace Portfolio.Api.Controllers
             // Set refresh token as HttpOnly Secure cookie
             Response.Cookies.Append("refreshToken", refreshToken.Token, new CookieOptions
             {
-                HttpOnly = true,   
-                Secure = true,    
-                SameSite = SameSiteMode.None, 
+                HttpOnly = true,
+                Secure = true,
+                SameSite = SameSiteMode.None,
                 Expires = refreshToken.ExpiresAt
             });
 
@@ -119,18 +145,18 @@ namespace Portfolio.Api.Controllers
                 }
             }
 
-    // Cookie löschen (überschreiben + sofort ablaufen lassen)
-    Response.Cookies.Append("refreshToken", "",
-        new CookieOptions
-        {
-            HttpOnly = true,
-            Secure = true,
-            SameSite = SameSiteMode.None,
-            Expires = DateTime.UtcNow.AddDays(-1) // abgelaufen
-        });
+            // Cookie löschen (überschreiben + sofort ablaufen lassen)
+            Response.Cookies.Append("refreshToken", "",
+                new CookieOptions
+                {
+                    HttpOnly = true,
+                    Secure = true,
+                    SameSite = SameSiteMode.None,
+                    Expires = DateTime.UtcNow.AddDays(-1) // abgelaufen
+                });
 
-    return Ok(new { message = "Logged out" });
-}
+            return Ok(new { message = "Logged out" });
+        }
 
 
         [HttpPost("refresh")]
