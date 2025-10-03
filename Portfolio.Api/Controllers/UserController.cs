@@ -72,9 +72,9 @@ namespace Portfolio.Api.Controllers
             // Set refresh token as HttpOnly Secure cookie
             Response.Cookies.Append("refreshToken", refreshToken.Token, new CookieOptions
             {
-                HttpOnly = true,   // cannot be accessed by JavaScript
-                Secure = true,     // only sent via HTTPS
-                SameSite = SameSiteMode.Strict, // prevents CSRF
+                HttpOnly = true,   
+                Secure = true,    
+                SameSite = SameSiteMode.None, 
                 Expires = refreshToken.ExpiresAt
             });
 
@@ -102,10 +102,36 @@ namespace Portfolio.Api.Controllers
 
         [HttpPost("logout")]
         [Authorize]
-        public IActionResult Logout()
+        public async Task<IActionResult> Logout()
         {
-            return Ok(new { message = "Logged out successfully" });
-        }
+            var refreshToken = Request.Cookies["refreshToken"];
+
+            if (!string.IsNullOrEmpty(refreshToken))
+            {
+                // Suche RefreshToken in DB
+                var storedToken = await _context.RefreshTokens
+                    .FirstOrDefaultAsync(rt => rt.Token == refreshToken);
+
+                if (storedToken != null && storedToken.RevokedAt == null)
+                {
+                    storedToken.RevokedAt = DateTime.UtcNow; // Ungültig machen
+                    await _context.SaveChangesAsync();
+                }
+            }
+
+    // Cookie löschen (überschreiben + sofort ablaufen lassen)
+    Response.Cookies.Append("refreshToken", "",
+        new CookieOptions
+        {
+            HttpOnly = true,
+            Secure = true,
+            SameSite = SameSiteMode.None,
+            Expires = DateTime.UtcNow.AddDays(-1) // abgelaufen
+        });
+
+    return Ok(new { message = "Logged out" });
+}
+
 
         [HttpPost("refresh")]
         public async Task<IActionResult> Refresh()
@@ -147,7 +173,7 @@ namespace Portfolio.Api.Controllers
             {
                 HttpOnly = true,
                 Secure = true,
-                SameSite = SameSiteMode.Strict,
+                SameSite = SameSiteMode.None,
                 Expires = newRefreshToken.ExpiresAt
             });
 

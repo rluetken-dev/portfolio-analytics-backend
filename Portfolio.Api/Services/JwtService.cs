@@ -25,6 +25,7 @@ namespace Portfolio.Api.Services
                     new Claim(ClaimTypes.NameIdentifier, user.Id.ToString())
                 }),
                 Expires = DateTime.UtcNow.AddMinutes(15), // token valid for 15 minutes (was 1 hour)
+                //Expires = DateTime.UtcNow.AddSeconds(10),
                 SigningCredentials = new SigningCredentials(new SymmetricSecurityKey(key),
                                                  SecurityAlgorithms.HmacSha256Signature)
             };
