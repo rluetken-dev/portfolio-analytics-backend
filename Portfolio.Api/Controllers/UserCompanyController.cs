@@ -209,6 +209,38 @@ public class UserCompanyController : ControllerBase
         return Ok(response);
     }
 
+    /// <summary>
+    /// Returns all UserCompany entries for all users (Admin only).
+    /// </summary>
+    /// <response code="200">List of all user-company mappings with user info.</response>
+    /// <response code="403">If the current user is not an admin.</response>
+    [Authorize(Roles = "Admin")]
+    [HttpGet("/api/admin/usercompanies")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    public async Task<ActionResult<IEnumerable<object>>> GetAllUserCompaniesForAdmin()
+    {
+        var entries = await _context.UserCompanies
+            .Include(uc => uc.Ticker)
+            .Include(uc => uc.User)
+            .Select(uc => new
+            {
+                uc.Id,
+                Username = uc.User.Username,
+                Ticker = new
+                {
+                    uc.Ticker.Symbol,
+                    uc.Ticker.Name,
+                    uc.Ticker.Sector
+                },
+                uc.Shares,
+                uc.PurchasePrice,
+                uc.Notes
+            })
+            .ToListAsync();
+
+        return Ok(entries);
+    }
 }
 
 

@@ -19,9 +19,15 @@ namespace Portfolio.Api.Services
 
             var claims = new[]
             {
+                // ✅ Standard identity claims
                 new Claim(ClaimTypes.Name, user.Username),
                 new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
-                new Claim("isAdmin", user.IsAdmin.ToString().ToLowerInvariant()) 
+
+                // ✅ Custom claim (you can keep this for frontend convenience)
+                new Claim("isAdmin", user.IsAdmin.ToString().ToLowerInvariant()),
+
+                // ✅ Crucial for [Authorize(Roles = "Admin")]
+                new Claim(ClaimTypes.Role, user.IsAdmin ? "Admin" : "User")
             };
 
             var tokenDescriptor = new SecurityTokenDescriptor
