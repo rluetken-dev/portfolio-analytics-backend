@@ -5,6 +5,7 @@ using Portfolio.Api.Models;
 using Portfolio.Api.Services;
 using Portfolio.Api.Exceptions;
 using Portfolio.Api.Utils;
+using Portfolio.Api.DTOs;
 
 namespace Portfolio.Api.Controllers
 {
@@ -66,12 +67,13 @@ namespace Portfolio.Api.Controllers
 
             var rows = await query
                 .OrderBy(t => t.Symbol)
-                .Select(t => new CompanySummaryDto
+                .Select(t => new CompanySearchResult
                 {
-                    Id = t.Id.ToString(),
-                    Symbol = t.Symbol,
-                    Name = t.Name,
-                    Sector = t.Sector
+                    Id = t.Id,
+                    Symbol = t.Symbol ?? string.Empty,
+                    Name = t.Name ?? string.Empty,
+                    Sector = t.Sector ?? string.Empty,
+                    IsInDatabase = true
                 })
                 .Take(take)
                 .ToListAsync(ct);
@@ -275,12 +277,17 @@ namespace Portfolio.Api.Controllers
                 // mark existing vs addable companies
                 var results = searchResults.Select(r => new CompanySearchResult
                 {
+                    Id = _db.Tickers
+                        .Where(t => t.Symbol == r.Symbol)
+                        .Select(t => t.Id)
+                        .FirstOrDefault(), // ✅ Try to map the ticker's ID
                     Symbol = r.Symbol,
                     Name = r.Name,
                     Exchange = r.Exchange,
                     Sector = r.Sector,
                     IsInDatabase = existingSymbols.Contains(r.Symbol)
                 }).ToList();
+
 
                 return Ok(new CompanySearchResponse
                 {
@@ -408,7 +415,15 @@ namespace Portfolio.Api.Controllers
 
             return Ok(new BulkAddResponse
             {
-                Added = added,
+                Added = added.Select(a => new CompanySearchResult
+                {
+                    Id = int.TryParse(a.Id, out var idVal) ? idVal : 0, 
+                    Symbol = a.Symbol ?? string.Empty,
+                    Name = a.Name ?? string.Empty,
+                    Sector = a.Sector ?? string.Empty,
+                    Exchange = null,
+                    IsInDatabase = true
+                }).ToList(),
                 Errors = errors,
                 TotalAdded = added.Count
             });
@@ -480,41 +495,41 @@ namespace Portfolio.Api.Controllers
         }
 
 
-        // ============= NEW DTOs - Create file: Portfolio.Api/Models/CompanyDiscoveryDtos.cs =============
+        // // ============= NEW DTOs - Create file: Portfolio.Api/Models/CompanyDiscoveryDtos.cs =============
 
-        public record AddCompanyRequest
-        {
-            public string Symbol { get; init; } = string.Empty;
-        }
+        // public record AddCompanyRequest
+        // {
+        //     public string Symbol { get; init; } = string.Empty;
+        // }
 
-        public record AddPopularRequest
-        {
-            public string? Category { get; init; }
-            public int? Limit { get; init; } = 20;
-        }
+        // public record AddPopularRequest
+        // {
+        //     public string? Category { get; init; }
+        //     public int? Limit { get; init; } = 20;
+        // }
 
-        public record CompanySearchResult
-        {
-            public string Symbol { get; init; } = string.Empty;
-            public string Name { get; init; } = string.Empty;
-            public string? Exchange { get; init; }
-            public string? Sector { get; init; }
-            public bool IsInDatabase { get; init; }
-        }
+        // public record CompanySearchResult
+        // {
+        //     public string Symbol { get; init; } = string.Empty;
+        //     public string Name { get; init; } = string.Empty;
+        //     public string? Exchange { get; init; }
+        //     public string? Sector { get; init; }
+        //     public bool IsInDatabase { get; init; }
+        // }
 
-        public record CompanySearchResponse
-        {
-            public string Query { get; init; } = string.Empty;
-            public List<CompanySearchResult> Results { get; init; } = new();
-            public int TotalFound { get; init; }
-        }
+        // public record CompanySearchResponse
+        // {
+        //     public string Query { get; init; } = string.Empty;
+        //     public List<CompanySearchResult> Results { get; init; } = new();
+        //     public int TotalFound { get; init; }
+        // }
 
-        public record BulkAddResponse
-        {
-            public List<CompanySummaryDto> Added { get; init; } = new();
-            public List<string> Errors { get; init; } = new();
-            public int TotalAdded { get; init; }
-        }
+        // public record BulkAddResponse
+        // {
+        //     public List<CompanySummaryDto> Added { get; init; } = new();
+        //     public List<string> Errors { get; init; } = new();
+        //     public int TotalAdded { get; init; }
+        // }
 
        
 
