@@ -45,6 +45,11 @@ public class AdminController : ControllerBase
     /// English: Deletes old price rows based on maxAgeDays and/or caps rows per symbol.
     /// </summary>
     [HttpPost("prune")]
+    [SwaggerOperation(
+        Summary = "Prune old price data",
+        Description = "Deletes outdated daily price rows based on retention settings. Does not affect fundamentals.",
+        Tags = new[] { "Admin – Maintenance" }
+    )]
     public async Task<IActionResult> Prune(
         [FromQuery] int? maxAgeDays = 3 * 365,
         [FromQuery] int? keepPerSymbol = null,
@@ -63,6 +68,11 @@ public class AdminController : ControllerBase
     /// Should be run after large deletes/truncates.
     /// </summary>
     [HttpPost("vacuum")]
+    [SwaggerOperation(
+        Summary = "Run VACUUM + ANALYZE",
+        Description = "Runs SQLite VACUUM and ANALYZE for the entire database file to reclaim space and refresh query planner stats.",
+        Tags = new[] { "Admin – Maintenance" }
+    )]
     public async Task<IActionResult> Vacuum(CancellationToken ct = default)
     {
         await _maintenance.VacuumAnalyzeAsync(ct);
@@ -80,6 +90,11 @@ public class AdminController : ControllerBase
     /// WARNING: destructive. Keep behind DemoMode/Authorization in production.
     /// </summary>
     [HttpPost("truncate")]
+    [SwaggerOperation(
+        Summary = "Truncate database tables",
+        Description = "Deletes all rows in selected tables (prices, fundamentals, tickers, or all). ⚠️ Destructive operation.",
+        Tags = new[] { "Admin – Maintenance" }
+    )]
     public async Task<IActionResult> Truncate(
         [FromQuery] string? scope,
         [FromServices] IConfiguration cfg,
@@ -146,6 +161,11 @@ public class AdminController : ControllerBase
     /// </summary>
     [HttpGet("info")]
     [Produces("application/json")]
+    [SwaggerOperation(
+        Summary = "Database diagnostics overview",
+        Description = "Displays DB provider, file path, table row counts, and compact fundamentals summary per symbol.",
+        Tags = new[] { "Admin – Maintenance" }
+    )]
     public async Task<IActionResult> Info(
         [FromServices] AppDbContext db,
         CancellationToken ct = default)
@@ -254,6 +274,11 @@ public class AdminController : ControllerBase
     /// English: real-data equivalent of our seed endpoints. Respects FMP free-tier limit.
     /// </summary>
     [HttpPost("ingest/fmp-annual")]
+    [SwaggerOperation(
+        Summary = "Ingest FMP annual fundamentals",
+        Description = "Fetches annual Income & Balance data from FMP and upserts them into the database.",
+        Tags = new[] { "Admin – Data Ingest" }
+    )]
     public async Task<IActionResult> IngestFmpAnnual(
         [FromQuery] string symbol,
         [FromServices] IncomeIngestService incomeIngest,
@@ -286,6 +311,11 @@ public class AdminController : ControllerBase
     /// English: complements income &amp; balance so we can compute FCF.
     /// </summary>
     [HttpPost("ingest/fmp-cashflow-annual")]
+    [SwaggerOperation(
+        Summary = "Ingest FMP annual cash flow",
+        Description = "Fetches annual Cash Flow data from FMP and upserts them into the database.",
+        Tags = new[] { "Admin – Data Ingest" }
+    )]
     public async Task<IActionResult> IngestFmpCashflowAnnual(
         [FromQuery] string symbol,
         [FromServices] CashFlowIngestService cashflowIngest,
@@ -322,6 +352,11 @@ public class AdminController : ControllerBase
     /// with overwrite=true, replace existing Name/Sector as well.
     /// </summary>
     [HttpPost("tickers/upsert")]
+    [SwaggerOperation(
+        Summary = "Bulk upsert tickers",
+        Description = "Upserts multiple tickers; optionally overwrites existing Name and Sector values.",
+        Tags = new[] { "Admin – Tickers" }
+    )]
     public async Task<IActionResult> UpsertTickers(
         [FromQuery] bool overwrite,
         [FromBody] List<UpsertTickerDto> items,
@@ -364,6 +399,11 @@ public class AdminController : ControllerBase
     /// </summary>
     /// <response code="200">Returns JSON like <c>{ cleared: N }</c>.</response>
     [HttpPost("tickers/clear-sectors")]
+        [SwaggerOperation(
+        Summary = "Clear all ticker sectors",
+        Description = "Sets the Sector column to NULL for all tickers. ⚠️ Destructive reset before reclassification.",
+        Tags = new[] { "Admin – Tickers" }
+    )]
     public async Task<IActionResult> ClearTickerSectors(CancellationToken ct)
     {
         var n = await _maintenance.ClearAllTickerSectorsAsync(ct);
@@ -379,6 +419,11 @@ public class AdminController : ControllerBase
     /// Returns JSON: { symbol, pricesDeleted, incomeDeleted, balanceDeleted, cashDeleted, tickerDeleted }
     /// </response>
     [HttpDelete("tickers/{symbol}")]
+    [SwaggerOperation(
+        Summary = "Delete company by symbol",
+        Description = "Deletes a ticker and all related prices and fundamentals. Operation is idempotent.",
+        Tags = new[] { "Admin – Tickers" }
+    )]
     public async Task<IActionResult> DeleteTicker([FromRoute] string symbol, CancellationToken ct)
     {
         var result = await _maintenance.DeleteTickerAsync(symbol, ct);
@@ -388,8 +433,13 @@ public class AdminController : ControllerBase
     /// <summary>
     /// Lists all registered users (admin-only).
     /// </summary>
-    [HttpGet("users")]
+    [HttpGet("users")]    
     [ProducesResponseType(StatusCodes.Status200OK)]
+    [SwaggerOperation(
+        Summary = "List all registered users",
+        Description = "Returns all user accounts including admin flag. Admin-only access.",
+        Tags = new[] { "Admin – Users" }
+    )]
     public async Task<ActionResult<IEnumerable<object>>> GetAllUsers()
     {
         var users = await _db.Users
@@ -412,6 +462,11 @@ public class AdminController : ControllerBase
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [SwaggerOperation(
+        Summary = "Delete user account",
+        Description = "Deletes a user by ID. Prevents deleting the last admin or self-deletion.",
+        Tags = new[] { "Admin – Users" }
+    )]
     public async Task<IActionResult> DeleteUser(int id)
     {
         var currentUserId = User.GetUserId();
@@ -423,11 +478,64 @@ public class AdminController : ControllerBase
         if (user == null)
             return NotFound();
 
+        // 👇 Prevent deletion if this is the last remaining admin
+        if (user.IsAdmin)
+        {
+            var otherAdminsExist = await _db.Users.AnyAsync(u => u.IsAdmin && u.Id != id);
+            if (!otherAdminsExist)
+                return Forbid(); // Safety: can't delete last admin
+        }
+
         _db.Users.Remove(user);
         await _db.SaveChangesAsync();
 
         return NoContent();
-}
+    }
+
+    /// <summary>
+    /// Promotes or demotes a user (toggles admin rights).
+    /// </summary>
+    /// <param name="id">User ID</param>
+    /// <param name="makeAdmin">true = promote to admin, false = demote</param>
+    [HttpPut("users/{id:int}/promote")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [SwaggerOperation(
+        Summary = "Promote or demote a user",
+        Description = "Sets admin privileges for a user. Prevents demoting the last admin or self-demotion.",
+        Tags = new[] { "Admin – Users" }
+    )]
+    public async Task<IActionResult> SetAdminStatus(int id, [FromQuery] bool makeAdmin)
+    {
+        var currentUserId = User.GetUserId();
+
+        // Prevent an admin from demoting themselves
+        if (currentUserId == id && !makeAdmin)
+            return Forbid();
+
+        var user = await _db.Users.FindAsync(id);
+        if (user == null)
+            return NotFound();
+
+        // Prevent demotion of the last remaining admin
+        if (user.IsAdmin && !makeAdmin)
+        {
+            var otherAdminsExist = await _db.Users.AnyAsync(u => u.IsAdmin && u.Id != id);
+            if (!otherAdminsExist)
+                return Forbid();
+        }
+
+        user.IsAdmin = makeAdmin;
+        await _db.SaveChangesAsync();
+
+        return Ok(new
+        {
+            user.Id,
+            user.Username,
+            user.IsAdmin
+        });
+    }
 
 
 
@@ -449,13 +557,16 @@ public class AdminController : ControllerBase
     /// Seed dry-run: parse &amp; validate seed JSON; no DB writes.
     /// English: Reads SeedData/companies/{SYMBOL}.json and returns a compact summary (symbol, profile, quotes range, fundamentals snapshot).
     /// </summary>
+    [HttpPost("seed/company-file/{symbol}")]
     [SwaggerOperation(
         Summary = "Validate seed file (dry-run)",
         Description = "Parses SeedData/companies/{SYMBOL}.json and returns a compact summary without writing to the DB.",
         OperationId = "Seed_ValidateCompanyFile",
-        Tags = new[] { "Admin", "Seed" }
-    )]
-    [HttpPost("seed/company-file/{symbol}")]
+        Tags = new[] { "Admin – Seed Tools" }
+    )]   
+    #if !DEBUG
+        [ApiExplorerSettings(IgnoreApi = true)]
+    #endif
     public async Task<IActionResult> SeedCompanyFileDryRun([FromRoute] string symbol, CancellationToken ct)
     {
         // English: load + validate file (no DB writes)
@@ -493,11 +604,17 @@ public class AdminController : ControllerBase
         };
 
         return Ok(new { title = "Seed file OK (dry-run)", summary });
-    }
-
-
+    }  
 
     [HttpPost("seed/company-file/{symbol}/apply")]
+    [SwaggerOperation(
+        Summary = "Apply seed file to database",
+        Description = "Loads SeedData/companies/{symbol}.json and inserts all data (ticker, prices, fundamentals).",
+        Tags = new[] { "Admin – Seed Tools" }
+    )]
+    #if !DEBUG
+        [ApiExplorerSettings(IgnoreApi = true)]
+    #endif
     public async Task<IActionResult> SeedCompanyFileApply([FromRoute] string symbol, CancellationToken ct)
     {
         // English: 1) load + validate JSON first
@@ -635,6 +752,14 @@ public class AdminController : ControllerBase
 
 
     [HttpGet("seed/inspect/{symbol}")]
+    [SwaggerOperation(
+        Summary = "Inspect existing ticker data",
+        Description = "Shows ticker profile and basic price range information for a given symbol.",
+        Tags = new[] { "Admin – Seed Tools" }
+    )]
+    #if !DEBUG
+        [ApiExplorerSettings(IgnoreApi = true)]
+    #endif
     public async Task<IActionResult> InspectSeed([FromRoute] string symbol, CancellationToken ct)
     {
         var s = (symbol ?? string.Empty).Trim().ToUpperInvariant();
@@ -671,22 +796,16 @@ public class AdminController : ControllerBase
         return Ok(new { title = "Inspect OK", ticker, prices });
     }
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
     // POST /api/admin/seed/ticker
     [HttpPost("seed/ticker")]
+    [SwaggerOperation(
+        Summary = "Seed single ticker (demo)",
+        Description = "Creates or updates a ticker record. DemoMode only.",
+        Tags = new[] { "Admin – Seed Tools" }
+    )]
+    #if !DEBUG
+        [ApiExplorerSettings(IgnoreApi = true)]
+    #endif
     public async Task<IActionResult> SeedTicker(
         [FromQuery] string symbol,
         [FromQuery] string? name,
@@ -703,6 +822,14 @@ public class AdminController : ControllerBase
 
     // POST /api/admin/seed/annual
     [HttpPost("seed/annual")]
+    [SwaggerOperation(
+        Summary = "Seed annual data (demo)",
+        Description = "Sets net income and equity for one year. DemoMode only.",
+        Tags = new[] { "Admin – Seed Tools" }
+    )]
+    #if !DEBUG
+        [ApiExplorerSettings(IgnoreApi = true)]
+    #endif
     public async Task<IActionResult> SeedAnnual(
         [FromQuery] string symbol,
         [FromQuery] int year,
@@ -727,6 +854,14 @@ public class AdminController : ControllerBase
 
     // POST /api/admin/seed/liabilities
     [HttpPost("seed/liabilities")]
+    [SwaggerOperation(
+        Summary = "Seed liabilities (demo)",
+        Description = "Adds or updates total liabilities for one year. DemoMode only.",
+        Tags = new[] { "Admin – Seed Tools" }
+    )]
+    #if !DEBUG
+        [ApiExplorerSettings(IgnoreApi = true)]
+    #endif
     public async Task<IActionResult> SeedLiabilities(
         [FromQuery] string symbol,
         [FromQuery] int year,
@@ -744,6 +879,14 @@ public class AdminController : ControllerBase
 
     // POST /api/admin/seed/revenue
     [HttpPost("seed/revenue")]
+    [SwaggerOperation(
+        Summary = "Seed revenue (demo)",
+        Description = "Adds or updates revenue for one year. DemoMode only.",
+        Tags = new[] { "Admin – Seed Tools" }
+    )]
+    #if !DEBUG
+        [ApiExplorerSettings(IgnoreApi = true)]
+    #endif
     public async Task<IActionResult> SeedRevenue(
         [FromQuery] string symbol,
         [FromQuery] int year,
@@ -761,6 +904,14 @@ public class AdminController : ControllerBase
 
     // POST /api/admin/seed/assets
     [HttpPost("seed/assets")]
+    [SwaggerOperation(
+        Summary = "Seed assets (demo)",
+        Description = "Adds or updates total assets for one year. DemoMode only.",
+        Tags = new[] { "Admin – Seed Tools" }
+    )]
+    #if !DEBUG
+        [ApiExplorerSettings(IgnoreApi = true)]
+    #endif
     public async Task<IActionResult> SeedAssets(
         [FromQuery] string symbol,
         [FromQuery] int year,
@@ -778,6 +929,14 @@ public class AdminController : ControllerBase
 
     // POST /api/admin/seed/price
     [HttpPost("seed/price")]
+    [SwaggerOperation(
+        Summary = "Seed price (demo)",
+        Description = "Sets a closing price for a specific date. DemoMode only.",
+        Tags = new[] { "Admin – Seed Tools" }
+    )]
+    #if !DEBUG
+        [ApiExplorerSettings(IgnoreApi = true)]
+    #endif
     public async Task<IActionResult> SeedPrice(
         [FromQuery] string symbol,
         [FromQuery] DateOnly date,
@@ -795,6 +954,14 @@ public class AdminController : ControllerBase
 
     // POST /api/admin/seed/shares
     [HttpPost("seed/shares")]
+    [SwaggerOperation(
+        Summary = "Seed shares (demo)",
+        Description = "Sets outstanding shares for a given year. DemoMode only.",
+        Tags = new[] { "Admin – Seed Tools" }
+    )]
+    #if !DEBUG
+        [ApiExplorerSettings(IgnoreApi = true)]
+    #endif
     public async Task<IActionResult> SeedShares(
         [FromQuery] string symbol,
         [FromQuery] int year,

@@ -94,7 +94,7 @@ builder.Services.AddSwaggerGen(c =>
     if (File.Exists(xmlPath))
         c.IncludeXmlComments(xmlPath);
 
-    // --- NEW: JWT Auth config for Swagger ---
+    // --- JWT Auth config for Swagger ---
     c.AddSecurityDefinition("Bearer", new Microsoft.OpenApi.Models.OpenApiSecurityScheme
     {
         Description = "JWT Authorization header using the Bearer scheme. Example: \"Bearer {token}\"",
@@ -115,10 +115,38 @@ builder.Services.AddSwaggerGen(c =>
                     Id = "Bearer"
                 }
             },
-            new string[] {}
+            Array.Empty<string>()
         }
     });
+
+    // --- Grouping logic (fixed & null-safe) ---
+    c.TagActionsBy(api =>
+    {
+        // 1️⃣ Prefer explicit [SwaggerOperation(Tags = ...)] attribute
+        var op = api.ActionDescriptor.EndpointMetadata
+            .OfType<SwaggerOperationAttribute>()
+            .FirstOrDefault();
+
+        if (op?.Tags is { Length: > 0 })
+            return op.Tags;
+
+        // 2️⃣ Fallback: group all Admin endpoints together
+        var controller = api.GroupName ?? api.ActionDescriptor.RouteValues["controller"];
+        if (!string.IsNullOrEmpty(controller) &&
+            controller.Contains("Admin", StringComparison.OrdinalIgnoreCase))
+        {
+            return new[] { "Admin Management" };
+        }
+
+        // 3️⃣ Default group
+        return new[] { controller ?? "Misc" };
+    });
+
+    // Include all APIs unless explicitly hidden
+    c.DocInclusionPredicate((name, api) => true);
 });
+
+
 
 
 // ----- NEW: CORS for Vite dev server (http://localhost:5173) -----
