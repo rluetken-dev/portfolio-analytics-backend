@@ -4,7 +4,7 @@ using Portfolio.Api.Models;
 using Portfolio.Api.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Authorization;
-
+using Portfolio.Api.DTOs;
 
 namespace Portfolio.Api.Controllers
 {

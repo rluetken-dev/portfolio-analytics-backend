@@ -5,6 +5,7 @@ using System.Text.Json.Serialization;        // JsonNumberHandling
 using System.Linq;
 using Portfolio.Api.Models;
 using Newtonsoft.Json;
+using Portfolio.Api.DTOs;
 
 namespace Portfolio.Api.Services
 {

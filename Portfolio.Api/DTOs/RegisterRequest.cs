@@ -1,4 +1,4 @@
-namespace Portfolio.Api.Models
+namespace Portfolio.Api.DTOs
 {
     public class RegisterRequest
     {

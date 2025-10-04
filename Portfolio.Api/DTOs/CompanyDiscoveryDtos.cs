@@ -1,4 +1,4 @@
-namespace Portfolio.Api.Models
+namespace Portfolio.Api.DTOs
 {
     // Request to add a single company
     public record AddCompanyRequest
