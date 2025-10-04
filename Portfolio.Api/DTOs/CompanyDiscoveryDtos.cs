@@ -15,13 +15,15 @@ namespace Portfolio.Api.DTOs
 
     // Single company search result
     public record CompanySearchResult
-    {       
-        public int Id { get; init; }   
+    {
+        public int Id { get; init; }
         public string Symbol { get; init; } = string.Empty;
         public string Name { get; init; } = string.Empty;
         public string? Exchange { get; init; }
         public string? Sector { get; init; }
         public bool IsInDatabase { get; init; }
+        public bool IsInUserPortfolio { get; init; }
+
     }
 
     // Response containing search results

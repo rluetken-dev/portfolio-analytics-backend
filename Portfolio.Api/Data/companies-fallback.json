@@ -684,6 +684,106 @@
       "Symbol": "KAMATHOTEL.NS",
       "Name": "Kamat Hotels (India) Limited",
       "Sector": null
+    },
+    {
+      "Symbol": "AMFL",
+      "Name": "American Films, Inc.",
+      "Sector": null
+    },
+    {
+      "Symbol": "AMFC",
+      "Name": "AMB Financial Corp.",
+      "Sector": null
+    },
+    {
+      "Symbol": "AMFPF",
+      "Name": "Amplifon S.p.A.",
+      "Sector": null
+    },
+    {
+      "Symbol": "AMFFX",
+      "Name": "American Funds American Mutual Fund Class F-1",
+      "Sector": null
+    },
+    {
+      "Symbol": "AMFCX",
+      "Name": "American Funds American Mutual Fund",
+      "Sector": null
+    },
+    {
+      "Symbol": "AMFAX",
+      "Name": "AlphaSimplex Managed Futures Strategy Fund Class A",
+      "Sector": null
+    },
+    {
+      "Symbol": "AMFG.JK",
+      "Name": "PT Asahimas Flat Glass Tbk",
+      "Sector": null
+    },
+    {
+      "Symbol": "AMFORG.BO",
+      "Name": "Amforge Industries Limited",
+      "Sector": null
+    },
+    {
+      "Symbol": "AFIPA",
+      "Name": "AMFI Corp.",
+      "Sector": null
+    },
+    {
+      "Symbol": "FUNN",
+      "Name": "Amfil Technologies Inc.",
+      "Sector": null
+    },
+    {
+      "Symbol": "SDFI",
+      "Name": "AB Short Duration Income ETF",
+      "Sector": null
+    },
+    {
+      "Symbol": "SDFUSD",
+      "Name": "ShadowFi USD",
+      "Sector": null
+    },
+    {
+      "Symbol": "SDF.SW",
+      "Name": "K+s AG",
+      "Sector": null
+    },
+    {
+      "Symbol": "SDF.DE",
+      "Name": "K+s AG",
+      "Sector": null
+    },
+    {
+      "Symbol": "SDF.AX",
+      "Name": "Steadfast Group Limited",
+      "Sector": null
+    },
+    {
+      "Symbol": "USDF",
+      "Name": "US-Dadi Fertilizer Industry International, Inc.",
+      "Sector": null
+    },
+    {
+      "Symbol": "USDFJD",
+      "Name": "USD/FJD",
+      "Sector": null
+    },
+    {
+      "Symbol": "RSDFIN.BO",
+      "Name": "RSD Finance Limited",
+      "Sector": null
+    },
+    {
+      "Symbol": "SWSDF",
+      "Name": "Swiss Life Holding AG",
+      "Sector": null
+    },
+    {
+      "Symbol": "SLSDF",
+      "Name": "Select Sands Corp.",
+      "Sector": null
     }
   ]
 }
