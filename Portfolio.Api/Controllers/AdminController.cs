@@ -10,6 +10,9 @@ using System.Globalization;
 using System.Text.Json;
 using Portfolio.Api.Seed;      // ISeedFileService
 using Portfolio.Api.Seed.Dto;  // CompanySeedFile etc.
+using Microsoft.AspNetCore.Authorization;
+using Portfolio.Api.Extensions;
+
 
 namespace Portfolio.Api.Controllers;
 
@@ -19,8 +22,10 @@ namespace Portfolio.Api.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/admin")]
+[Authorize(Policy = "AdminOnly")] // ✅ only users with isAdmin=true in their JWT
 public class AdminController : ControllerBase
 {
+
     private readonly AppDbContext _db;
     private readonly MaintenanceService _maintenance;
     private readonly ISeedFileService _files;
@@ -380,6 +385,55 @@ public class AdminController : ControllerBase
         return Ok(result); // English: idempotent — returns zeros if symbol not found
     }
 
+    /// <summary>
+    /// Lists all registered users (admin-only).
+    /// </summary>
+    [HttpGet("users")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    public async Task<ActionResult<IEnumerable<object>>> GetAllUsers()
+    {
+        var users = await _db.Users
+            .Select(u => new
+            {
+                u.Id,
+                u.Username,
+                u.IsAdmin
+            })
+            .ToListAsync();
+
+        return Ok(users);
+    }
+
+    /// <summary>
+    /// Deletes a user by ID (admin-only).
+    /// Prevents an admin from deleting their own account.
+    /// </summary>
+    [HttpDelete("users/{id:int}")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    public async Task<IActionResult> DeleteUser(int id)
+    {
+        var currentUserId = User.GetUserId();
+
+        if (currentUserId == id)
+            return Forbid(); // Prevent self-deletion
+
+        var user = await _db.Users.FindAsync(id);
+        if (user == null)
+            return NotFound();
+
+        _db.Users.Remove(user);
+        await _db.SaveChangesAsync();
+
+        return NoContent();
+}
+
+
+
+
+
+
 
 
 
@@ -392,16 +446,15 @@ public class AdminController : ControllerBase
 
 
     /// <summary>
-/// Seed dry-run: parse &amp; validate seed JSON; no DB writes.
-/// English: Reads SeedData/companies/{SYMBOL}.json and returns a compact summary (symbol, profile, quotes range, fundamentals snapshot).
-/// </summary>
-[SwaggerOperation(
-    Summary = "Validate seed file (dry-run)",
-    Description = "Parses SeedData/companies/{SYMBOL}.json and returns a compact summary without writing to the DB.",
-    OperationId = "Seed_ValidateCompanyFile",
-    Tags = new[] { "Admin", "Seed" }
-)]
-
+    /// Seed dry-run: parse &amp; validate seed JSON; no DB writes.
+    /// English: Reads SeedData/companies/{SYMBOL}.json and returns a compact summary (symbol, profile, quotes range, fundamentals snapshot).
+    /// </summary>
+    [SwaggerOperation(
+        Summary = "Validate seed file (dry-run)",
+        Description = "Parses SeedData/companies/{SYMBOL}.json and returns a compact summary without writing to the DB.",
+        OperationId = "Seed_ValidateCompanyFile",
+        Tags = new[] { "Admin", "Seed" }
+    )]
     [HttpPost("seed/company-file/{symbol}")]
     public async Task<IActionResult> SeedCompanyFileDryRun([FromRoute] string symbol, CancellationToken ct)
     {
