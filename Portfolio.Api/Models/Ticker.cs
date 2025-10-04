@@ -28,4 +28,9 @@ public class Ticker
     /// Navigation property to all related price records.
     /// </summary>
     public ICollection<Price> Prices { get; set; } = new List<Price>();
+
+    /// <summary>
+    /// All user-company relationships referencing this ticker.
+    /// </summary>
+    public ICollection<UserCompany> UserCompanies { get; set; } = new List<UserCompany>();
 }

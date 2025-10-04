@@ -19,7 +19,19 @@ namespace Portfolio.Api.Controllers
             _context = context;
         }
 
+        /// <summary>
+        /// Registers a new user account.
+        /// </summary>
+        /// <remarks>
+        /// Creates a new user, hashes the password, and issues both an access token and a refresh token (HttpOnly cookie).
+        /// </remarks>
+        /// <param name="request">The registration data (username + password).</param>
+        /// <returns>Returns tokens and basic user info.</returns>
+        /// <response code="200">Registration successful.</response>
+        /// <response code="400">Username already taken or invalid input.</response>
         [HttpPost("register")]
+        [ProducesResponseType(StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
         public async Task<IActionResult> Register([FromBody] RegisterRequest request)
         {
             // Check if username already exists
@@ -71,7 +83,19 @@ namespace Portfolio.Api.Controllers
             });
         }
 
+        /// <summary>
+        /// Logs an existing user in.
+        /// </summary>
+        /// <remarks>
+        /// Validates username and password, issues new JWT access and refresh tokens.
+        /// </remarks>
+        /// <param name="request">Login credentials.</param>
+        /// <returns>Access token and user info.</returns>
+        /// <response code="200">Login successful.</response>
+        /// <response code="401">Invalid username or password.</response>
         [HttpPost("login")]
+        [ProducesResponseType(StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status401Unauthorized)]
         public async Task<IActionResult> Login([FromBody] LoginRequest request)
         {
             // Find user by username
@@ -112,8 +136,18 @@ namespace Portfolio.Api.Controllers
             });
         }
 
+        /// <summary>
+        /// Returns information about the currently authenticated user.
+        /// </summary>
+        /// <remarks>
+        /// Requires a valid JWT access token in the Authorization header.
+        /// </remarks>
+        /// <response code="200">Returns user ID and username.</response>
+        /// <response code="401">If the request is not authorized.</response>
         [HttpGet("me")]
         [Authorize]
+        [ProducesResponseType(StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status401Unauthorized)]
         public IActionResult Me()
         {
             var username = User.Identity?.Name;
@@ -126,8 +160,13 @@ namespace Portfolio.Api.Controllers
             });
         }
 
+        /// <summary>
+        /// Logs the current user out and revokes their refresh token.
+        /// </summary>
+        /// <response code="200">User successfully logged out.</response>
         [HttpPost("logout")]
         [Authorize]
+        [ProducesResponseType(StatusCodes.Status200OK)]
         public async Task<IActionResult> Logout()
         {
             var refreshToken = Request.Cookies["refreshToken"];
@@ -159,7 +198,14 @@ namespace Portfolio.Api.Controllers
         }
 
 
+        /// <summary>
+        /// Refreshes the access token using a valid refresh token (from cookie).
+        /// </summary>
+        /// <response code="200">New access token issued.</response>
+        /// <response code="401">Invalid or expired refresh token.</response>
         [HttpPost("refresh")]
+        [ProducesResponseType(StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status401Unauthorized)]
         public async Task<IActionResult> Refresh()
         {
             // Get refresh token from cookies

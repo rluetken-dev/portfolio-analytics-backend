@@ -7,5 +7,10 @@ namespace Portfolio.Api.Models
         public string Username { get; set; } = string.Empty; // Username of the account
         
         public string PasswordHash { get; set; } = string.Empty; // Hashed password
+
+         /// <summary>
+        /// All user-company (portfolio) relationships linked to this user.
+        /// </summary>
+        public ICollection<UserCompany> UserCompanies { get; set; } = new List<UserCompany>();
     }
 }

@@ -1,7 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Portfolio.Api.Models;
 using Portfolio.Api.Data.Entities; // for IncomeStatementEntity
-
+ 
 namespace Portfolio.Api.Data;
 
 /// <summary>
@@ -48,6 +48,12 @@ public class AppDbContext : DbContext
     /// Table for storing refresh tokens linked to users
     /// </summary>
     public DbSet<RefreshToken> RefreshTokens { get; set; }
+
+    /// <summary>
+    /// Table linking users to companies (tickers) they hold in their portfolio.
+    /// Contains user-specific metadata such as shares, purchase price, and notes.
+    /// </summary>
+    public DbSet<UserCompany> UserCompanies => Set<UserCompany>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -204,6 +210,42 @@ public class AppDbContext : DbContext
                  d => d.ToDateTime(TimeOnly.MinValue),
                  dt => DateOnly.FromDateTime(DateTime.SpecifyKind(dt, DateTimeKind.Utc))
              );
+        });
+
+        // --- UserCompany configuration ---
+        modelBuilder.Entity<UserCompany>(e =>
+        {
+            // Table name
+            e.ToTable("user_companies");
+
+            // PK
+            e.HasKey(x => x.Id);
+
+            // Foreign keys
+            e.HasOne(x => x.User)
+                .WithMany(u => u.UserCompanies)
+                .HasForeignKey(x => x.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            e.HasOne(x => x.Ticker)
+                .WithMany(t => t.UserCompanies)
+                .HasForeignKey(x => x.TickerId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            // Enforce uniqueness per User + Ticker (prevent duplicate portfolio entries)
+            e.HasIndex(x => new { x.UserId, x.TickerId })
+                .IsUnique();
+
+            // Monetary precision for financial fields
+            e.Property(x => x.Shares)
+                .HasColumnType("decimal(18,4)");
+
+            e.Property(x => x.PurchasePrice)
+                .HasColumnType("decimal(18,4)");
+
+            // Notes length restriction
+            e.Property(x => x.Notes)
+                .HasMaxLength(500);
         });
     }
 }
