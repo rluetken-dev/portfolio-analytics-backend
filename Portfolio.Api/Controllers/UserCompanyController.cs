@@ -4,6 +4,8 @@ using Portfolio.Api.Data;
 using Portfolio.Api.Models;
 using Portfolio.Api.DTOs;
 using Microsoft.EntityFrameworkCore;
+using Portfolio.Api.Exceptions;
+using Portfolio.Api.Utils;
 
 namespace Portfolio.Api.Controllers;
 
@@ -35,7 +37,7 @@ public class UserCompanyController : ControllerBase
     {
         var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
         if (userId == null)
-            return Unauthorized();
+            throw new UnauthorizedException("User is not authorized.");
 
         var uid = int.Parse(userId);
 
@@ -74,14 +76,14 @@ public class UserCompanyController : ControllerBase
     {
         var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
         if (userId == null)
-            return Unauthorized();
+            throw new UnauthorizedException("User is not authorized.");
 
         var uid = int.Parse(userId);
 
         // Check if ticker exists
         var ticker = await _context.Tickers.FindAsync(dto.TickerId);
         if (ticker == null)
-            return BadRequest(new { message = "Ticker not found." });
+            throw new BadRequestException("Ticker not found.");
 
         // Check if this ticker is already in user's portfolio
         var existing = await _context.UserCompanies
@@ -135,18 +137,18 @@ public class UserCompanyController : ControllerBase
     {
         var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
         if (userId == null)
-            return Unauthorized();
+            throw new UnauthorizedException("User is not authorized.");
 
         var uid = int.Parse(userId);
 
         // Find portfolio entry
         var userCompany = await _context.UserCompanies.FindAsync(id);
         if (userCompany == null)
-            return NotFound(new { message = "Portfolio entry not found." });
+            throw new NotFoundException("No annual income row found.");
 
         // Prevent deleting other users' entries
         if (userCompany.UserId != uid)
-            return Forbid();
+            throw new ForbiddenException("Operation not allowed.");
 
         _context.UserCompanies.Remove(userCompany);
         await _context.SaveChangesAsync();
@@ -172,7 +174,7 @@ public class UserCompanyController : ControllerBase
     {
         var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
         if (userId == null)
-            return Unauthorized();
+            throw new UnauthorizedException("User is not authorized.");
 
         var uid = int.Parse(userId);
 
@@ -181,10 +183,10 @@ public class UserCompanyController : ControllerBase
             .FirstOrDefaultAsync(uc => uc.Id == id);
 
         if (userCompany == null)
-            return NotFound(new { message = "Portfolio entry not found." });
+            throw new NotFoundException("No annual income row found.");
 
         if (userCompany.UserId != uid)
-            return Forbid();
+            throw new ForbiddenException("Operation not allowed.");
 
         // Apply updates (only provided values)
         if (dto.Shares.HasValue) userCompany.Shares = dto.Shares;

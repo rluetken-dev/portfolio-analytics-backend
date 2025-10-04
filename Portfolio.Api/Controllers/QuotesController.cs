@@ -7,7 +7,8 @@ using Portfolio.Api.Models;
 using Portfolio.Api.Services;
 using Swashbuckle.AspNetCore.Annotations;
 using Polly.RateLimit;
-
+using Portfolio.Api.Exceptions;
+using Portfolio.Api.Utils;
 
 namespace Portfolio.Api.Controllers
 {
@@ -76,16 +77,16 @@ namespace Portfolio.Api.Controllers
                 .ToArray();
 
             if (list.Length == 0 || list.Length > 50)
-                return BadRequest(new { error = "symbols must contain 1..50 comma-separated tickers" });
+                throw new BadRequestException("Symbols must contain 1–50 comma-separated tickers.");
 
             if (!TryParseRange(range, out var days, out var fullHistory))
-                return BadRequest(new { error = "range must be like '30d', '12m', or 'full'" });
+                throw new BadRequestException("Range must be like '30d', '12m', or 'full'.");
 
             foreach (var s in list)
             {
                 // Allow A–Z, 0–9, dot, dash; length 1..10
                 if (s.Length is < 1 or > 10 || !s.All(ch => char.IsLetterOrDigit(ch) || ch is '.' or '-'))
-                    return BadRequest(new { error = $"invalid symbol: '{s}'" });
+                    throw new BadRequestException($"Invalid symbol: '{s}'.");
             }
 
             // ---- 2) Fetch & upsert loop ----
@@ -208,8 +209,7 @@ namespace Portfolio.Api.Controllers
             [FromQuery] int take = 5,
             CancellationToken ct = default)
         {
-            if (string.IsNullOrWhiteSpace(symbol))
-                return BadRequest(new { error = "symbol required" });
+            Guard.BadRequestIf(string.IsNullOrWhiteSpace(symbol), "Symbol required.");
 
             take = Math.Clamp(take, 1, 50);
 
@@ -262,24 +262,14 @@ namespace Portfolio.Api.Controllers
         {
             if (string.IsNullOrWhiteSpace(symbol))
             {
-                return BadRequest(new ProblemDetails
-                {
-                    Title = "Bad request",
-                    Detail = "Symbol is required",
-                    Status = StatusCodes.Status400BadRequest
-                });
+                throw new BadRequestException("Bad Request: Symbol is required.");
             }
 
             try
             {
                 var result = await _alpha.GetLatestPriceAsync(symbol.ToUpperInvariant(), ct);
                 if (result == null)
-                    return NotFound(new ProblemDetails
-                    {
-                        Title = "Not found",
-                        Detail = $"No quote found for {symbol}",
-                        Status = StatusCodes.Status404NotFound
-                    });
+                    throw new NotFoundException($"No quote found for {symbol}.");
 
                 return Ok(new
                 {
@@ -328,8 +318,7 @@ namespace Portfolio.Api.Controllers
             [FromQuery] int take = 8,
             CancellationToken ct = default)
         {
-            if (string.IsNullOrWhiteSpace(symbol))
-                return BadRequest(new { error = "symbol required" });
+            Guard.BadRequestIf(string.IsNullOrWhiteSpace(symbol), "Symbol required.");
 
             take = Math.Clamp(take, 1, 40);
             var sym = symbol.ToUpperInvariant();
@@ -386,8 +375,7 @@ namespace Portfolio.Api.Controllers
             [FromQuery] string? to = null,
             CancellationToken ct = default)
         {
-            if (string.IsNullOrWhiteSpace(symbol))
-                return BadRequest(new { error = "symbol required" });
+            Guard.BadRequestIf(string.IsNullOrWhiteSpace(symbol), "Symbol required.");
 
             var sym = symbol.ToUpperInvariant();
 
@@ -398,20 +386,20 @@ namespace Portfolio.Api.Controllers
             if (string.IsNullOrWhiteSpace(to))
                 toDate = today;
             else if (!DateOnly.TryParse(to, out toDate))
-                return BadRequest(new { error = "invalid 'to' date (use yyyy-MM-dd)" });
+                throw new BadRequestException("Invalid 'to' date (use yyyy-MM-dd).");
 
             if (string.IsNullOrWhiteSpace(from))
                 fromDate = toDate.AddDays(-365); // default: last 365 days
             else if (!DateOnly.TryParse(from, out fromDate))
-                return BadRequest(new { error = "invalid 'from' date (use yyyy-MM-dd)" });
+                throw new BadRequestException("Invalid 'from' date (use yyyy-MM-dd).");
 
             if (fromDate > toDate)
-                return BadRequest(new { error = "'from' must be <= 'to'" });
+                throw new BadRequestException("'From' must be <= 'To'.");
 
             // Optional guard to avoid accidental huge ranges
             var maxSpanDays = 3650; // ~10 years
             if ((toDate.DayNumber - fromDate.DayNumber) > maxSpanDays)
-                return BadRequest(new { error = $"date range too large (> {maxSpanDays} days)" });
+                throw new BadRequestException($"Date range too large (> {maxSpanDays} days).");
 
             // English: track if caller explicitly set a range
             bool explicitRange = !string.IsNullOrWhiteSpace(from) || !string.IsNullOrWhiteSpace(to);
@@ -507,8 +495,7 @@ namespace Portfolio.Api.Controllers
         {
             // English: normalize inputs
             var sym = (symbol ?? string.Empty).Trim().ToUpperInvariant();
-            if (string.IsNullOrWhiteSpace(sym))
-                return BadRequest(new { error = "symbol required" });
+            Guard.BadRequestIf(string.IsNullOrWhiteSpace(sym), "Symbol required.");
 
             // English: track if caller explicitly set a range
             bool explicitRange = from.HasValue || to.HasValue;

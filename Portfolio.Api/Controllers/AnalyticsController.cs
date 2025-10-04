@@ -3,7 +3,8 @@ using Microsoft.EntityFrameworkCore;
 using Portfolio.Api.Data;
 using Portfolio.Api.Services.Analytics; // FinanceMath helper
 using Swashbuckle.AspNetCore.Annotations;
-
+using Portfolio.Api.Exceptions;
+using Portfolio.Api.Utils;
 
 namespace Portfolio.Api.Controllers
 {
@@ -62,7 +63,7 @@ namespace Portfolio.Api.Controllers
                     CancellationToken ct = default)
         {
             if (string.IsNullOrWhiteSpace(symbol))
-                return BadRequest(new { error = "Missing ?symbol=..." });
+               Guard.BadRequestIf(string.IsNullOrWhiteSpace(symbol), "Missing ?symbol=...");
 
             var ticker = symbol.Trim().ToUpperInvariant();
 
@@ -74,7 +75,7 @@ namespace Portfolio.Api.Controllers
                 .FirstOrDefaultAsync(ct);
 
             if (inc is null || !inc.NetIncome.HasValue)
-                return NotFound(new { error = $"No annual income row for {ticker}." });
+                throw new NotFoundException($"No annual income row for {ticker}.");
 
             // Equity for same period (t)
             var eqT = await db.BalanceSheets.AsNoTracking()
@@ -83,7 +84,7 @@ namespace Portfolio.Api.Controllers
                 .FirstOrDefaultAsync(ct);
 
             if (!eqT.HasValue || eqT.Value == 0)
-                return NotFound(new { error = $"No equity for {ticker} at {inc.Date}." });
+                throw new NotFoundException($"No equity for {ticker} at {inc.Date}.");
 
             // English: prior equity = most recent annual balance sheet strictly BEFORE the current income period end.
             // More robust than "same month/day one year earlier" because fiscal-year dates can shift slightly.
@@ -157,7 +158,7 @@ namespace Portfolio.Api.Controllers
                     CancellationToken ct = default)
         {
             if (string.IsNullOrWhiteSpace(symbol))
-                return BadRequest(new { error = "Missing ?symbol=..." });
+               Guard.BadRequestIf(string.IsNullOrWhiteSpace(symbol), "Missing ?symbol=...");
 
             var ticker = symbol.Trim().ToUpperInvariant();
 
@@ -169,7 +170,7 @@ namespace Portfolio.Api.Controllers
                 .FirstOrDefaultAsync(ct);
 
             if (bal is null)
-                return NotFound(new { error = $"No annual balance row for {ticker}." });
+                throw new NotFoundException($"No annual balance row for {ticker}.");
 
             // 2) Compute D/E via helper (null if equity is zero/invalid)
             double? de = null;
@@ -235,7 +236,7 @@ namespace Portfolio.Api.Controllers
                     CancellationToken ct = default)
         {
             if (string.IsNullOrWhiteSpace(symbol))
-                return BadRequest(new { error = "Missing ?symbol=..." });
+               Guard.BadRequestIf(string.IsNullOrWhiteSpace(symbol), "Missing ?symbol=...");
 
             var ticker = symbol.Trim().ToUpperInvariant();
 
@@ -247,7 +248,7 @@ namespace Portfolio.Api.Controllers
                 .FirstOrDefaultAsync(ct);
 
             if (inc is null)
-                return NotFound(new { error = $"No annual income row for {ticker}." });
+                throw new NotFoundException($"No annual income row for {ticker}.");
 
             // 2) Compute Net Margin via helper (null if revenue is zero/invalid)
             double? netMargin = (inc.NetIncome.HasValue && inc.Revenue.HasValue)
@@ -305,7 +306,7 @@ namespace Portfolio.Api.Controllers
                     CancellationToken ct = default)
         {
             if (string.IsNullOrWhiteSpace(symbol))
-                return BadRequest(new { error = "Missing ?symbol=..." });
+               Guard.BadRequestIf(string.IsNullOrWhiteSpace(symbol), "Missing ?symbol=...");
 
             var ticker = symbol.Trim().ToUpperInvariant();
 
@@ -316,7 +317,7 @@ namespace Portfolio.Api.Controllers
                 .Select(i => new { i.Date, i.NetIncome })
                 .FirstOrDefaultAsync(ct);
             if (inc is null)
-                return NotFound(new { error = $"No annual income row for {ticker}." });
+                throw new NotFoundException($"No annual income row for {ticker}.");
 
             // Matching balance row (same period end)
             var bal = await db.BalanceSheets.AsNoTracking()
@@ -324,7 +325,7 @@ namespace Portfolio.Api.Controllers
                 .Select(b => new { b.TotalAssets })
                 .FirstOrDefaultAsync(ct);
             if (bal is null)
-                return NotFound(new { error = $"No annual balance row for {ticker} at {inc.Date}." });
+                throw new NotFoundException($"No annual balance row for {ticker} at {inc.Date}.");
 
             double? roa = (inc.NetIncome.HasValue && bal.TotalAssets.HasValue)
                 ? FinanceMath.Roa((double)inc.NetIncome.Value, (double)bal.TotalAssets.Value)
@@ -383,7 +384,7 @@ namespace Portfolio.Api.Controllers
                     CancellationToken ct = default)
         {
             if (string.IsNullOrWhiteSpace(symbol))
-                return BadRequest(new { error = "Missing ?symbol=..." });
+               Guard.BadRequestIf(string.IsNullOrWhiteSpace(symbol), "Missing ?symbol=...");
 
             var ticker = symbol.Trim().ToUpperInvariant();
 
@@ -395,7 +396,7 @@ namespace Portfolio.Api.Controllers
                 .FirstOrDefaultAsync(ct);
 
             if (bal is null)
-                return NotFound(new { error = $"No annual balance row for {ticker}." });
+                throw new NotFoundException($"No annual balance row for {ticker}.");
 
             // 2) Compute Equity Ratio via helper (null if Assets invalid/zero)
             double? equityRatio = null;
@@ -461,7 +462,7 @@ namespace Portfolio.Api.Controllers
                     CancellationToken ct = default)
         {
             if (string.IsNullOrWhiteSpace(symbol))
-                return BadRequest(new { error = "Missing ?symbol=..." });
+               Guard.BadRequestIf(string.IsNullOrWhiteSpace(symbol), "Missing ?symbol=...");
 
             var ticker = symbol.Trim().ToUpperInvariant();
 
@@ -473,7 +474,7 @@ namespace Portfolio.Api.Controllers
                 .FirstOrDefaultAsync(ct);
 
             if (bal is null)
-                return NotFound(new { error = $"No annual balance row for {ticker}." });
+                throw new NotFoundException($"No annual balance row for {ticker}.");
 
             // 2) Compute Debt-to-Assets via helper (null if assets invalid/zero)
             double? dta = null;
@@ -532,7 +533,7 @@ namespace Portfolio.Api.Controllers
                     CancellationToken ct = default)
         {
             if (string.IsNullOrWhiteSpace(symbol))
-                return BadRequest(new { error = "Missing ?symbol=..." });
+               Guard.BadRequestIf(string.IsNullOrWhiteSpace(symbol), "Missing ?symbol=...");
 
             var ticker = symbol.Trim().ToUpperInvariant();
 
@@ -543,7 +544,7 @@ namespace Portfolio.Api.Controllers
                 .FirstOrDefaultAsync(ct);
 
             if (row is null)
-                return NotFound(new { error = $"No prices for {ticker}." });
+                throw new NotFoundException($"No prices for {ticker}.");
 
             return Ok(new
             {
@@ -592,7 +593,7 @@ namespace Portfolio.Api.Controllers
                     CancellationToken ct = default)
         {
             if (string.IsNullOrWhiteSpace(symbol))
-                return BadRequest(new { error = "Missing ?symbol=..." });
+               Guard.BadRequestIf(string.IsNullOrWhiteSpace(symbol), "Missing ?symbol=...");
 
             var ticker = symbol.Trim().ToUpperInvariant();
 
@@ -603,7 +604,7 @@ namespace Portfolio.Api.Controllers
                 .FirstOrDefaultAsync(ct);
 
             if (inc is null)
-                return NotFound(new { error = $"No annual income row for {ticker}." });
+                throw new NotFoundException($"No annual income row for {ticker}.");
 
             double? eps = null;
             if (inc.WeightedAverageShsOut.HasValue && inc.WeightedAverageShsOut.Value != 0)
@@ -662,7 +663,7 @@ namespace Portfolio.Api.Controllers
                 CancellationToken ct = default)
         {
             if (string.IsNullOrWhiteSpace(symbol))
-                return BadRequest(new { error = "Missing ?symbol=..." });
+               Guard.BadRequestIf(string.IsNullOrWhiteSpace(symbol), "Missing ?symbol=...");
 
             var ticker = symbol.Trim().ToUpperInvariant();
 
@@ -672,7 +673,7 @@ namespace Portfolio.Api.Controllers
                 .Select(x => new { x.Id })
                 .FirstOrDefaultAsync(ct);
             if (t is null)
-                return NotFound(new { error = $"Ticker {ticker} not found." });
+                throw new NotFoundException($"Ticker {ticker} not found.");
 
             // 2) Latest annual EPS = NetIncome / WeightedAverageShsOut
             var inc = await db.IncomeStatements.AsNoTracking()
@@ -682,11 +683,11 @@ namespace Portfolio.Api.Controllers
                 .FirstOrDefaultAsync(ct);
 
             if (inc is null || !inc.NetIncome.HasValue || !inc.WeightedAverageShsOut.HasValue || inc.WeightedAverageShsOut.Value <= 0)
-                return NotFound(new { error = $"No annual EPS data for {ticker}." });
+                throw new NotFoundException($"No annual EPS data for {ticker}.");
 
             var epsOpt = FinanceMath.Eps((double)inc.NetIncome.Value, (double)inc.WeightedAverageShsOut.Value);
             if (epsOpt is null)
-                return BadRequest(new { error = "Cannot compute EPS (invalid inputs)." });
+                throw new BadRequestException("Cannot compute EPS (invalid inputs).");
 
             double eps = epsOpt.Value;
 
@@ -710,7 +711,7 @@ namespace Portfolio.Api.Controllers
             }
 
             if (priceRow is null)
-                return NotFound(new { error = $"No price data for {ticker} around {inc.Date:yyyy-MM-dd}." });
+                throw new NotFoundException($"No price data for {ticker} around {inc.Date:yyyy-MM-dd}.");
 
             double priceVal = (double)priceRow.Close;
 
@@ -768,7 +769,7 @@ namespace Portfolio.Api.Controllers
                     CancellationToken ct = default)
         {
             if (string.IsNullOrWhiteSpace(symbol))
-                return BadRequest(new { error = "Missing ?symbol=..." });
+               Guard.BadRequestIf(string.IsNullOrWhiteSpace(symbol), "Missing ?symbol=...");
 
             var ticker = symbol.Trim().ToUpperInvariant();
 
@@ -779,7 +780,7 @@ namespace Portfolio.Api.Controllers
                 .Select(b => new { b.Date, b.TotalStockholdersEquity })
                 .FirstOrDefaultAsync(ct);
             if (bal is null || !bal.TotalStockholdersEquity.HasValue)
-                return NotFound(new { error = $"No annual equity data for {ticker}." });
+                throw new NotFoundException($"No annual equity data for {ticker}.");
 
             // 2) Matching/latest annual income row (for SharesOutstanding)
             var inc = await db.IncomeStatements.AsNoTracking()
@@ -787,7 +788,7 @@ namespace Portfolio.Api.Controllers
                 .Select(i => new { i.WeightedAverageShsOut })
                 .FirstOrDefaultAsync(ct);
             if (inc is null || !inc.WeightedAverageShsOut.HasValue || inc.WeightedAverageShsOut.Value == 0)
-                return NotFound(new { error = $"No shares data for {ticker} at {bal.Date}." });
+                throw new NotFoundException($"No shares data for {ticker} at {bal.Date}.");
 
             // 3) Compute BVPS safely
             var bvps = (double)bal.TotalStockholdersEquity.Value / (double)inc.WeightedAverageShsOut.Value;
@@ -846,7 +847,7 @@ namespace Portfolio.Api.Controllers
                     CancellationToken ct = default)
         {
             if (string.IsNullOrWhiteSpace(symbol))
-                return BadRequest(new { error = "Missing ?symbol=..." });
+               Guard.BadRequestIf(string.IsNullOrWhiteSpace(symbol), "Missing ?symbol=...");
 
             var ticker = symbol.Trim().ToUpperInvariant();
 
@@ -858,7 +859,7 @@ namespace Portfolio.Api.Controllers
                 .FirstOrDefaultAsync(ct);
 
             if (bal is null || !bal.TotalStockholdersEquity.HasValue)
-                return NotFound(new { error = $"No annual equity data for {ticker}." });
+                throw new NotFoundException($"No annual equity data for {ticker}.");
 
             var inc = await db.IncomeStatements.AsNoTracking()
                 .Where(i => i.Symbol == ticker && i.Frequency == "annual" && i.Date == bal.Date)
@@ -866,7 +867,7 @@ namespace Portfolio.Api.Controllers
                 .FirstOrDefaultAsync(ct);
 
             if (inc is null || !inc.WeightedAverageShsOut.HasValue || inc.WeightedAverageShsOut.Value <= 0)
-                return NotFound(new { error = $"No shares data for {ticker} at {bal.Date}." });
+                throw new NotFoundException($"No shares data for {ticker} at {bal.Date}.");
 
             // BVPS via helper (null-safe)
             var bvpsOpt = FinanceMath.Bvps(
@@ -874,7 +875,7 @@ namespace Portfolio.Api.Controllers
                 (double)inc.WeightedAverageShsOut!.Value
             );
             if (bvpsOpt is null)
-                return BadRequest(new { error = "Cannot compute BVPS (invalid inputs)." });
+                throw new BadRequestException("Cannot compute BVPS (invalid inputs).");
             double bvps = bvpsOpt.Value;
 
             // 2) Price near this equity date
@@ -883,7 +884,7 @@ namespace Portfolio.Api.Controllers
                 .Select(x => new { x.Id })
                 .FirstOrDefaultAsync(ct);
             if (t is null)
-                return NotFound(new { error = $"Ticker {ticker} not found." });
+                throw new NotFoundException($"Ticker {ticker} not found.");
 
             // English: prefer the first close ON/AFTER the equity date; if none, take the latest BEFORE it.
             var priceOnOrAfter = await db.Prices.AsNoTracking()
@@ -904,7 +905,7 @@ namespace Portfolio.Api.Controllers
             }
 
             if (priceRow is null)
-                return NotFound(new { error = $"No price data for {ticker} around {bal.Date:yyyy-MM-dd}." });
+                throw new NotFoundException($"No price data for {ticker} around {bal.Date:yyyy-MM-dd}.");
 
             double priceVal = (double)priceRow.Close;
 
@@ -964,7 +965,7 @@ namespace Portfolio.Api.Controllers
                     CancellationToken ct = default)
         {
             if (string.IsNullOrWhiteSpace(symbol))
-                return BadRequest(new { error = "Missing ?symbol=..." });
+               Guard.BadRequestIf(string.IsNullOrWhiteSpace(symbol), "Missing ?symbol=...");
 
             var ticker = symbol.Trim().ToUpperInvariant();
 
@@ -976,7 +977,7 @@ namespace Portfolio.Api.Controllers
                 .FirstOrDefaultAsync(ct);
 
             if (inc is null)
-                return NotFound(new { error = $"No annual income row for {ticker}." });
+                throw new NotFoundException($"No annual income row for {ticker}.");
 
             // 2) Matching balance row (same period end) for TotalAssets
             var bal = await db.BalanceSheets.AsNoTracking()
@@ -985,7 +986,7 @@ namespace Portfolio.Api.Controllers
                 .FirstOrDefaultAsync(ct);
 
             if (bal is null)
-                return NotFound(new { error = $"No annual balance row for {ticker} at {inc.Date}." });
+                throw new NotFoundException($"No annual balance row for {ticker} at {inc.Date}.");
 
             // 3) Compute ratio safely (null/zero checks)
             double? assetTurnover = null;
@@ -1045,7 +1046,7 @@ namespace Portfolio.Api.Controllers
                     CancellationToken ct = default)
         {
             if (string.IsNullOrWhiteSpace(symbol))
-                return BadRequest(new { error = "Missing ?symbol=..." });
+               Guard.BadRequestIf(string.IsNullOrWhiteSpace(symbol), "Missing ?symbol=...");
             var ticker = symbol.Trim().ToUpperInvariant();
 
             // Load ALL annual balance rows for this ticker (only the fields we need)
@@ -1056,7 +1057,7 @@ namespace Portfolio.Api.Controllers
                 .ToListAsync(ct);
 
             if (rows.Count < 2)
-                return BadRequest(new { error = $"Need at least 2 annual balance rows for {ticker} to compute CAGR." });
+                throw new BadRequestException($"Need at least 2 annual balance rows for {ticker} to compute CAGR.");
 
             var first = rows.First();
             var last = rows.Last();
@@ -1064,7 +1065,7 @@ namespace Portfolio.Api.Controllers
             // Years between period ends (use whole years; guard against zero)
             var years = (last.Date.Year - first.Date.Year);
             if (years <= 0 || first.Equity <= 0)
-                return BadRequest(new { error = "Invalid data span or non-positive starting equity." });
+                throw new BadRequestException("Invalid data span or non-positive starting equity.");
 
             var cagr = FinanceMath.EquityCagr(first.Equity, last.Equity, years);
 
@@ -1121,8 +1122,7 @@ namespace Portfolio.Api.Controllers
         {
             // English: normalize input
             var sym = (symbol ?? string.Empty).Trim().ToUpperInvariant();
-            if (string.IsNullOrWhiteSpace(sym))
-                return BadRequest(new { error = "symbol required" });
+            Guard.BadRequestIf(string.IsNullOrWhiteSpace(sym), "Symbol required.");
 
             const string freq = "annual";
 
@@ -1213,8 +1213,7 @@ namespace Portfolio.Api.Controllers
         public async Task<IActionResult> GetFcfYield([FromQuery] string symbol, CancellationToken ct = default)
         {
             var sym = (symbol ?? string.Empty).Trim().ToUpperInvariant();
-            if (string.IsNullOrWhiteSpace(sym))
-                return BadRequest(new { error = "symbol required" });
+            Guard.BadRequestIf(string.IsNullOrWhiteSpace(sym), "Symbol required.");
 
             const string freq = "annual";
 
@@ -1224,7 +1223,7 @@ namespace Portfolio.Api.Controllers
                 .Select(t => new { t.Id, t.Symbol })
                 .FirstOrDefaultAsync(ct);
             if (ticker is null)
-                return NotFound(new { title = "Ticker not found", symbol = sym });
+                throw new NotFoundException("Ticker not found.");
 
             // Choose most recent year with cash flow (CFO/CapEx)
             var year = await _db.CashFlows
@@ -1350,7 +1349,7 @@ namespace Portfolio.Api.Controllers
                     CancellationToken ct = default)
         {
             if (string.IsNullOrWhiteSpace(symbol))
-                return BadRequest(new { error = "Missing ?symbol=..." });
+               Guard.BadRequestIf(string.IsNullOrWhiteSpace(symbol), "Missing ?symbol=...");
             var ticker = symbol.Trim().ToUpperInvariant();
 
             // 1) Latest annual CF row (for FCF)
@@ -1361,7 +1360,7 @@ namespace Portfolio.Api.Controllers
                 .FirstOrDefaultAsync(ct);
 
             if (cf is null || !cf.OperatingCashFlow.HasValue || !cf.CapitalExpenditure.HasValue)
-                return NotFound(new { error = $"No annual cash flow row with OCF+CapEx for {ticker}." });
+                throw new NotFoundException($"No annual cash flow row with OCF+CapEx for {ticker}.");
 
             var capexAbs = Math.Abs(cf.CapitalExpenditure.Value); // treat CapEx as positive outflow
             long fcf = cf.OperatingCashFlow.Value - capexAbs;
@@ -1375,10 +1374,10 @@ namespace Portfolio.Api.Controllers
 
             var inc = incRows.FirstOrDefault(i => i.Date <= cf.Date) ?? incRows.FirstOrDefault();
             if (inc is null)
-                return NotFound(new { error = $"No annual income row with revenue for {ticker}." });
+                throw new NotFoundException($"No annual income row with revenue for {ticker}.");
 
             if (!inc.Revenue.HasValue)
-                return NotFound(new { error = $"Revenue is null for {ticker} at {inc.Date}." });
+                throw new NotFoundException($"Revenue is null for {ticker} at {inc.Date}.");
 
             double? fcfMargin = FinanceMath.FcfMargin((double)fcf, (double)inc.Revenue.Value);
 
@@ -1440,7 +1439,7 @@ namespace Portfolio.Api.Controllers
                     CancellationToken ct = default)
         {
             if (string.IsNullOrWhiteSpace(symbol))
-                return BadRequest(new { error = "Missing ?symbol=..." });
+               Guard.BadRequestIf(string.IsNullOrWhiteSpace(symbol), "Missing ?symbol=...");
             var ticker = symbol.Trim().ToUpperInvariant();
 
             // Latest annual CF row
@@ -1457,7 +1456,7 @@ namespace Portfolio.Api.Controllers
                 .FirstOrDefaultAsync(ct);
 
             if (cf is null || !cf.OperatingCashFlow.HasValue || !cf.CapitalExpenditure.HasValue)
-                return NotFound(new { error = $"No annual cash flow row with OCF+CapEx for {ticker}." });
+                throw new NotFoundException($"No annual cash flow row with OCF+CapEx for {ticker}.");
 
             // Normalize inputs (treat CapEx as positive outflow)
             double ocf = (double)cf.OperatingCashFlow!.Value;
@@ -1531,7 +1530,7 @@ namespace Portfolio.Api.Controllers
                     CancellationToken ct = default)
         {
             if (string.IsNullOrWhiteSpace(symbol))
-                return BadRequest(new { error = "Missing ?symbol=..." });
+               Guard.BadRequestIf(string.IsNullOrWhiteSpace(symbol), "Missing ?symbol=...");
             var ticker = symbol.Trim().ToUpperInvariant();
 
             // 1) Latest annual Cash Flow row
@@ -1542,7 +1541,7 @@ namespace Portfolio.Api.Controllers
                 .FirstOrDefaultAsync(ct);
 
             if (cf is null || !cf.OperatingCashFlow.HasValue || !cf.CapitalExpenditure.HasValue)
-                return NotFound(new { error = $"No annual CF row with OCF+CapEx for {ticker}." });
+                throw new NotFoundException($"No annual CF row with OCF+CapEx for {ticker}.");
 
             // Normalize inputs and compute Owner Earnings via helper
             double ocf = (double)cf.OperatingCashFlow!.Value;
@@ -1553,7 +1552,7 @@ namespace Portfolio.Api.Controllers
             double? ownerEarningsOpt = FinanceMath.OwnerEarningsFromCashFlow(ocf, capexAbs, -deltaWc);
 
             if (ownerEarningsOpt is null)
-                return BadRequest(new { error = "Cannot compute Owner Earnings." });
+                throw new BadRequestException("Cannot compute Owner Earnings.");
             double ownerEarnings = ownerEarningsOpt.Value;
 
             // 2) Shares: latest annual income on/before CF date; fallback latest annual
@@ -1564,7 +1563,7 @@ namespace Portfolio.Api.Controllers
 
             var inc = incRows.FirstOrDefault(i => i.Date <= cf.Date) ?? incRows.FirstOrDefault();
             if (inc is null || !inc.WeightedAverageShsOut.HasValue || inc.WeightedAverageShsOut.Value <= 0)
-                return NotFound(new { error = $"No valid shares (WeightedAverageShsOut) for {ticker} around {cf.Date}." });
+                throw new NotFoundException($"No valid shares (WeightedAverageShsOut) for {ticker} around {cf.Date}.");
             double shares = (double)inc.WeightedAverageShsOut.Value;
 
             // 3) Resolve ticker id for prices
@@ -1573,7 +1572,7 @@ namespace Portfolio.Api.Controllers
                 .Select(t => t.Id)
                 .FirstOrDefaultAsync(ct);
             if (tid == 0)
-                return NotFound(new { error = $"Ticker {ticker} not found in Tickers." });
+                throw new NotFoundException($"Ticker {ticker} not found in Tickers.");
 
             // 4) Price: first on/after CF date; fallback to latest
             var pxAfter = await db.Prices.AsNoTracking()
@@ -1589,14 +1588,14 @@ namespace Portfolio.Api.Controllers
                 .FirstOrDefaultAsync(ct);
 
             if (px is null)
-                return NotFound(new { error = $"No price data available for {ticker}." });
+                throw new NotFoundException($"No price data available for {ticker}.");
 
             double price = (double)px.Close;
 
             // 5) MarketCap & Yield via helpers
             double? marketCapOpt = FinanceMath.MarketCap(price, shares);
             if (marketCapOpt is null || marketCapOpt.Value <= 0)
-                return BadRequest(new { error = "Computed market cap is invalid." });
+                throw new BadRequestException("Computed market cap is invalid.");
             double marketCap = marketCapOpt.Value;
 
             double? yieldOpt = FinanceMath.OwnerEarningsYield(ownerEarnings, marketCap);
@@ -1662,7 +1661,7 @@ namespace Portfolio.Api.Controllers
                     CancellationToken ct = default)
         {
             if (string.IsNullOrWhiteSpace(symbol))
-                return BadRequest(new { error = "Missing ?symbol=..." });
+               Guard.BadRequestIf(string.IsNullOrWhiteSpace(symbol), "Missing ?symbol=...");
             var ticker = symbol.Trim().ToUpperInvariant();
 
             // Owner Earnings basis (latest annual CF)
@@ -1672,7 +1671,7 @@ namespace Portfolio.Api.Controllers
                 .Select(c => new { c.Date, c.OperatingCashFlow, c.CapitalExpenditure, c.ChangeInWorkingCapital })
                 .FirstOrDefaultAsync(ct);
             if (cf is null || !cf.OperatingCashFlow.HasValue || !cf.CapitalExpenditure.HasValue)
-                return NotFound(new { error = $"No annual CF row with OCF+CapEx for {ticker}." });
+                throw new NotFoundException($"No annual CF row with OCF+CapEx for {ticker}.");
 
             long capexAbs = Math.Abs(cf.CapitalExpenditure.Value); // CapEx as positive outflow
             long deltaWc = cf.ChangeInWorkingCapital ?? 0;         // +ΔWC = outflow → subtract
@@ -1686,7 +1685,7 @@ namespace Portfolio.Api.Controllers
             var inc = incRows.FirstOrDefault(i => i.Date <= cf.Date) ?? incRows.FirstOrDefault();
             var shares = inc?.WeightedAverageShsOut;
             if (!shares.HasValue || shares.Value <= 0)
-                return NotFound(new { error = $"No valid shares for {ticker} around {cf.Date}." });
+                throw new NotFoundException($"No valid shares for {ticker} around {cf.Date}.");
 
             var oeps = (double)owner / (double)shares.Value;
 
@@ -1749,7 +1748,7 @@ namespace Portfolio.Api.Controllers
                     CancellationToken ct = default)
         {
             if (string.IsNullOrWhiteSpace(symbol))
-                return BadRequest(new { error = "Missing ?symbol=..." });
+               Guard.BadRequestIf(string.IsNullOrWhiteSpace(symbol), "Missing ?symbol=...");
             var ticker = symbol.Trim().ToUpperInvariant();
 
             // Re-use OEPS calculation (inline to keep it self-contained)
@@ -1759,7 +1758,7 @@ namespace Portfolio.Api.Controllers
                 .Select(c => new { c.Date, c.OperatingCashFlow, c.CapitalExpenditure, c.ChangeInWorkingCapital })
                 .FirstOrDefaultAsync(ct);
             if (cf is null || !cf.OperatingCashFlow.HasValue || !cf.CapitalExpenditure.HasValue)
-                return NotFound(new { error = $"No annual CF row with OCF+CapEx for {ticker}." });
+                throw new NotFoundException($"No annual CF row with OCF+CapEx for {ticker}.");
 
             var incRows = await db.IncomeStatements.AsNoTracking()
                 .Where(i => i.Symbol == ticker && i.Frequency == "annual" && i.WeightedAverageShsOut.HasValue)
@@ -1768,14 +1767,14 @@ namespace Portfolio.Api.Controllers
             var inc = incRows.FirstOrDefault(i => i.Date <= cf.Date) ?? incRows.FirstOrDefault();
             var shares = inc?.WeightedAverageShsOut;
             if (!shares.HasValue || shares.Value <= 0)
-                return NotFound(new { error = $"No valid shares for {ticker} around {cf.Date}." });
+                throw new NotFoundException($"No valid shares for {ticker} around {cf.Date}.");
 
             // Resolve ticker id and pick price on/after OE date (fallback: latest)
             var tid = await db.Tickers.AsNoTracking()
                 .Where(t => t.Symbol == ticker)
                 .Select(t => t.Id)
                 .FirstOrDefaultAsync(ct);
-            if (tid == 0) return NotFound(new { error = $"Ticker {ticker} not found." });
+            if (tid == 0) throw new NotFoundException($"Ticker {ticker} not found.");
 
             var pxAfter = await db.Prices.AsNoTracking()
                 .Where(p => p.TickerId == tid && p.TradingDate >= cf.Date)
@@ -1788,7 +1787,7 @@ namespace Portfolio.Api.Controllers
                 .OrderByDescending(p => p.TradingDate)
                 .Select(p => new { p.TradingDate, p.Close })
                 .FirstOrDefaultAsync(ct);
-            if (px is null) return NotFound(new { error = $"No price data available for {ticker}." });
+            if (px is null) throw new NotFoundException($"No price data available for {ticker}.");
 
             // Normalize inputs (CapEx as positive outflow)
             double ocf = (double)cf.OperatingCashFlow!.Value;
@@ -1798,7 +1797,7 @@ namespace Portfolio.Api.Controllers
             // English: assume +ΔWC = cash outflow → subtract it
             double? owner = FinanceMath.OwnerEarningsFromCashFlow(ocf, capexAbs, -deltaWc);
 
-            if (owner is null) return BadRequest(new { error = "Cannot compute Owner Earnings." });
+            if (owner is null) throw new BadRequestException("Cannot compute Owner Earnings.");
 
             // Shares already validated; lift to non-null local
             double sh = (double)shares!.Value;

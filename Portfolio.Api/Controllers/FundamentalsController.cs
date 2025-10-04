@@ -3,6 +3,8 @@ using Microsoft.AspNetCore.Mvc;
 using Swashbuckle.AspNetCore.Annotations;
 using Portfolio.Api.Services;
 using System.Text.Json;
+using Portfolio.Api.Exceptions;
+using Portfolio.Api.Utils;
 
 namespace Portfolio.Api.Controllers
 {
@@ -63,8 +65,7 @@ namespace Portfolio.Api.Controllers
      [FromQuery] int limit = 8,
      CancellationToken ct = default)
         {
-            if (string.IsNullOrWhiteSpace(symbol))
-                return BadRequest(new { error = "symbol required" });
+            Guard.BadRequestIf(string.IsNullOrWhiteSpace(symbol), "Symbol required.");
 
             limit = Math.Clamp(limit, 1, 12);
             var sym = symbol.ToUpperInvariant();
@@ -360,12 +361,11 @@ namespace Portfolio.Api.Controllers
         {
             // English: normalize + validate
             var sym = symbol?.Trim().ToUpperInvariant();
-            if (string.IsNullOrWhiteSpace(sym))
-                return BadRequest(new ProblemDetails { Title = "Bad Request", Detail = "symbol required" });
+            Guard.BadRequestIf(string.IsNullOrWhiteSpace(sym), "symbol required");
 
             var per = (period ?? "annual").Trim().ToLowerInvariant();
             if (per != "annual" && per != "quarter")
-                return BadRequest(new ProblemDetails { Title = "Bad Request", Detail = "period must be 'annual' or 'quarter'" });
+                throw new BadRequestException("Period must be 'annual' or 'quarter'.");
 
             years = Math.Clamp(years, 1, 10);
             var limit = Math.Max(1, years);

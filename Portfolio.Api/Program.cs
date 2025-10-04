@@ -11,6 +11,7 @@ using Portfolio.Api.Models;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
+using Portfolio.Api.Middleware;
 
 
 var builder = WebApplication.CreateBuilder(args);
@@ -211,6 +212,9 @@ builder.Services.AddSingleton<ISeedFileService, SeedFileService>();
 // English: ensure your DB seeder is available (if not already)
 builder.Services.AddScoped<Portfolio.Api.Services.ISeedService, Portfolio.Api.Services.SeedService>();
 var app = builder.Build();
+
+// --- Global error handling middleware ---
+app.UseMiddleware<Portfolio.Api.Middleware.ErrorHandlingMiddleware>();
 
 // Ensure DB ready (migrate or create)
 using (var scope = app.Services.CreateScope())

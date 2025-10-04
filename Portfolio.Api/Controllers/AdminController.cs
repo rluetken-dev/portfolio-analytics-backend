@@ -12,7 +12,8 @@ using Portfolio.Api.Seed;      // ISeedFileService
 using Portfolio.Api.Seed.Dto;  // CompanySeedFile etc.
 using Microsoft.AspNetCore.Authorization;
 using Portfolio.Api.Extensions;
-
+using Portfolio.Api.Exceptions;
+using Portfolio.Api.Utils;
 
 namespace Portfolio.Api.Controllers;
 
@@ -56,7 +57,7 @@ public class AdminController : ControllerBase
         CancellationToken ct = default)
     {
         if (maxAgeDays is < 0 || keepPerSymbol is < 0)
-            return BadRequest(new { error = "Parameters must be non-negative." });
+            throw new BadRequestException("Parameters must be non-negative.");
 
         var deleted = await _maintenance.PruneAsync(maxAgeDays, keepPerSymbol, ct);
         return Ok(new { ok = true, deleted });
@@ -103,7 +104,7 @@ public class AdminController : ControllerBase
     {
         // Optional: protect with DemoMode like your seed endpoints
         if (!cfg.GetValue<bool>("DemoMode"))
-            return NotFound();
+            throw new NotFoundException("Resource not found.");
 
         // Normalize scope
         var s = (scope ?? "all").Trim().ToLowerInvariant();
@@ -286,8 +287,7 @@ public class AdminController : ControllerBase
         [FromQuery] int limit = 5,               // English: FMP low tiers allow up to 5 rows
         CancellationToken ct = default)
     {
-        if (string.IsNullOrWhiteSpace(symbol))
-            return BadRequest(new { error = "Missing ?symbol=..." });
+        Guard.BadRequestIf(string.IsNullOrWhiteSpace(symbol), "Missing ?symbol=...");
 
         var ticker = symbol.Trim().ToUpperInvariant();
 
@@ -322,8 +322,7 @@ public class AdminController : ControllerBase
         [FromQuery] int limit = 5,               // English: FMP low tiers allow up to ~5 rows
         CancellationToken ct = default)
     {
-        if (string.IsNullOrWhiteSpace(symbol))
-            return BadRequest(new { error = "Missing ?symbol=..." });
+        Guard.BadRequestIf(string.IsNullOrWhiteSpace(symbol), "Missing ?symbol=...");
 
         var ticker = symbol.Trim().ToUpperInvariant();
 
@@ -362,7 +361,8 @@ public class AdminController : ControllerBase
         [FromBody] List<UpsertTickerDto> items,
         CancellationToken ct = default)
     {
-        if (items is null || items.Count == 0) return BadRequest("No items.");
+        if (items is null || items.Count == 0)
+            throw new BadRequestException("No items provided.");
 
         var set = _db.Set<Ticker>();
         var affected = 0;
@@ -427,6 +427,10 @@ public class AdminController : ControllerBase
     public async Task<IActionResult> DeleteTicker([FromRoute] string symbol, CancellationToken ct)
     {
         var result = await _maintenance.DeleteTickerAsync(symbol, ct);
+
+        if (result is null || result.TickerDeleted == 0)
+            throw new NotFoundException($"Ticker '{symbol}' not found in database.");
+
         return Ok(result); // English: idempotent — returns zeros if symbol not found
     }
 
@@ -472,18 +476,18 @@ public class AdminController : ControllerBase
         var currentUserId = User.GetUserId();
 
         if (currentUserId == id)
-            return Forbid(); // Prevent self-deletion
+            throw new ForbiddenException("Prevent self-deletion.");
 
         var user = await _db.Users.FindAsync(id);
         if (user == null)
-            return NotFound();
+            throw new NotFoundException("Resource not found.");
 
         // 👇 Prevent deletion if this is the last remaining admin
         if (user.IsAdmin)
         {
             var otherAdminsExist = await _db.Users.AnyAsync(u => u.IsAdmin && u.Id != id);
             if (!otherAdminsExist)
-                return Forbid(); // Safety: can't delete last admin
+                throw new ForbiddenException("Cannot delete the last remaining admin.");
         }
 
         _db.Users.Remove(user);
@@ -512,18 +516,18 @@ public class AdminController : ControllerBase
 
         // Prevent an admin from demoting themselves
         if (currentUserId == id && !makeAdmin)
-            return Forbid();
+            throw new ForbiddenException("Operation not allowed.");
 
         var user = await _db.Users.FindAsync(id);
         if (user == null)
-            return NotFound();
+            throw new NotFoundException("Resource not found.");
 
         // Prevent demotion of the last remaining admin
         if (user.IsAdmin && !makeAdmin)
         {
             var otherAdminsExist = await _db.Users.AnyAsync(u => u.IsAdmin && u.Id != id);
             if (!otherAdminsExist)
-                return Forbid();
+                throw new ForbiddenException("Operation not allowed.");
         }
 
         user.IsAdmin = makeAdmin;
@@ -572,7 +576,8 @@ public class AdminController : ControllerBase
         // English: load + validate file (no DB writes)
         var res = await _files.LoadCompanyAsync(symbol);
         if (!res.Success || res.Data is null)
-            return BadRequest(new { title = "Seed validation failed", detail = res.Error });
+            throw new BadRequestException($"Seed validation failed: {res.Error}");
+
 
         var m = res.Data;
 
@@ -620,7 +625,7 @@ public class AdminController : ControllerBase
         // English: 1) load + validate JSON first
         var res = await _files.LoadCompanyAsync(symbol);
         if (!res.Success || res.Data is null)
-            return BadRequest(new { title = "Seed validation failed", detail = res.Error });
+            throw new BadRequestException($"Seed validation failed: {res.Error}");
 
         var m = res.Data;
 
@@ -638,7 +643,7 @@ public class AdminController : ControllerBase
                     System.Globalization.DateTimeStyles.None,
                     out var d))
             {
-                return BadRequest(new { title = "Invalid date in quotes.rows", detail = $"Bad date: {r.Date}" });
+                throw new BadRequestException($"Invalid date in quotes.rows: {r.Date}");
             }
 
             await _seed.SeedFullPriceAsync(
@@ -763,8 +768,7 @@ public class AdminController : ControllerBase
     public async Task<IActionResult> InspectSeed([FromRoute] string symbol, CancellationToken ct)
     {
         var s = (symbol ?? string.Empty).Trim().ToUpperInvariant();
-        if (string.IsNullOrWhiteSpace(s))
-            return BadRequest(new { title = "Invalid symbol" });
+        Guard.BadRequestIf(string.IsNullOrWhiteSpace(s), "Invalid symbol.");
 
         var ticker = await _db.Tickers
             .Where(t => t.Symbol == s)
@@ -772,7 +776,7 @@ public class AdminController : ControllerBase
             .FirstOrDefaultAsync(ct);
 
         if (ticker is null)
-            return NotFound(new { title = "Ticker not found", symbol = s });
+            throw new NotFoundException($"No annual income row for {ticker}.");
 
         var priceInfo = await _db.Prices
             .Where(p => p.TickerId == ticker.Id)
@@ -813,8 +817,9 @@ public class AdminController : ControllerBase
         [FromServices] ISeedService seeder,
         CancellationToken ct = default)
     {
-        if (!cfg.GetValue<bool>("DemoMode")) return NotFound();
-        if (string.IsNullOrWhiteSpace(symbol)) return BadRequest(new { error = "Query ?symbol=... is required." });
+        if (!cfg.GetValue<bool>("DemoMode")) throw new NotFoundException("Resource not found.");
+        if (string.IsNullOrWhiteSpace(symbol)) 
+            Guard.BadRequestIf(string.IsNullOrWhiteSpace(symbol), "Query ?symbol=... is required.");
 
         var (created, updated) = await seeder.SeedTickerAsync(symbol, name, ct);
         return Ok(new { ticker = symbol.Trim().ToUpperInvariant(), created, updated });
@@ -840,13 +845,15 @@ public class AdminController : ControllerBase
         CancellationToken ct = default)
     {
         if (year < 1900 || year > DateTime.UtcNow.Year)
-            return BadRequest(new { title = "Invalid year", detail = $"Year '{year}' is out of range." });
+            throw new BadRequestException($"Invalid year '{year}' — out of range.");
+
 
         if (string.IsNullOrWhiteSpace(symbol))
-            return BadRequest(new { title = "Missing symbol" });
+            Guard.BadRequestIf(string.IsNullOrWhiteSpace(symbol), "Missing ?symbol=...");
 
-        if (!cfg.GetValue<bool>("DemoMode")) return NotFound();
-        if (string.IsNullOrWhiteSpace(symbol)) return BadRequest(new { error = "Missing ?symbol=..." });
+        if (!cfg.GetValue<bool>("DemoMode")) throw new NotFoundException("Resource not found.");
+        if (string.IsNullOrWhiteSpace(symbol)) 
+            Guard.BadRequestIf(string.IsNullOrWhiteSpace(symbol), "Missing ?symbol=...");
 
         await seeder.SeedAnnualAsync(symbol, year, netIncome, equity, ct);
         return Ok(new { ticker = symbol.Trim().ToUpperInvariant(), year, netIncome, equity });
@@ -870,8 +877,9 @@ public class AdminController : ControllerBase
         [FromServices] ISeedService seeder,
         CancellationToken ct = default)
     {
-        if (!cfg.GetValue<bool>("DemoMode")) return NotFound();
-        if (string.IsNullOrWhiteSpace(symbol)) return BadRequest(new { error = "Missing ?symbol=..." });
+        if (!cfg.GetValue<bool>("DemoMode")) throw new NotFoundException("Resource not found.");
+        if (string.IsNullOrWhiteSpace(symbol)) 
+            Guard.BadRequestIf(string.IsNullOrWhiteSpace(symbol), "Missing ?symbol=...");
 
         await seeder.SeedLiabilitiesAsync(symbol, year, totalLiabilities, ct);
         return Ok(new { ticker = symbol.Trim().ToUpperInvariant(), year, totalLiabilities });
@@ -895,8 +903,9 @@ public class AdminController : ControllerBase
         [FromServices] ISeedService seeder,
         CancellationToken ct = default)
     {
-        if (!cfg.GetValue<bool>("DemoMode")) return NotFound();
-        if (string.IsNullOrWhiteSpace(symbol)) return BadRequest(new { error = "Missing ?symbol=..." });
+        if (!cfg.GetValue<bool>("DemoMode")) throw new NotFoundException("Resource not found.");
+        if (string.IsNullOrWhiteSpace(symbol)) 
+            Guard.BadRequestIf(string.IsNullOrWhiteSpace(symbol), "Missing ?symbol=...");
 
         await seeder.SeedRevenueAsync(symbol, year, revenue, ct);
         return Ok(new { ticker = symbol.Trim().ToUpperInvariant(), year, revenue });
@@ -920,8 +929,9 @@ public class AdminController : ControllerBase
         [FromServices] ISeedService seeder,
         CancellationToken ct = default)
     {
-        if (!cfg.GetValue<bool>("DemoMode")) return NotFound();
-        if (string.IsNullOrWhiteSpace(symbol)) return BadRequest(new { error = "Missing ?symbol=..." });
+        if (!cfg.GetValue<bool>("DemoMode")) throw new NotFoundException("Resource not found.");
+        if (string.IsNullOrWhiteSpace(symbol)) 
+            Guard.BadRequestIf(string.IsNullOrWhiteSpace(symbol), "Missing ?symbol=...");
 
         await seeder.SeedAssetsAsync(symbol, year, totalAssets, ct);
         return Ok(new { ticker = symbol.Trim().ToUpperInvariant(), year, totalAssets });
@@ -945,8 +955,9 @@ public class AdminController : ControllerBase
         [FromServices] ISeedService seeder,
         CancellationToken ct = default)
     {
-        if (!cfg.GetValue<bool>("DemoMode")) return NotFound();
-        if (string.IsNullOrWhiteSpace(symbol)) return BadRequest(new { error = "Missing ?symbol=..." });
+        if (!cfg.GetValue<bool>("DemoMode")) throw new NotFoundException("Resource not found.");
+        if (string.IsNullOrWhiteSpace(symbol)) 
+            Guard.BadRequestIf(string.IsNullOrWhiteSpace(symbol), "Missing ?symbol=...");
 
         await seeder.SeedPriceAsync(symbol, date, close, ct);
         return Ok(new { ticker = symbol.Trim().ToUpperInvariant(), date, close });
@@ -970,8 +981,9 @@ public class AdminController : ControllerBase
         [FromServices] ISeedService seeder,
         CancellationToken ct = default)
     {
-        if (!cfg.GetValue<bool>("DemoMode")) return NotFound();
-        if (string.IsNullOrWhiteSpace(symbol)) return BadRequest(new { error = "Missing ?symbol=..." });
+        if (!cfg.GetValue<bool>("DemoMode")) throw new NotFoundException("Resource not found.");
+        if (string.IsNullOrWhiteSpace(symbol)) 
+            Guard.BadRequestIf(string.IsNullOrWhiteSpace(symbol), "Missing ?symbol=...");
 
         await seeder.SeedSharesAsync(symbol, year, shares, ct);
         return Ok(new { ticker = symbol.Trim().ToUpperInvariant(), year, shares });

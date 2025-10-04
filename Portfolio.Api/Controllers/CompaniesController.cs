@@ -3,6 +3,8 @@ using Microsoft.EntityFrameworkCore;
 using Portfolio.Api.Data;
 using Portfolio.Api.Models;
 using Portfolio.Api.Services;
+using Portfolio.Api.Exceptions;
+using Portfolio.Api.Utils;
 
 namespace Portfolio.Api.Controllers
 {
@@ -85,20 +87,19 @@ namespace Portfolio.Api.Controllers
         [HttpPost("{symbol}/refresh-profile")]
         public async Task<IActionResult> RefreshProfile([FromRoute] string symbol, CancellationToken ct)
         {
-            if (string.IsNullOrWhiteSpace(symbol))
-                return BadRequest("Symbol required.");
+            Guard.BadRequestIf(string.IsNullOrWhiteSpace(symbol), "Symbol required.");
 
             var sym = symbol.Trim().ToUpperInvariant();
 
             var ticker = await _db.Set<Ticker>().FirstOrDefaultAsync(t => t.Symbol == sym, ct);
             if (ticker is null)
-                return NotFound($"Ticker '{sym}' not found.");
+                throw new NotFoundException($"Ticker '{sym}' not found.");
 
             try
             {
                 var profile = await _fmp.GetCompanyProfileAsync(sym, ct); // FMP v3 /profile
                 if (profile is null)
-                    return NotFound($"No profile found at FMP for '{sym}'.");
+                    throw new NotFoundException($"No profile found at FMP for '{sym}'.");
 
                 if (!string.IsNullOrWhiteSpace(profile.Name)) ticker.Name = profile.Name;
                 if (!string.IsNullOrWhiteSpace(profile.Sector)) ticker.Sector = profile.Sector;
@@ -254,7 +255,7 @@ namespace Portfolio.Api.Controllers
         {
             // validate input
             if (string.IsNullOrWhiteSpace(q) || q.Trim().Length < 2)
-                return BadRequest(new { error = "Query must be at least 2 characters" });
+                throw new BadRequestException("Query must be at least 2 characters.");
 
             var query = q.Trim();
             var take = Math.Clamp(limit ?? 10, 1, 50);
@@ -307,8 +308,7 @@ namespace Portfolio.Api.Controllers
             [FromBody] AddCompanyRequest request,
             CancellationToken ct)
         {
-            if (string.IsNullOrWhiteSpace(request.Symbol))
-                return BadRequest(new { error = "Symbol is required" });
+            Guard.BadRequestIf(string.IsNullOrWhiteSpace(request.Symbol), "Symbol is required.");
 
             var symbol = request.Symbol.Trim().ToUpperInvariant();
 
@@ -322,7 +322,7 @@ namespace Portfolio.Api.Controllers
                 // fetch from external API
                 var profile = await _fmp.GetCompanyProfileAsync(symbol, ct);
                 if (profile == null)
-                    return NotFound(new { error = $"Company {symbol} not found in external API" });
+                    throw new NotFoundException($"Company {symbol} not found in external API.");
 
                 // create and save ticker
                 var ticker = new Ticker
@@ -420,14 +420,13 @@ namespace Portfolio.Api.Controllers
         [HttpDelete("{symbol}")]
         public async Task<IActionResult> RemoveCompany([FromRoute] string symbol, CancellationToken ct)
         {
-            if (string.IsNullOrWhiteSpace(symbol))
-                return BadRequest(new { error = "Symbol is required" });
+            Guard.BadRequestIf(string.IsNullOrWhiteSpace(symbol), "Symbol is required.");
 
             var sym = symbol.Trim().ToUpperInvariant();
             var ticker = await _db.Tickers.FirstOrDefaultAsync(t => t.Symbol == sym, ct);
 
             if (ticker == null)
-                return NotFound(new { error = $"Company {sym} not found" });
+                throw new NotFoundException($"Company {sym} not found.");
 
             // safety check: don't delete if has financial data
             var hasData = await _db.IncomeStatements.AnyAsync(i => i.Symbol == sym, ct) ||
