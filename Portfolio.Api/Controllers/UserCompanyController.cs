@@ -153,6 +153,60 @@ public class UserCompanyController : ControllerBase
 
         return NoContent();
     }
+
+    /// <summary>
+    /// Updates an existing portfolio entry for the current user.
+    /// </summary>
+    /// <param name="id">The ID of the portfolio entry to update.</param>
+    /// <param name="dto">The updated data (shares, price, notes).</param>
+    /// <response code="200">Portfolio entry updated successfully.</response>
+    /// <response code="401">If user is not authorized.</response>
+    /// <response code="403">If user tries to update an entry they do not own.</response>
+    /// <response code="404">If entry not found.</response>
+    [HttpPut("{id:int}")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<UserCompanyDto>> UpdateUserCompany(int id, [FromBody] UpdateUserCompanyDto dto)
+    {
+        var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+        if (userId == null)
+            return Unauthorized();
+
+        var uid = int.Parse(userId);
+
+        var userCompany = await _context.UserCompanies
+            .Include(uc => uc.Ticker)
+            .FirstOrDefaultAsync(uc => uc.Id == id);
+
+        if (userCompany == null)
+            return NotFound(new { message = "Portfolio entry not found." });
+
+        if (userCompany.UserId != uid)
+            return Forbid();
+
+        // Apply updates (only provided values)
+        if (dto.Shares.HasValue) userCompany.Shares = dto.Shares;
+        if (dto.PurchasePrice.HasValue) userCompany.PurchasePrice = dto.PurchasePrice;
+        if (dto.Notes != null) userCompany.Notes = dto.Notes;
+
+        await _context.SaveChangesAsync();
+
+        var response = new UserCompanyDto
+        {
+            Id = userCompany.Id,
+            TickerId = userCompany.TickerId,
+            Symbol = userCompany.Ticker.Symbol,
+            Name = userCompany.Ticker.Name,
+            Shares = userCompany.Shares,
+            PurchasePrice = userCompany.PurchasePrice,
+            Notes = userCompany.Notes
+        };
+
+        return Ok(response);
+    }
+
 }
 
 
