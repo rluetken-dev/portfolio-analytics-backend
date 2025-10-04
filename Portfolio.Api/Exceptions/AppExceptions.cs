@@ -14,10 +14,11 @@ namespace Portfolio.Api.Exceptions
         /// </summary>
         public int StatusCode { get; }
 
-        protected AppException(string message, int statusCode = (int)HttpStatusCode.BadRequest)
-            : base(message)
+        public AppException(string message, int statusCode) : base(message)
         {
             StatusCode = statusCode;
         }
+
+        public virtual string Title => GetType().Name.Replace("Exception", "");
     }
 }

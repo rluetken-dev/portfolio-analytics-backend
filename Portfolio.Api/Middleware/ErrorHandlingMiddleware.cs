@@ -4,10 +4,6 @@ using Portfolio.Api.Exceptions;
 
 namespace Portfolio.Api.Middleware
 {
-    /// <summary>
-    /// Global error handler middleware.
-    /// Catches all unhandled exceptions and returns a standardized JSON response.
-    /// </summary>
     public class ErrorHandlingMiddleware
     {
         private readonly RequestDelegate _next;
@@ -19,7 +15,7 @@ namespace Portfolio.Api.Middleware
             _logger = logger;
         }
 
-        public async Task Invoke(HttpContext context)
+        public async Task InvokeAsync(HttpContext context)
         {
             try
             {
@@ -27,32 +23,50 @@ namespace Portfolio.Api.Middleware
             }
             catch (AppException ex)
             {
-                _logger.LogWarning("Handled exception: {Message}", ex.Message);
-                await WriteProblemDetailsAsync(context, ex.StatusCode, ex.GetType().Name, ex.Message);
+                await HandleAppExceptionAsync(context, ex);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Unhandled exception occurred: {Message}", ex.Message);
-                await WriteProblemDetailsAsync(
-                    context,
-                    (int)HttpStatusCode.InternalServerError,
-                    "InternalServerError",
-                    "An unexpected error occurred. Please try again later."
-                );
+                await HandleUnexpectedExceptionAsync(context, ex);
             }
         }
 
-        private static async Task WriteProblemDetailsAsync(HttpContext context, int status, string title, string detail)
+        private async Task HandleAppExceptionAsync(HttpContext context, AppException ex)
         {
+            // Business errors (400–499) are not “real” exceptions
+            if (ex.StatusCode >= 500)
+                _logger.LogError(ex, "Unhandled exception: {Message}", ex.Message);
+            else
+                _logger.LogWarning("Handled exception: {Message}", ex.Message);
+
             context.Response.ContentType = "application/json";
-            context.Response.StatusCode = status;
+            context.Response.StatusCode = ex.StatusCode;
 
             var problem = new
             {
-                type = $"https://httpstatuses.com/{status}",
-                title,
-                status,
-                detail,
+                type = $"https://httpstatuses.com/{ex.StatusCode}",
+                title = ex.GetType().Name.Replace("Exception", ""),
+                status = ex.StatusCode,
+                detail = ex.Message,
+                traceId = context.TraceIdentifier
+            };
+
+            await context.Response.WriteAsync(JsonSerializer.Serialize(problem));
+        }
+
+        private async Task HandleUnexpectedExceptionAsync(HttpContext context, Exception ex)
+        {
+            _logger.LogError(ex, "Unexpected server error: {Message}", ex.Message);
+
+            context.Response.ContentType = "application/json";
+            context.Response.StatusCode = (int)HttpStatusCode.InternalServerError;
+
+            var problem = new
+            {
+                type = "https://httpstatuses.com/500",
+                title = "Internal Server Error",
+                status = 500,
+                detail = "An unexpected error occurred. Please contact support.",
                 traceId = context.TraceIdentifier
             };
 
