@@ -2,6 +2,7 @@ namespace Portfolio.Api.DTOs;
 
 /// <summary>
 /// Represents a portfolio entry for a user, including company info and investment data.
+/// Combines data from the UserCompany table and the related Ticker entity.
 /// </summary>
 public class UserCompanyDto
 {
@@ -24,6 +25,12 @@ public class UserCompanyDto
     /// The optional company name (e.g., "Apple Inc.").
     /// </summary>
     public string? Name { get; set; }
+
+    /// <summary>
+    /// The sector or industry classification of the company.
+    /// Pulled directly from the Tickers table.
+    /// </summary>
+    public string? Sector { get; set; }   // 🟢 NEW FIELD
 
     /// <summary>
     /// The number of shares owned by the user.

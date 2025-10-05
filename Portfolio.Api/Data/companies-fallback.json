@@ -784,6 +784,91 @@
       "Symbol": "SLSDF",
       "Name": "Select Sands Corp.",
       "Sector": null
+    },
+    {
+      "Symbol": "LKST",
+      "Name": "LookSmart Group, Inc.",
+      "Sector": null
+    },
+    {
+      "Symbol": "LKSB",
+      "Name": "Lakeside Bancshares, Inc.",
+      "Sector": null
+    },
+    {
+      "Symbol": "LKSGF",
+      "Name": "Luks Group (Vietnam Holdings) Company Limited",
+      "Sector": null
+    },
+    {
+      "Symbol": "ALKS",
+      "Name": "Alkermes plc",
+      "Sector": null
+    },
+    {
+      "Symbol": "ALKSV",
+      "Name": "Alkermes plc Ordinary Shares Ex-distribution When Issued",
+      "Sector": null
+    },
+    {
+      "Symbol": "XLKS.L",
+      "Name": "Invesco Technology S&P US Select Sector UCITS ETF",
+      "Sector": null
+    },
+    {
+      "Symbol": "KLKSUSD",
+      "Name": "Kalkulus USD",
+      "Sector": null
+    },
+    {
+      "Symbol": "VWAPY",
+      "Name": "Volkswagen AG",
+      "Sector": null
+    },
+    {
+      "Symbol": "VWAP.BR",
+      "Name": "Volkswagen AG",
+      "Sector": null
+    },
+    {
+      "Symbol": "VWAGY",
+      "Name": "Volkswagen AG",
+      "Sector": null
+    },
+    {
+      "Symbol": "INTELSOFT.BO",
+      "Name": "Integra Telecommunication & Software Limited",
+      "Sector": null
+    },
+    {
+      "Symbol": "PATELSAI.BO",
+      "Name": "Patels Airtemp (India) Limited",
+      "Sector": null
+    },
+    {
+      "Symbol": "INTEQ",
+      "Name": "Intelsat S.A.",
+      "Sector": null
+    },
+    {
+      "Symbol": "EUTLF",
+      "Name": "Eutelsat Communications S.A.",
+      "Sector": null
+    },
+    {
+      "Symbol": "ETL.PA",
+      "Name": "Eutelsat Communications S.A.",
+      "Sector": null
+    },
+    {
+      "Symbol": "ETL.L",
+      "Name": "Eutelsat Communications S.A.",
+      "Sector": null
+    },
+    {
+      "Symbol": "ETCMY",
+      "Name": "Eutelsat Communications S.A.",
+      "Sector": null
     }
   ]
 }

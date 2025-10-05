@@ -14,6 +14,12 @@ public class CreateUserCompanyDto
     public int TickerId { get; set; }
 
     /// <summary>
+    /// The symbol of the ticker (company) to link.
+    /// </summary>
+    [Required]
+    public string? Symbol { get; set; }
+
+    /// <summary>
     /// Number of shares owned by the user.
     /// </summary>
     [Range(0, double.MaxValue, ErrorMessage = "Shares must be a non-negative number.")]

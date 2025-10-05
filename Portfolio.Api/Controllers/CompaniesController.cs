@@ -6,6 +6,7 @@ using Portfolio.Api.Services;
 using Portfolio.Api.Exceptions;
 using Portfolio.Api.Utils;
 using Portfolio.Api.DTOs;
+using System.Linq;
 
 namespace Portfolio.Api.Controllers
 {
@@ -249,51 +250,83 @@ namespace Portfolio.Api.Controllers
         /// <summary>
         /// Search external API for companies (not in local DB yet)
         /// </summary>
-        [HttpGet("search")]
+      [HttpGet("search")]
         public async Task<ActionResult<CompanySearchResponse>> SearchCompanies(
-            [FromQuery] string? q,    // search term
-            [FromQuery] int? limit,   // max results
+            [FromQuery] string? q,
+            [FromQuery] int? limit,
             CancellationToken ct)
         {
-            // validate input
+            // ✅ Validate input
             if (string.IsNullOrWhiteSpace(q) || q.Trim().Length < 2)
-                throw new BadRequestException("Query must be at least 2 characters.");
+                throw new BadRequestException("Query must be at least 2 characters long.");
 
             var query = q.Trim();
             var take = Math.Clamp(limit ?? 10, 1, 50);
 
             try
             {
-                // search external FMP API
+                // 1️⃣ Search the external API (FMP)
                 var searchResults = await _fmp.SearchCompaniesAsync(query, take, ct);
 
-                // check which ones we already have locally
-                var symbols = searchResults.Select(r => r.Symbol).ToList();
-                var existingSymbols = await _db.Tickers
-                    .Where(t => symbols.Contains(t.Symbol))
-                    .Select(t => t.Symbol)
-                    .ToListAsync(ct);
+                // 2️⃣ Normalize symbols to uppercase
+                var symbols = searchResults
+                    .Select(r => r.Symbol.ToUpperInvariant())
+                    .Where(s => !string.IsNullOrWhiteSpace(s))
+                    .Distinct()
+                    .ToList();
 
-                // mark existing vs addable companies
-                var results = searchResults.Select(r => new CompanySearchResult
+                _logger.LogInformation("SearchCompanies: Checking symbols [{Symbols}] for query {Query}",
+                    string.Join(", ", symbols), query);
+
+                // 3️⃣ Load existing tickers from the global DB (case-insensitive)
+                var dbTickers = await _db.Tickers
+                    .AsNoTracking()
+                    .Where(t => symbols.Contains(t.Symbol.ToUpper()))
+                    .Select(t => new
+                    {
+                        t.Id,
+                        Symbol = t.Symbol.ToUpper(),
+                        t.Sector
+                    })
+                    .ToDictionaryAsync(t => t.Symbol, t => new { t.Id, t.Sector }, ct);
+
+                _logger.LogInformation("SearchCompanies: Found {Count} tickers in global DB for query {Query}. Symbols: {Symbols}",
+                    dbTickers.Count, query, string.Join(", ", dbTickers.Keys));
+
+                // 4️⃣ Check which ones are already in the user's portfolio
+                var userSymbols = new HashSet<string>();
+                var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+                if (userId != null)
                 {
-                    Id = _db.Tickers
-                        .Where(t => t.Symbol == r.Symbol)
-                        .Select(t => t.Id)
-                        .FirstOrDefault(), // ✅ Try to map the ticker's ID
-                    Symbol = r.Symbol,
-                    Name = r.Name,
-                    Exchange = r.Exchange,
-                    Sector = r.Sector,
-                    IsInDatabase = existingSymbols.Contains(r.Symbol)
-                }).ToList();
+                    var uid = int.Parse(userId);
+                    userSymbols = _db.UserCompanies
+                        .Where(uc => uc.UserId == uid)
+                        .Select(uc => uc.Ticker.Symbol.ToUpper())
+                        .ToHashSet();
+                }
 
+                // 5️⃣ Assemble response objects
+                var results = searchResults.Select(r =>
+                {
+                    var upperSymbol = r.Symbol.ToUpperInvariant();
+                    var existsInDb = dbTickers.TryGetValue(upperSymbol, out var local);
+                    return new CompanySearchResult
+                    {
+                        Id = local?.Id ?? 0,
+                        Symbol = r.Symbol,
+                        Name = r.Name,
+                        Exchange = r.Exchange,
+                        Sector = local?.Sector ?? r.Sector,
+                        IsInDatabase = existsInDb,
+                        IsInUserPortfolio = userSymbols.Contains(upperSymbol)
+                    };
+                }).ToList();
 
                 return Ok(new CompanySearchResponse
                 {
                     Query = query,
                     Results = results,
-                    TotalFound = results.Count()
+                    TotalFound = results.Count
                 });
             }
             catch (HttpRequestException ex) when (ex.Message.Contains("429"))
@@ -302,8 +335,8 @@ namespace Portfolio.Api.Controllers
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Company search failed for: {Query}", query);
-                return StatusCode(500, new { error = "Search failed. Please try again." });
+                _logger.LogError(ex, "SearchCompanies failed for query: {Query}", query);
+                return StatusCode(500, new { error = "Search failed. Please try again later." });
             }
         }
 
