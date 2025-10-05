@@ -409,28 +409,43 @@ namespace Portfolio.Api.Controllers
         }
 
         /// <summary>
-        /// Bulk add popular companies from predefined lists
+        /// Bulk add popular companies from predefined lists.
+        /// Creates missing tickers and returns both new and existing ones.
         /// </summary>
         [HttpPost("add-popular")]
         public async Task<ActionResult<BulkAddResponse>> AddPopularCompanies(
             [FromBody] AddPopularRequest request,
             CancellationToken ct)
         {
-            // get predefined stock list
             var popularStocks = GetPopularStocksList(request.Category);
-            var added = new List<CompanySummaryDto>();
+            var added = new List<CompanySearchResult>();
+            var existing = new List<CompanySearchResult>();
             var errors = new List<string>();
 
             foreach (var symbol in popularStocks.Take(request.Limit ?? 20))
             {
                 try
                 {
-                    // skip if already exists
-                    var existing = await _db.Tickers.FirstOrDefaultAsync(t => t.Symbol == symbol, ct);
-                    if (existing != null) continue;
+                    // Check if ticker already exists
+                    var ticker = await _db.Tickers.FirstOrDefaultAsync(t => t.Symbol == symbol, ct);
 
-                    // use fallback data to avoid API calls
-                    var ticker = new Ticker
+                    if (ticker != null)
+                    {
+                        // Already exists → add to "Existing" list
+                        existing.Add(new CompanySearchResult
+                        {
+                            Id = ticker.Id,
+                            Symbol = ticker.Symbol ?? string.Empty,
+                            Name = ticker.Name ?? string.Empty,
+                            Sector = ticker.Sector ?? string.Empty,
+                            Exchange = null,
+                            IsInDatabase = true
+                        });
+                        continue;
+                    }
+
+                    // Create a new ticker (fallback data to avoid API dependency)
+                    ticker = new Ticker
                     {
                         Symbol = symbol,
                         Name = GetFallbackCompanyName(symbol),
@@ -438,14 +453,19 @@ namespace Portfolio.Api.Controllers
                     };
 
                     _db.Tickers.Add(ticker);
-                    added.Add(new CompanySummaryDto
+                    await _db.SaveChangesAsync(ct); // Save immediately to get ID
+
+                    added.Add(new CompanySearchResult
                     {
-                        Symbol = ticker.Symbol,
-                        Name = ticker.Name,
-                        Sector = ticker.Sector
+                        Id = ticker.Id,
+                        Symbol = ticker.Symbol ?? string.Empty,
+                        Name = ticker.Name ?? string.Empty,
+                        Sector = ticker.Sector ?? string.Empty,
+                        Exchange = null,
+                        IsInDatabase = true
                     });
 
-                    await Task.Delay(100, ct); // be nice to APIs
+                    await Task.Delay(100, ct); // Be polite to APIs
                 }
                 catch (Exception ex)
                 {
@@ -453,25 +473,15 @@ namespace Portfolio.Api.Controllers
                 }
             }
 
-            // save all changes
-            if (added.Count > 0)
-                await _db.SaveChangesAsync(ct);
-
+            // Return both newly created and existing tickers
             return Ok(new BulkAddResponse
             {
-                Added = added.Select(a => new CompanySearchResult
-                {
-                    Id = int.TryParse(a.Id, out var idVal) ? idVal : 0, 
-                    Symbol = a.Symbol ?? string.Empty,
-                    Name = a.Name ?? string.Empty,
-                    Sector = a.Sector ?? string.Empty,
-                    Exchange = null,
-                    IsInDatabase = true
-                }).ToList(),
-                Errors = errors,
-                TotalAdded = added.Count
+                Added = added,
+                Existing = existing,
+                Errors = errors
             });
         }
+
 
         /// <summary>
         /// Remove company (with safety checks for existing data)

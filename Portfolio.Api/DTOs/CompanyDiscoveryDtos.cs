@@ -37,8 +37,10 @@ namespace Portfolio.Api.DTOs
     // Response for bulk add operations
     public record BulkAddResponse
     {
-        public List<CompanySearchResult> Added { get; init; } = new();
+        public List<CompanySearchResult> Added { get; init; } = new();       
+        public List<CompanySearchResult> Existing { get; init; } = new();   
         public List<string> Errors { get; init; } = new();
-        public int TotalAdded { get; init; }
+        public int TotalAdded => Added.Count;
+        public int TotalExisting => Existing.Count;
     }
 }
