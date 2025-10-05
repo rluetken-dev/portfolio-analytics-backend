@@ -294,15 +294,26 @@ namespace Portfolio.Api.Controllers
                     dbTickers.Count, query, string.Join(", ", dbTickers.Keys));
 
                 // 4️⃣ Check which ones are already in the user's portfolio
-                var userSymbols = new HashSet<string>();
+                var userSymbols = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+
                 if (userId != null)
                 {
                     var uid = int.Parse(userId);
-                    userSymbols = _db.UserCompanies
+                    var userTickerSymbols = await _db.UserCompanies
+                        .Include(uc => uc.Ticker)
                         .Where(uc => uc.UserId == uid)
                         .Select(uc => uc.Ticker.Symbol.ToUpper())
-                        .ToHashSet();
+                        .ToListAsync(ct);
+
+                    userSymbols = new HashSet<string>(userTickerSymbols, StringComparer.OrdinalIgnoreCase);
+
+                    _logger.LogInformation("SearchCompanies: Found {Count} symbols in user portfolio for user {UserId}: {Symbols}",
+                        userSymbols.Count, uid, string.Join(", ", userSymbols));
+                }
+                else
+                {
+                    _logger.LogWarning("SearchCompanies: No userId found in JWT claims.");
                 }
 
                 // 5️⃣ Assemble response objects
