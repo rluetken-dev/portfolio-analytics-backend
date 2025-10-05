@@ -252,7 +252,12 @@ public class UserCompanyController : ControllerBase
         var uid = int.Parse(userId);
 
         // 1️⃣ Check if ticker already exists in the global database
-        var ticker = await _context.Tickers.FirstOrDefaultAsync(t => t.Id == dto.TickerId || t.Symbol == dto.Symbol, ct);
+        var ticker = await _context.Tickers
+            .FirstOrDefaultAsync(t => t.Id == dto.TickerId || t.Symbol.ToUpper() == dto.Symbol!.ToUpper(), ct);
+
+        _logger.LogInformation("AddUserCompany: Searching for TickerId={TickerId}, Symbol={Symbol}", dto.TickerId, dto.Symbol);
+        _logger.LogInformation("AddUserCompany: Found ticker? {Found}", ticker != null);
+
 
         // 2️⃣ If not found -> fetch from external API and create it
         if (ticker == null)

@@ -869,6 +869,56 @@
       "Symbol": "ETCMY",
       "Name": "Eutelsat Communications S.A.",
       "Sector": null
+    },
+    {
+      "Symbol": "NFLX.NE",
+      "Name": "Netflix, Inc.",
+      "Sector": null
+    },
+    {
+      "Symbol": "NFLX",
+      "Name": "Netflix, Inc.",
+      "Sector": null
+    },
+    {
+      "Symbol": "NFC.DE",
+      "Name": "Netflix, Inc.",
+      "Sector": null
+    },
+    {
+      "Symbol": "DNFLXUSD",
+      "Name": "Netflix Tokenized Stock Defichain USD",
+      "Sector": null
+    },
+    {
+      "Symbol": "1NFL.L",
+      "Name": "LS 1x Netflix Tracker ETC",
+      "Sector": null
+    },
+    {
+      "Symbol": "NFL3.L",
+      "Name": "Leverage Shares 3x Netflix ETC",
+      "Sector": null
+    },
+    {
+      "Symbol": "3NFL.L",
+      "Name": "Leverage Shares 3x Netflix ETC",
+      "Sector": null
+    },
+    {
+      "Symbol": "3NFE.L",
+      "Name": "Leverage Shares 3x Netflix ETC",
+      "Sector": null
+    },
+    {
+      "Symbol": "3NFE.F",
+      "Name": "Leverage Shares 3x Netflix ETC",
+      "Sector": null
+    },
+    {
+      "Symbol": "NFLE.L",
+      "Name": "Leverage Shares 2x Netflix ETC A",
+      "Sector": null
     }
   ]
 }
