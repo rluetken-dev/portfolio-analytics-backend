@@ -16,6 +16,9 @@ using Portfolio.Api.Middleware;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// // 🧠 Enable detailed model binding + validation logs
+// builder.Logging.AddFilter("Microsoft.AspNetCore.Mvc.Infrastructure", LogLevel.Debug);
+
 // --- Rate Limit & Retry Policies ---
 
 // AlphaVantage Policies
@@ -146,9 +149,6 @@ builder.Services.AddSwaggerGen(c =>
     // Include all APIs unless explicitly hidden
     c.DocInclusionPredicate((name, api) => true);
 });
-
-
-
 
 // ----- NEW: CORS for Vite dev server (http://localhost:5173) -----
 builder.Services.AddCors(options =>

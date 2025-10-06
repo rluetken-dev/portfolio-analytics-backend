@@ -244,7 +244,9 @@ public class UserCompanyController : ControllerBase
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(StatusCodes.Status409Conflict)]
     public async Task<ActionResult<UserCompanyDto>> AddUserCompany([FromBody] CreateUserCompanyDto dto, CancellationToken ct)
-    {
+    {      
+        _logger.LogInformation("AddUserCompany invoked for Symbol={Symbol}", dto.Symbol);
+ 
         var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
         if (userId == null)
             throw new UnauthorizedException("User is not authorized.");
@@ -256,13 +258,16 @@ public class UserCompanyController : ControllerBase
             .FirstOrDefaultAsync(t => t.Id == dto.TickerId || t.Symbol.ToUpper() == dto.Symbol!.ToUpper(), ct);
 
         _logger.LogInformation("AddUserCompany: Searching for TickerId={TickerId}, Symbol={Symbol}", dto.TickerId, dto.Symbol);
-        _logger.LogInformation("AddUserCompany: Found ticker? {Found}", ticker != null);
+         _logger.LogInformation("AddUserCompany: Found ticker? {Found}", ticker != null);
 
 
         // 2️⃣ If not found -> fetch from external API and create it
         if (ticker == null)
         {
+            _logger.LogInformation("Attempting to fetch company profile for symbol {Symbol}", dto.Symbol);
             var profile = await _fmp.GetCompanyProfileAsync(dto.Symbol!, ct);
+            _logger.LogInformation("Profile fetch completed for {Symbol}. Result is null? {IsNull}", dto.Symbol, profile == null);
+
             if (profile == null)
                 throw new BadRequestException($"Ticker '{dto.Symbol}' not found in external API.");
 

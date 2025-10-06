@@ -8,16 +8,15 @@ namespace Portfolio.Api.DTOs;
 public class CreateUserCompanyDto
 {
     /// <summary>
-    /// The ID of the ticker (company) to link.
+    /// The ID of the ticker (company) to link (optional if new ticker is created).
     /// </summary>
-    [Required]
-    public int TickerId { get; set; }
+    public int? TickerId { get; set; }  // ← geändert: nullable und ohne [Required]
 
     /// <summary>
     /// The symbol of the ticker (company) to link.
     /// </summary>
     [Required]
-    public string? Symbol { get; set; }
+    public string Symbol { get; set; } = string.Empty; // bleibt required
 
     /// <summary>
     /// Number of shares owned by the user.

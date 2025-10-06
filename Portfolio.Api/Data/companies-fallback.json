@@ -919,6 +919,76 @@
       "Symbol": "NFLE.L",
       "Name": "Leverage Shares 2x Netflix ETC A",
       "Sector": null
+    },
+    {
+      "Symbol": "NEFF",
+      "Name": "Neff Corporation",
+      "Sector": null
+    },
+    {
+      "Symbol": "NEFB",
+      "Name": "Neffs Bancorp, Inc.",
+      "Sector": null
+    },
+    {
+      "Symbol": "NEFSX",
+      "Name": "Natixis Funds Trust I U.S. Equity Opportunities Fund Class A",
+      "Sector": null
+    },
+    {
+      "Symbol": "NEFOX",
+      "Name": "Natixis Funds Trust II Oakmark Fund",
+      "Sector": null
+    },
+    {
+      "Symbol": "NEFJX",
+      "Name": "Natixis Funds Trust I Vaughan Nelson Small Cap Value Fund",
+      "Sector": null
+    },
+    {
+      "Symbol": "NEFBP",
+      "Name": "Neffs Bancorp, Inc. PFD SER A",
+      "Sector": null
+    },
+    {
+      "Symbol": "NEF.DE",
+      "Name": "Neste Oyj",
+      "Sector": null
+    },
+    {
+      "Symbol": "NFAZ.ME",
+      "Name": "NEFAZ Publicly Traded Company",
+      "Sector": null
+    },
+    {
+      "Symbol": "9605.SR",
+      "Name": "Neft Alsharq Company for Chemical Industries",
+      "Sector": null
+    },
+    {
+      "Symbol": "BNEFF",
+      "Name": "Bonterra Energy Corp.",
+      "Sector": null
+    },
+    {
+      "Symbol": "NETD",
+      "Name": "Nabors Energy Transition Corp. II Class A Ordinary Shares",
+      "Sector": null
+    },
+    {
+      "Symbol": "NETDW",
+      "Name": "Nabors Energy Transition Corp. II Warrant",
+      "Sector": null
+    },
+    {
+      "Symbol": "NETDU",
+      "Name": "Nabors Energy Transition Corp. II",
+      "Sector": null
+    },
+    {
+      "Symbol": "0777.HK",
+      "Name": "NetDragon Websoft Holdings Limited",
+      "Sector": null
     }
   ]
 }
