@@ -287,7 +287,46 @@ public class UserCompanyController : ControllerBase
             .FirstOrDefaultAsync(uc => uc.UserId == uid && uc.TickerId == ticker.Id, ct);
 
         if (existing != null)
-            return Conflict(new { message = $"Ticker '{ticker.Symbol}' is already in your portfolio." });
+        {
+            _logger.LogInformation("User {UserId} already owns {Symbol}. Updating position instead.", uid, ticker.Symbol);
+
+            // Weighted average price calculation
+            var totalSharesBefore = existing.Shares;
+            var totalCostBefore = existing.Shares * existing.PurchasePrice;
+
+            var totalSharesAfter = totalSharesBefore + dto.Shares;
+            var totalCostAfter = totalCostBefore + (dto.Shares * dto.PurchasePrice);
+
+            // Avoid division by zero
+            var newAveragePrice = totalSharesAfter > 0 ? totalCostAfter / totalSharesAfter : existing.PurchasePrice;
+
+            existing.Shares = totalSharesAfter;
+            existing.PurchasePrice = newAveragePrice;
+
+            // Append new note if provided
+            if (!string.IsNullOrWhiteSpace(dto.Notes))
+            {
+                existing.Notes = string.Join(" | ", new[] { existing.Notes, dto.Notes }.Where(n => !string.IsNullOrWhiteSpace(n)));
+            }
+
+            await _context.SaveChangesAsync(ct);
+
+            _logger.LogInformation("Updated position for {Symbol}: {Shares} shares @ {Price}", ticker.Symbol, existing.Shares, existing.PurchasePrice);
+
+            return Ok(new
+            {
+                message = $"Updated position for {ticker.Symbol}.",
+                shares = existing.Shares,
+                averagePrice = existing.PurchasePrice
+            });
+        }
+
+        // Handle missing purchase price (use current market price)
+        if (dto.PurchasePrice == null)
+        {
+            _logger.LogInformation("User {UserId} added {Symbol} without specifying a purchase price — will use current market price.", uid, dto.Symbol);
+        }
+
 
         // 4️⃣ Create new user-company entry
         var userCompany = new UserCompany
@@ -302,7 +341,25 @@ public class UserCompanyController : ControllerBase
         _context.UserCompanies.Add(userCompany);
         await _context.SaveChangesAsync(ct);
 
-        // 5️⃣ Return the created DTO
+        // 5️⃣ Record corresponding transaction for this buy operation
+        var transaction = new UserCompanyTransaction
+        {
+            UserId = uid,
+            TickerId = ticker.Id,
+            Shares = dto.Shares,
+            Price = dto.PurchasePrice.HasValue ? dto.PurchasePrice.Value : 0m,
+            Notes = dto.Notes,
+            CreatedAt = DateTime.UtcNow
+        };
+
+        _context.UserCompanyTransactions.Add(transaction);
+        await _context.SaveChangesAsync(ct);
+
+        _logger.LogInformation(
+            "Recorded transaction for user {UserId}: {Shares} shares of {Symbol} @ {Price}",
+            uid, dto.Shares, ticker.Symbol, dto.PurchasePrice);
+
+        // 6️⃣ Return the created DTO
         var response = new UserCompanyDto
         {
             Id = userCompany.Id,
@@ -315,6 +372,7 @@ public class UserCompanyController : ControllerBase
         };
 
         return CreatedAtAction(nameof(GetUserCompanies), new { id = userCompany.Id }, response);
+
     }
     
 }

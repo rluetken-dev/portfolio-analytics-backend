@@ -19,13 +19,14 @@ public class CreateUserCompanyDto
     public string Symbol { get; set; } = string.Empty; // bleibt required
 
     /// <summary>
-    /// Number of shares owned by the user.
+    /// Number of shares involved in the transaction.
+    /// Positive = Buy, Negative = Sell.
     /// </summary>
-    [Range(0, double.MaxValue, ErrorMessage = "Shares must be a non-negative number.")]
-    public decimal? Shares { get; set; }
+    [Range(-1000000, 1000000, ErrorMessage = "Shares must be within a valid range.")]
+    public int Shares { get; set; }
 
     /// <summary>
-    /// Purchase price per share.
+    /// Purchase price per share. If omitted or null, the current market price will be used.
     /// </summary>
     [Range(0, double.MaxValue, ErrorMessage = "Purchase price must be a non-negative number.")]
     public decimal? PurchasePrice { get; set; }

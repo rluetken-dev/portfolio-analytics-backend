@@ -55,6 +55,14 @@ public class AppDbContext : DbContext
     /// </summary>
     public DbSet<UserCompany> UserCompanies => Set<UserCompany>();
 
+    /// <summary>
+    /// Table recording individual buy and sell operations performed by users.
+    /// Each record represents a discrete transaction linked to a company (ticker),
+    /// capturing the number of shares, the price at execution time, and optional notes.
+    /// Used for historical tracking, analytics, and calculating performance over time.
+    /// </summary>
+    public DbSet<UserCompanyTransaction> UserCompanyTransactions { get; set; } = null!;
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
