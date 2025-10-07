@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Portfolio.Api.Models;
+using Portfolio.Api.DTOs;
 using System.Security.Claims;
 using Portfolio.Api.Data;
 
@@ -46,12 +47,14 @@ namespace Portfolio.Api.Controllers
             if (userId == null)
                 return Unauthorized("User not authorized.");
 
-            var uid = int.Parse(userId);
+            // Convert string claim to integer user id
+            if (!int.TryParse(userId, out var uid))
+                return BadRequest("Invalid user identifier.");
 
             _logger.LogInformation("Recording transaction for user {UserId}, SymbolId {TickerId}, Shares={Shares}, Price={Price}",
                 uid, dto.TickerId, dto.Shares, dto.Price);
 
-            // Validate ticker
+            // Validate ticker existence
             var ticker = await _context.Tickers.FirstOrDefaultAsync(t => t.Id == dto.TickerId, ct);
             if (ticker == null)
                 return BadRequest($"Invalid TickerId: {dto.TickerId}");
@@ -68,11 +71,56 @@ namespace Portfolio.Api.Controllers
             };
 
             _context.UserCompanyTransactions.Add(transaction);
+
+            // Find existing portfolio entry for this user and ticker
+            var userCompany = await _context.UserCompanies
+                .FirstOrDefaultAsync(uc => uc.UserId == uid && uc.TickerId == ticker.Id, ct);
+
+            // Prevent selling more shares than currently owned
+            if (userCompany != null && dto.Shares < 0 && userCompany.Shares + dto.Shares < 0)
+            {
+                _logger.LogWarning("User {UserId} attempted to sell {SellShares} shares of {TickerId}, but only owns {CurrentShares}",
+                    uid, Math.Abs(dto.Shares), dto.TickerId, userCompany.Shares);
+
+                return BadRequest("Insufficient shares to sell. You cannot sell more shares than you currently own.");
+            }
+
+            if (userCompany != null)
+            {
+                // Update portfolio position
+                userCompany.Shares += dto.Shares;
+                userCompany.PurchasePrice = dto.Price; // TODO: implement average cost later
+                userCompany.Notes = (userCompany.Notes ?? "") + $"\n[{DateTime.UtcNow:yyyy-MM-dd}] {dto.Notes}";
+            }
+            else
+            {
+                // Create new portfolio entry if not existing
+                userCompany = new UserCompany
+                {
+                    UserId = uid,
+                    TickerId = ticker.Id,
+                    Shares = dto.Shares,
+                    PurchasePrice = dto.Price,
+                    Notes = $"[{DateTime.UtcNow:yyyy-MM-dd}] {dto.Notes}"
+                };
+                _context.UserCompanies.Add(userCompany);
+            }
+
             await _context.SaveChangesAsync(ct);
 
-            _logger.LogInformation("Transaction saved for user {UserId}: {Shares} shares @ {Price}", uid, dto.Shares, dto.Price);
+            _logger.LogInformation("Transaction saved for user {UserId}: {Shares} shares @ {Price}",
+                uid, dto.Shares, dto.Price);
 
-            return CreatedAtAction(nameof(GetTransactionById), new { id = transaction.Id }, transaction);
+            // Map to lightweight DTO to avoid serialization cycles
+            var result = new TransactionDto
+            {
+                CreatedAt = transaction.CreatedAt,
+                Shares = transaction.Shares,
+                Price = transaction.Price,
+                Notes = transaction.Notes
+            };
+
+            return Created($"/api/UserCompanyTransactions/{transaction.Id}", result);
         }
 
         /// <summary>
@@ -121,6 +169,51 @@ namespace Portfolio.Api.Controllers
                 .ToListAsync(ct);
 
             return transactions;
+        }
+
+        /// <summary>
+        /// Retrieves all transactions for a specific company symbol belonging to the currently authenticated user.
+        /// Results are returned in descending order by creation date.
+        /// </summary>
+        /// <param name="symbol">The ticker symbol (e.g., "AAPL") identifying the company.</param>
+        /// <response code="200">Returns a list of transactions for the specified symbol.</response>
+        /// <response code="401">If the user is not authenticated.</response>
+        /// <response code="404">If the provided symbol does not exist.</response>
+        [HttpGet("by-symbol/{symbol}")]
+        [ProducesResponseType(typeof(IEnumerable<TransactionDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        public async Task<ActionResult<IEnumerable<TransactionDto>>> GetTransactionsBySymbol(string symbol)
+        {
+            // Get current user's ID from JWT claims
+            var userIdString = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (userIdString == null)
+                return Unauthorized();
+
+            var userId = int.Parse(userIdString);
+
+            // Find ticker by symbol (case-insensitive)
+            var ticker = await _context.Tickers
+                .FirstOrDefaultAsync(t => t.Symbol.ToLower() == symbol.ToLower());
+
+            if (ticker == null)
+                return NotFound($"Ticker '{symbol}' not found.");
+
+            // Query all transactions for this user + ticker, newest first
+            var transactions = await _context.UserCompanyTransactions
+                .Where(t => t.UserId == userId && t.TickerId == ticker.Id)
+                .OrderByDescending(t => t.CreatedAt)
+                .Select(t => new TransactionDto
+                {
+                    CreatedAt = t.CreatedAt,
+                    Shares = t.Shares,
+                    Price = t.Price ?? 0m,
+                    Notes = t.Notes
+                })
+                .ToListAsync();
+
+            // Return list of DTOs
+            return Ok(transactions);
         }
     }
 }
