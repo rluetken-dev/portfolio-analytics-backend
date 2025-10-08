@@ -40,7 +40,7 @@ namespace Portfolio.Api.Controllers
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status401Unauthorized)]
         public async Task<ActionResult<UserCompanyTransaction>> AddTransaction(
-            [FromBody] UserCompanyTransaction dto,
+            [FromBody] CreateUserCompanyTransactionDto dto,
             CancellationToken ct)
         {
             var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
@@ -51,19 +51,21 @@ namespace Portfolio.Api.Controllers
             if (!int.TryParse(userId, out var uid))
                 return BadRequest("Invalid user identifier.");
 
-            _logger.LogInformation("Recording transaction for user {UserId}, SymbolId {TickerId}, Shares={Shares}, Price={Price}",
-                uid, dto.TickerId, dto.Shares, dto.Price);
+            _logger.LogInformation("Recording transaction for user {UserId}, Symbol={Symbol}, Shares={Shares}, Price={Price}",
+                uid, dto.Symbol, dto.Shares, dto.Price);
 
-            // Validate ticker existence
-            var ticker = await _context.Tickers.FirstOrDefaultAsync(t => t.Id == dto.TickerId, ct);
+            // Find ticker by symbol (case-insensitive)
+            var ticker = await _context.Tickers
+                .FirstOrDefaultAsync(t => t.Symbol.ToLower() == dto.Symbol.ToLower(), ct);
             if (ticker == null)
-                return BadRequest($"Invalid TickerId: {dto.TickerId}");
+                return BadRequest($"Invalid Symbol: {dto.Symbol}");
+
 
             // Create transaction record
             var transaction = new UserCompanyTransaction
             {
                 UserId = uid,
-                TickerId = dto.TickerId,
+                TickerId = ticker.Id,
                 Shares = dto.Shares,
                 Price = dto.Price,
                 Notes = dto.Notes,
@@ -80,7 +82,7 @@ namespace Portfolio.Api.Controllers
             if (userCompany != null && dto.Shares < 0 && userCompany.Shares + dto.Shares < 0)
             {
                 _logger.LogWarning("User {UserId} attempted to sell {SellShares} shares of {TickerId}, but only owns {CurrentShares}",
-                    uid, Math.Abs(dto.Shares), dto.TickerId, userCompany.Shares);
+                    uid, Math.Abs(dto.Shares), ticker.Id, userCompany.Shares);
 
                 return BadRequest("Insufficient shares to sell. You cannot sell more shares than you currently own.");
             }
