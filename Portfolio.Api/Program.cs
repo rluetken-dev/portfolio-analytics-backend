@@ -218,9 +218,6 @@ builder.Services.AddSingleton<ISeedFileService, SeedFileService>();
 builder.Services.AddScoped<Portfolio.Api.Services.ISeedService, Portfolio.Api.Services.SeedService>();
 var app = builder.Build();
 
-// --- Global error handling middleware ---
-app.UseMiddleware<Portfolio.Api.Middleware.ErrorHandlingMiddleware>();
-
 // Ensure DB ready (migrate or create)
 using (var scope = app.Services.CreateScope())
 {
@@ -249,7 +246,12 @@ app.UseCors("AllowViteDev");
 // app.UseHttpsRedirection();
 
 app.UseAuthentication();
+
+// --- Global error handling middleware ---
+app.UseMiddleware<Portfolio.Api.Middleware.ErrorHandlingMiddleware>();
+
 app.UseAuthorization();
+
 
 // ----- NEW: Minimal health endpoint for quick checks -----
 // Returns: { "status": "ok" }

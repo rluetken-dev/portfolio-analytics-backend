@@ -48,10 +48,13 @@ namespace Portfolio.Api.Middleware
                 title = ex.GetType().Name.Replace("Exception", ""),
                 status = ex.StatusCode,
                 detail = ex.Message,
+                message = ex.Message, 
                 traceId = context.TraceIdentifier
             };
+            _logger.LogWarning("🚨 Writing error response: {Json}", JsonSerializer.Serialize(problem));
 
-            await context.Response.WriteAsync(JsonSerializer.Serialize(problem));
+            await context.Response.WriteAsJsonAsync(problem);
+
         }
 
         private async Task HandleUnexpectedExceptionAsync(HttpContext context, Exception ex)
@@ -67,10 +70,12 @@ namespace Portfolio.Api.Middleware
                 title = "Internal Server Error",
                 status = 500,
                 detail = "An unexpected error occurred. Please contact support.",
+                message = "An unexpected error occurred. Please contact support.",
                 traceId = context.TraceIdentifier
             };
+            _logger.LogWarning("🚨 Writing error response: {Json}", JsonSerializer.Serialize(problem));
 
-            await context.Response.WriteAsync(JsonSerializer.Serialize(problem));
+            await context.Response.WriteAsJsonAsync(problem); 
         }
     }
 }

@@ -5,6 +5,7 @@ using Portfolio.Api.Models;
 using Portfolio.Api.DTOs;
 using System.Security.Claims;
 using Portfolio.Api.Data;
+using Portfolio.Api.Exceptions;
 
 namespace Portfolio.Api.Controllers
 {
@@ -49,7 +50,7 @@ namespace Portfolio.Api.Controllers
 
             // Convert string claim to integer user id
             if (!int.TryParse(userId, out var uid))
-                return BadRequest("Invalid user identifier.");
+                throw new BadRequestException("Invalid user identifier.");
 
             _logger.LogInformation("Recording transaction for user {UserId}, Symbol={Symbol}, Shares={Shares}, Price={Price}",
                 uid, dto.Symbol, dto.Shares, dto.Price);
@@ -58,7 +59,7 @@ namespace Portfolio.Api.Controllers
             var ticker = await _context.Tickers
                 .FirstOrDefaultAsync(t => t.Symbol.ToLower() == dto.Symbol.ToLower(), ct);
             if (ticker == null)
-                return BadRequest($"Invalid Symbol: {dto.Symbol}");
+                throw new BadRequestException($"Invalid Symbol: {dto.Symbol}");
 
 
             // Create transaction record
@@ -79,12 +80,12 @@ namespace Portfolio.Api.Controllers
                 .FirstOrDefaultAsync(uc => uc.UserId == uid && uc.TickerId == ticker.Id, ct);
 
             // Prevent selling more shares than currently owned
-            if (userCompany != null && dto.Shares < 0 && userCompany.Shares + dto.Shares < 0)
+           if (userCompany != null && dto.Shares < 0 && userCompany.Shares + dto.Shares < 0)
             {
                 _logger.LogWarning("User {UserId} attempted to sell {SellShares} shares of {TickerId}, but only owns {CurrentShares}",
                     uid, Math.Abs(dto.Shares), ticker.Id, userCompany.Shares);
 
-                return BadRequest("Insufficient shares to sell. You cannot sell more shares than you currently own.");
+                throw new BadRequestException("Insufficient shares to sell. You cannot sell more shares than you currently own.");
             }
 
             if (userCompany != null)
