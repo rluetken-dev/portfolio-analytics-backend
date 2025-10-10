@@ -244,7 +244,17 @@ namespace Portfolio.Api.Controllers
             if (updated.Count > 0)
                 await _db.SaveChangesAsync(ct);
 
-            return Ok(new { count = updated.Count, items = updated });
+            // 🧮 Count remaining tickers that are still missing data
+            var remaining = await _db.Set<Ticker>()
+                .CountAsync(t => t.Name == null || t.Sector == null, ct);
+
+            // ✅ Return structured response with count, remaining, and updated items
+            return Ok(new
+            {
+                count = updated.Count,
+                remaining,
+                items = updated
+            });
         }
 
         /// <summary>
