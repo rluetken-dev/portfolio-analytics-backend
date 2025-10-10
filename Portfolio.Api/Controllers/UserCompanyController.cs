@@ -30,40 +30,40 @@ public class UserCompanyController : ControllerBase
         _logger = logger;
     }
 
-    /// <summary>
-    /// Returns all portfolio entries for the currently authenticated user.
-    /// </summary>
-    /// <response code="200">Returns a list of portfolio entries for the user.</response>
-    /// <response code="401">If the user is not authorized.</response>
-    [HttpGet]
-    [ProducesResponseType(StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-    public async Task<ActionResult<IEnumerable<UserCompanyDto>>> GetUserCompanies()
-    {
-        var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
-        if (userId == null)
-            throw new UnauthorizedException("User is not authorized.");
+    // /// <summary>
+    // /// Returns all portfolio entries for the currently authenticated user.
+    // /// </summary>
+    // /// <response code="200">Returns a list of portfolio entries for the user.</response>
+    // /// <response code="401">If the user is not authorized.</response>
+    // [HttpGet]
+    // [ProducesResponseType(StatusCodes.Status200OK)]
+    // [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    // public async Task<ActionResult<IEnumerable<UserCompanyDto>>> GetUserCompanies()
+    // {
+    //     var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+    //     if (userId == null)
+    //         throw new UnauthorizedException("User is not authorized.");
 
-        var uid = int.Parse(userId);
+    //     var uid = int.Parse(userId);
 
-        var userCompanies = await _context.UserCompanies
-            .Include(uc => uc.Ticker)
-            .Where(uc => uc.UserId == uid)
-            .Select(uc => new UserCompanyDto
-            {
-                Id = uc.Id,
-                TickerId = uc.TickerId,
-                Symbol = uc.Ticker.Symbol,
-                Name = uc.Ticker.Name,
-                Sector = uc.Ticker.Sector,
-                Shares = uc.Shares,
-                PurchasePrice = uc.PurchasePrice,
-                Notes = uc.Notes
-            })
-            .ToListAsync();
+    //     var userCompanies = await _context.UserCompanies
+    //         .Include(uc => uc.Ticker)
+    //         .Where(uc => uc.UserId == uid)
+    //         .Select(uc => new UserCompanyDto
+    //         {
+    //             Id = uc.Id,
+    //             TickerId = uc.TickerId,
+    //             Symbol = uc.Ticker.Symbol,
+    //             Name = uc.Ticker.Name,
+    //             Sector = uc.Ticker.Sector,
+    //             Shares = uc.Shares,
+    //             PurchasePrice = uc.PurchasePrice,
+    //             Notes = uc.Notes
+    //         })
+    //         .ToListAsync();
 
-        return Ok(userCompanies);
-    }
+    //     return Ok(userCompanies);
+    // }
 
     /// <summary>
     /// Deletes a portfolio entry (UserCompany) belonging to the current user.
@@ -244,9 +244,9 @@ public class UserCompanyController : ControllerBase
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(StatusCodes.Status409Conflict)]
     public async Task<ActionResult<UserCompanyDto>> AddUserCompany([FromBody] CreateUserCompanyDto dto, CancellationToken ct)
-    {      
+    {
         _logger.LogInformation("AddUserCompany invoked for Symbol={Symbol}", dto.Symbol);
- 
+
         var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
         if (userId == null)
             throw new UnauthorizedException("User is not authorized.");
@@ -258,7 +258,7 @@ public class UserCompanyController : ControllerBase
             .FirstOrDefaultAsync(t => t.Id == dto.TickerId || t.Symbol.ToUpper() == dto.Symbol!.ToUpper(), ct);
 
         _logger.LogInformation("AddUserCompany: Searching for TickerId={TickerId}, Symbol={Symbol}", dto.TickerId, dto.Symbol);
-         _logger.LogInformation("AddUserCompany: Found ticker? {Found}", ticker != null);
+        _logger.LogInformation("AddUserCompany: Found ticker? {Found}", ticker != null);
 
 
         // 2️⃣ If not found -> fetch from external API and create it
@@ -374,6 +374,70 @@ public class UserCompanyController : ControllerBase
         return CreatedAtAction(nameof(GetUserCompanies), new { id = userCompany.Id }, response);
 
     }
+    
+    /// <summary>
+    /// Returns all portfolio entries for the currently authenticated user.
+    /// Supports optional text search via ?q= (symbol or name, case-insensitive)
+    /// and optional ?limit= for pagination.
+    /// </summary>
+    /// <param name="q">Optional search term (symbol or name).</param>
+    /// <param name="limit">Optional limit for number of results.</param>
+    /// <response code="200">Returns a filtered list of portfolio entries.</response>
+    /// <response code="401">If the user is not authorized.</response>
+    [HttpGet]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    public async Task<ActionResult<IEnumerable<UserCompanyDto>>> GetUserCompanies(
+        [FromQuery] string? q,
+        [FromQuery] int? limit = null)
+    {
+        // 🧠 Identify the current user
+        var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+        if (userId == null)
+            throw new UnauthorizedException("User is not authorized.");
+
+        var uid = int.Parse(userId);
+
+        // 🧱 Base query: only this user's portfolio
+        var query = _context.UserCompanies
+            .Include(uc => uc.Ticker)
+            .Where(uc => uc.UserId == uid)
+            .AsNoTracking();
+
+        // 🔍 Optional text search (case-insensitive, symbol OR name)
+        if (!string.IsNullOrWhiteSpace(q))
+        {
+            var term = q.Trim().ToLower();
+            query = query.Where(uc =>
+                (uc.Ticker.Symbol != null && uc.Ticker.Symbol.ToLower().Contains(term)) ||
+                (uc.Ticker.Name != null && uc.Ticker.Name.ToLower().Contains(term)));
+        }
+
+        // 🔢 Optional limit
+        if (limit.HasValue && limit.Value > 0)
+        {
+            query = query.Take(limit.Value);
+        }
+
+        // 📦 Execute + map to DTOs
+        var userCompanies = await query
+            .OrderBy(uc => uc.Ticker.Symbol)
+            .Select(uc => new UserCompanyDto
+            {
+                Id = uc.Id,
+                TickerId = uc.TickerId,
+                Symbol = uc.Ticker.Symbol,
+                Name = uc.Ticker.Name,
+                Sector = uc.Ticker.Sector,
+                Shares = uc.Shares,
+                PurchasePrice = uc.PurchasePrice,
+                Notes = uc.Notes
+            })
+            .ToListAsync();
+
+        return Ok(userCompanies);
+    }
+
     
 }
 
