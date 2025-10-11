@@ -46,4 +46,10 @@ public class UserCompanyDto
     /// Optional notes or comments from the user.
     /// </summary>
     public string? Notes { get; set; }
+
+    /// <summary>
+    /// The date of the most recent stored price record for this ticker.
+    /// Useful for checking data freshness in the frontend.
+    /// </summary>
+    public DateTime? LastPriceUpdate { get; set; }
 }

@@ -431,7 +431,11 @@ public class UserCompanyController : ControllerBase
                 Sector = uc.Ticker.Sector,
                 Shares = uc.Shares,
                 PurchasePrice = uc.PurchasePrice,
-                Notes = uc.Notes
+                Notes = uc.Notes,
+                LastPriceUpdate = uc.Ticker.Prices
+                    .OrderByDescending(p => p.TradingDate)
+                    .Select(p => p.TradingDate.ToDateTime(TimeOnly.MinValue))
+                    .FirstOrDefault()
             })
             .ToListAsync();
 
