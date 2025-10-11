@@ -106,6 +106,19 @@ namespace Portfolio.Api.Controllers
                         _db.Tickers.Add(ticker);
                         await _db.SaveChangesAsync(ct);
                     }
+                    
+                    // 🧠 Find latest known trading date for this ticker
+                    var lastKnownDate = await _db.Prices
+                        .Where(p => p.TickerId == ticker.Id)
+                        .Select(p => (DateTime?)p.TradingDate.ToDateTime(TimeOnly.MinValue))
+                        .MaxAsync(ct);
+
+                    // Calculate days since last update to limit fetch window
+                    if (lastKnownDate.HasValue && !fullHistory)
+                    {
+                        var daysSince = (DateTime.UtcNow.Date - lastKnownDate.Value.Date).Days + 1; // +1 ensures we fetch the next day
+                        days = Math.Min(days, Math.Max(daysSince, 1)); // shrink range dynamically, but always >=1
+                    }
 
                     await foreach (var (date, open, high, low, close, adjClose, volume) in _alpha.GetDailyAdjustedAsync(sym, days, ct, fullHistory))
                     {
@@ -147,6 +160,10 @@ namespace Portfolio.Api.Controllers
                     }
 
                     // Persist batched inserts once (keeps transaction short and efficient).
+                    await _db.SaveChangesAsync(ct);
+
+                    // ✅ Update ticker refresh timestamp
+                    ticker.LastPriceUpdate = DateTime.UtcNow;
                     await _db.SaveChangesAsync(ct);
 
                     // Free-tier friendly delay (~5 req/min on Alpha Vantage).

@@ -25,6 +25,12 @@ public class Ticker
     public string? Sector { get; set; }
 
     /// <summary>
+    /// Timestamp of the most recent successful price data refresh (quotes).
+    /// Used by the frontend to detect outdated price series.
+    /// </summary>
+    public DateTime? LastPriceUpdate { get; set; }
+
+    /// <summary>
     /// Navigation property to all related price records.
     /// </summary>
     public ICollection<Price> Prices { get; set; } = new List<Price>();
