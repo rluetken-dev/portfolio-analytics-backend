@@ -254,7 +254,27 @@ namespace Portfolio.Api.Controllers
                 })
                 .ToListAsync(ct);
 
-            return Ok(rows);
+            // ✅ if no prices found
+            if (rows.Count == 0)
+            {
+                return NotFound(new ProblemDetails
+                {
+                    Title = "No cached prices found",
+                    Detail = $"No recent data for symbol '{sym}'.",
+                    Status = StatusCodes.Status404NotFound
+                });
+            }
+
+            // ✅ Use the most recent record for summary
+            var latest = rows.First();
+
+            return Ok(new
+            {
+                symbol = latest.symbol,
+                value = latest.close,
+                asOf = latest.date.ToString("yyyy-MM-dd"),
+                source = latest.source
+            });
         }
 
         /// <summary>
