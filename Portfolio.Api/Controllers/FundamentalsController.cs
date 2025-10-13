@@ -417,29 +417,28 @@ namespace Portfolio.Api.Controllers
             // English: declare counters upfront so they're in scope after try/catch
             var income = (inserted: 0, skipped: 0);
             var balance = (inserted: 0, skipped: 0);
-            var cash = (inserted: 0, skipped: 0);
+            var cash = (inserted: 0, skipped: 0);            
 
-            // English: income ingest with one retry (handles transient 429/500/DB locks)
+            // --- Income ingest ---
             try
             {
                 income = await HitAsync(http, $"/api/ingest/income/{sym}?period={per}&limit={limit}", ct);
             }
-            catch (HttpRequestException ex2)
+            catch (HttpRequestException ex)
             {
-                if (IsPlanLimited(ex2.Message))
+                if (IsPlanLimited(ex.Message))
                 {
-                    // English: treat plan-limited symbol as a non-fatal skip
-                    _log.LogInformation("Income ingest skipped (plan limit) for {Symbol}: {Msg}", sym, ex2.Message);
-                    // keep 'income' counters at 0
+                    _log.LogInformation("Income ingest skipped (plan limit) for {Symbol}", sym);
+                    // leave counters at 0
                 }
                 else
                 {
-                    return StatusCode(StatusCodes.Status502BadGateway,
-                        new ProblemDetails { Title = "Income ingest failed (after retry)", Detail = ex2.Message });
+                    _log.LogWarning("Income ingest failed for {Symbol}: {Msg}", sym, ex.Message);
+                    // continue without throwing
                 }
             }
 
-            // English: balance ingest with explicit error wrapping
+            // --- Balance ingest ---
             try
             {
                 balance = await HitAsync(http, $"/api/ingest/balance/{sym}?period={per}&limit={limit}", ct);
@@ -447,18 +446,12 @@ namespace Portfolio.Api.Controllers
             catch (HttpRequestException ex)
             {
                 if (IsPlanLimited(ex.Message))
-                {
-                    _log.LogInformation("Balance ingest skipped (plan limit) for {Symbol}: {Msg}", sym, ex.Message);
-                    // keep 'balance' counters at 0
-                }
+                    _log.LogInformation("Balance ingest skipped (plan limit) for {Symbol}", sym);
                 else
-                {
-                    return StatusCode(StatusCodes.Status502BadGateway,
-                        new ProblemDetails { Title = "Balance ingest failed", Detail = ex.Message });
-                }
+                    _log.LogWarning("Balance ingest failed for {Symbol}: {Msg}", sym, ex.Message);
             }
 
-            // English: cash ingest with explicit error wrapping
+            // --- Cash ingest ---
             try
             {
                 cash = await HitAsync(http, $"/api/ingest/cash/{sym}?period={per}&limit={limit}", ct);
@@ -466,15 +459,9 @@ namespace Portfolio.Api.Controllers
             catch (HttpRequestException ex)
             {
                 if (IsPlanLimited(ex.Message))
-                {
-                    _log.LogInformation("Cash ingest skipped (plan limit) for {Symbol}: {Msg}", sym, ex.Message);
-                    // keep 'cash' counters at 0
-                }
+                    _log.LogInformation("Cash ingest skipped (plan limit) for {Symbol}", sym);
                 else
-                {
-                    return StatusCode(StatusCodes.Status502BadGateway,
-                        new ProblemDetails { Title = "Cash ingest failed", Detail = ex.Message });
-                }
+                    _log.LogWarning("Cash ingest failed for {Symbol}: {Msg}", sym, ex.Message);
             }
 
             var payload = new FundamentalsRefreshResponse(
