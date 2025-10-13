@@ -16,6 +16,13 @@ using Portfolio.Api.Middleware;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// 🧩 Explicitly configure Kestrel to listen on all network interfaces (important for WSL2)
+builder.WebHost.ConfigureKestrel(options =>
+{
+    options.Listen(System.Net.IPAddress.Any, 5046); // IPv4 only
+    options.Listen(System.Net.IPAddress.IPv6Any, 5046); // IPv6 also (optional)
+});
+
 // // 🧠 Enable detailed model binding + validation logs
 // builder.Logging.AddFilter("Microsoft.AspNetCore.Mvc.Infrastructure", LogLevel.Debug);
 
