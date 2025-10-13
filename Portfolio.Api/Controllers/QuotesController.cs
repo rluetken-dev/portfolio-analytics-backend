@@ -107,11 +107,12 @@ namespace Portfolio.Api.Controllers
                         await _db.SaveChangesAsync(ct);
                     }
                     
-                    // 🧠 Find latest known trading date for this ticker
+                    // 🧠 Find latest known trading date for this ticker (EF-safe version)
                     var lastKnownDate = await _db.Prices
                         .Where(p => p.TickerId == ticker.Id)
+                        .OrderByDescending(p => p.TradingDate)
                         .Select(p => (DateTime?)p.TradingDate.ToDateTime(TimeOnly.MinValue))
-                        .MaxAsync(ct);
+                        .FirstOrDefaultAsync(ct);
 
                     // Calculate days since last update to limit fetch window
                     if (lastKnownDate.HasValue && !fullHistory)
@@ -214,12 +215,12 @@ namespace Portfolio.Api.Controllers
         /// Example:
         /// <br/>GET <c>/api/quotes/latest?symbol=AAPL&amp;take=5</c>
         /// </remarks>
-        [HttpGet("latest")]
+       [HttpGet("latest")]
         [Produces("application/json")]
         [SwaggerOperation(
             Summary = "Get recent cached closes",
             Description = "Returns up to N most recent price rows for a given symbol (default 5).")]
-        [ProducesResponseType(typeof(IEnumerable<Price>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(IEnumerable<object>), StatusCodes.Status200OK)]
         [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
         public async Task<IActionResult> Latest(
             [FromQuery, Required] string symbol,
@@ -230,20 +231,18 @@ namespace Portfolio.Api.Controllers
 
             take = Math.Clamp(take, 1, 50);
 
-            // Load recent rows including the Ticker navigation and project to a lean DTO.
-            // NOTE: We avoid returning EF entities directly and include the symbol to prevent nulls.
             var sym = symbol.ToUpperInvariant();
 
             var rows = await _db.Prices
-                .AsNoTracking()                         // read-only query: faster, no tracking overhead
-                .Include(p => p.Ticker)                 // ensure navigation is populated
-                .Where(p => p.Ticker.Symbol == sym)     // filter by symbol via navigation
-                .OrderByDescending(p => p.TradingDate)  // newest first
+                .AsNoTracking()
+                .Include(p => p.Ticker)
+                .Where(p => p.Ticker.Symbol == sym)
+                .OrderByDescending(p => p.TradingDate)
                 .Take(take)
                 .Select(p => new
                 {
                     symbol = p.Ticker.Symbol,
-                    date = p.TradingDate,
+                    date = p.TradingDate.ToString("yyyy-MM-dd"),
                     open = p.Open,
                     high = p.High,
                     low = p.Low,
@@ -254,7 +253,6 @@ namespace Portfolio.Api.Controllers
                 })
                 .ToListAsync(ct);
 
-            // ✅ if no prices found
             if (rows.Count == 0)
             {
                 return NotFound(new ProblemDetails
@@ -265,16 +263,8 @@ namespace Portfolio.Api.Controllers
                 });
             }
 
-            // ✅ Use the most recent record for summary
-            var latest = rows.First();
-
-            return Ok(new
-            {
-                symbol = latest.symbol,
-                value = latest.close,
-                asOf = latest.date.ToString("yyyy-MM-dd"),
-                source = latest.source
-            });
+            // ✅ just return the rows array (frontend expects this)
+            return Ok(rows);
         }
 
         /// <summary>
