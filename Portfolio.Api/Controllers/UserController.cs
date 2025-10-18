@@ -257,5 +257,125 @@ namespace Portfolio.Api.Controllers
             });
         }
 
+        /// <summary>
+        /// Returns the current user's cash balance.
+        /// </summary>
+        /// <remarks>
+        /// Requires a valid JWT access token.
+        /// </remarks>
+        /// <response code="200">Returns the user's balance.</response>
+        /// <response code="401">If the request is unauthorized.</response>
+        [HttpGet("balance")]
+        [Authorize]
+        [ProducesResponseType(StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+        public async Task<IActionResult> GetBalance()
+        {
+            // Extract current username from JWT
+            var username = User.Identity?.Name;
+            if (string.IsNullOrEmpty(username))
+                return Unauthorized("User not authenticated.");
+
+            // Load user from DB (read-only)
+            var user = await _context.Users
+                .AsNoTracking()
+                .FirstOrDefaultAsync(u => u.Username == username);
+
+            if (user == null)
+                return NotFound("User not found.");
+
+            // Return cash balance in JSON
+            return Ok(new
+            {
+                username = user.Username,
+                cashBalance = user.CashBalance
+            });
+        }
+
+        /// <summary>
+        /// Adds money to the current user's account balance.
+        /// </summary>
+        /// <remarks>
+        /// Requires a valid JWT access token.
+        /// </remarks>
+        /// <param name="amount">Deposit amount (must be greater than 0).</param>
+        /// <response code="200">Deposit successful, returns new balance.</response>
+        /// <response code="400">Invalid amount.</response>
+        /// <response code="401">Unauthorized.</response>
+        [HttpPost("deposit")]
+        [Authorize]
+        [ProducesResponseType(StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+        public async Task<IActionResult> Deposit([FromBody] decimal amount)
+        {
+            // Validate input
+            if (amount <= 0)
+                return BadRequest("Deposit amount must be greater than zero.");
+
+            // Get current username from JWT
+            var username = User.Identity?.Name;
+            if (string.IsNullOrEmpty(username))
+                return Unauthorized("User not authenticated.");
+
+            // Load user from DB
+            var user = await _context.Users.FirstOrDefaultAsync(u => u.Username == username);
+            if (user == null)
+                return NotFound("User not found.");
+
+            // Increase balance
+            user.CashBalance += amount;
+
+            // Save changes
+            await _context.SaveChangesAsync();
+
+            // Return new balance
+            return Ok(new
+            {
+                username = user.Username,
+                newBalance = user.CashBalance
+            });
+        }
+
+        /// <summary>
+        /// Withdraws money from the current user's balance.
+        /// </summary>
+        /// <remarks>
+        /// Requires a valid JWT access token. Fails if balance is insufficient.
+        /// </remarks>
+        /// <param name="amount">Withdrawal amount (must be greater than 0).</param>
+        /// <response code="200">Withdrawal successful, returns new balance.</response>
+        /// <response code="400">Invalid amount or insufficient funds.</response>
+        /// <response code="401">Unauthorized.</response>
+        [HttpPost("withdraw")]
+        [Authorize]
+        [ProducesResponseType(StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+        public async Task<IActionResult> Withdraw([FromBody] decimal amount)
+        {
+            if (amount <= 0)
+                return BadRequest("Withdrawal amount must be greater than zero.");
+
+            var username = User.Identity?.Name;
+            if (string.IsNullOrEmpty(username))
+                return Unauthorized("User not authenticated.");
+
+            var user = await _context.Users.FirstOrDefaultAsync(u => u.Username == username);
+            if (user == null)
+                return NotFound("User not found.");
+
+            if (user.CashBalance < amount)
+                return BadRequest("Insufficient funds.");
+
+            user.CashBalance -= amount;
+            await _context.SaveChangesAsync();
+
+            return Ok(new
+            {
+                username = user.Username,
+                newBalance = user.CashBalance
+            });
+        }
     }
 }

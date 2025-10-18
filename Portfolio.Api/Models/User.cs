@@ -13,9 +13,14 @@ namespace Portfolio.Api.Models
         
         public string PasswordHash { get; set; } = string.Empty; // Hashed password
 
-         /// <summary>
+        /// <summary>
         /// All user-company (portfolio) relationships linked to this user.
         /// </summary>
         public ICollection<UserCompany> UserCompanies { get; set; } = new List<UserCompany>();
+
+        /// <summary>
+        /// Current available cash balance for this user (default: 10,000 USD)
+        /// </summary>
+        public decimal CashBalance { get; set; } = 10000m; // 💰 Initial balance for new users
     }
 }
