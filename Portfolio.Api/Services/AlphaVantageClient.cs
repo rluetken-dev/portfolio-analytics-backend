@@ -2,6 +2,7 @@
 using System.Net.Http.Json;
 using System.Text.Json;
 using System.Runtime.CompilerServices;
+using Microsoft.Extensions.Caching.Memory;
 
 namespace Portfolio.Api.Services
 {
@@ -26,15 +27,15 @@ namespace Portfolio.Api.Services
         private readonly string _baseUrl;
         private readonly string _apiKey;
         private readonly ILogger<AlphaVantageClient> _log;
+        private readonly IMemoryCache _cache;
 
-        public AlphaVantageClient(HttpClient http, IConfiguration cfg, ILogger<AlphaVantageClient> log)
+        public AlphaVantageClient(HttpClient http, IConfiguration cfg, ILogger<AlphaVantageClient> log, IMemoryCache cache)
         {
             _http = http;
             _log = log;
-
+            _cache = cache;
             _baseUrl = cfg["AlphaVantage:BaseUrl"] ?? "https://www.alphavantage.co";
-            _apiKey = cfg["AlphaVantage:ApiKey"]
-                       ?? throw new InvalidOperationException("AlphaVantage:ApiKey is missing. Configure via user-secrets.");
+            _apiKey = cfg["AlphaVantage:ApiKey"] ?? throw new InvalidOperationException("AlphaVantage:ApiKey is missing.");
         }
 
         /// <summary>
@@ -198,56 +199,79 @@ namespace Portfolio.Api.Services
         /// <param name="ct">Cancellation token</param>
         /// <returns>Tuple: (symbol, price, latestTradingDay) or null if not available</returns>
         public async Task<(string Symbol, decimal Price, DateOnly LatestTradingDay)?> GetLatestPriceAsync(
-    string symbol,
-    CancellationToken ct = default)
+            string symbol,
+            CancellationToken ct = default)
         {
             if (string.IsNullOrWhiteSpace(symbol))
                 throw new ArgumentException("symbol is required", nameof(symbol));
 
             var url = $"{_baseUrl}/query" +
-                      $"?function=GLOBAL_QUOTE" +
-                      $"&symbol={Uri.EscapeDataString(symbol)}" +
-                      $"&apikey={_apiKey}";
+                    $"?function=GLOBAL_QUOTE" +
+                    $"&symbol={Uri.EscapeDataString(symbol)}" +
+                    $"&apikey={_apiKey}";
 
-            using var resp = await _http.GetAsync(url, ct);
-            resp.EnsureSuccessStatusCode();
-
-            await using var stream = await resp.Content.ReadAsStreamAsync(ct);
-            using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: ct);
-
-            var root = doc.RootElement;
-
-            // ⬇️ NEU: Prüfen auf Rate Limit Meldungen
-            if (root.TryGetProperty("Information", out var info))
+            try
             {
-                var msg = info.GetString() ?? "Alpha Vantage returned Information";
-                throw new InvalidOperationException($"AlphaVantageInfo: {msg}");
+                using var resp = await _http.GetAsync(url, ct);
+                resp.EnsureSuccessStatusCode();
+
+                await using var stream = await resp.Content.ReadAsStreamAsync(ct);
+                using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: ct);
+
+                var root = doc.RootElement;
+
+                // Alpha Vantage "Note" = throttled, "Information" = maintenance
+                if (root.TryGetProperty("Note", out var note))
+                {
+                    _log.LogWarning("Alpha Vantage rate limit hit for {Symbol}: {Message}", symbol, note.GetString());
+                    return null;
+                }
+
+                if (root.TryGetProperty("Information", out var info))
+                {
+                    _log.LogWarning("Alpha Vantage info response for {Symbol}: {Message}", symbol, info.GetString());
+                    return null;
+                }
+
+                if (!root.TryGetProperty("Global Quote", out var quote))
+                {
+                    _log.LogWarning("Unexpected payload for {Symbol}: {Payload}", symbol, root.ToString());
+                    return null;
+                }
+
+                var sym = quote.GetProperty("01. symbol").GetString() ?? symbol;
+                var priceStr = quote.GetProperty("05. price").GetString();
+                var dateStr = quote.GetProperty("07. latest trading day").GetString();
+
+                if (!decimal.TryParse(priceStr, System.Globalization.NumberStyles.Any,
+                        System.Globalization.CultureInfo.InvariantCulture, out var price))
+                    return null;
+
+                if (!DateOnly.TryParse(dateStr, out var latestDay))
+                    latestDay = DateOnly.FromDateTime(DateTime.UtcNow);
+
+                return (sym, price, latestDay);
             }
-
-            if (root.TryGetProperty("Note", out var note))
+            catch (TaskCanceledException ex) when (ex.InnerException is TimeoutException)
             {
-                var msg = note.GetString() ?? "Alpha Vantage returned Note";
-                throw new InvalidOperationException($"AlphaVantageNote: {msg}");
+                _log.LogWarning("Alpha Vantage request timed out for {Symbol}", symbol);
+                return null; // Graceful degradation
             }
-
-            if (!root.TryGetProperty("Global Quote", out var quote))
+            catch (HttpRequestException ex)
             {
-                _log.LogWarning("Unexpected payload for {Symbol}: {Payload}", symbol, root.ToString());
+                _log.LogError(ex, "Alpha Vantage HTTP error for {Symbol}", symbol);
                 return null;
             }
-
-            var sym = quote.GetProperty("01. symbol").GetString() ?? symbol;
-            var priceStr = quote.GetProperty("05. price").GetString();
-            var dateStr = quote.GetProperty("07. latest trading day").GetString();
-
-            if (!decimal.TryParse(priceStr, System.Globalization.NumberStyles.Any,
-                    System.Globalization.CultureInfo.InvariantCulture, out var price))
+            catch (JsonException ex)
+            {
+                _log.LogError(ex, "Alpha Vantage returned malformed JSON for {Symbol}", symbol);
                 return null;
-
-            if (!DateOnly.TryParse(dateStr, out var latestDay))
-                latestDay = DateOnly.FromDateTime(DateTime.UtcNow);
-
-            return (sym, price, latestDay);
+            }
+            catch (Exception ex)
+            {
+                _log.LogError(ex, "Unexpected Alpha Vantage error for {Symbol}", symbol);
+                return null;
+            }
         }
 
         // NOTE (English):

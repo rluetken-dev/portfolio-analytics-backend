@@ -66,6 +66,8 @@ var fallbackData = JsonConvert.DeserializeObject<FallbackData>(fallbackJson) ?? 
 builder.Services.AddSingleton(fallbackData);
 builder.Services.AddSingleton(fallbackPath);
 
+builder.Services.AddMemoryCache();
+
 // --- existing DbContext registration ---
 builder.Services.AddDbContext<AppDbContext>(opt =>
     opt.UseSqlite(builder.Configuration.GetConnectionString("Default")));

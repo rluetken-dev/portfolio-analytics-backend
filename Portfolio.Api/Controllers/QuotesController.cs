@@ -267,7 +267,7 @@ namespace Portfolio.Api.Controllers
             return Ok(rows);
         }
 
-        /// <summary>
+       /// <summary>
         /// Gets the most recent price for a symbol (live from Alpha Vantage).
         /// </summary>
         /// <remarks>
@@ -276,16 +276,17 @@ namespace Portfolio.Api.Controllers
         [HttpGet("current")]
         [Produces("application/json")]
         [SwaggerOperation(
-     Summary = "Get current price",
-     Description = "Calls Alpha Vantage GLOBAL_QUOTE and returns the most recent price.")]
+            Summary = "Get current price",
+            Description = "Calls Alpha Vantage GLOBAL_QUOTE and returns the most recent price.")]
         [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
         [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
         [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
         [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status429TooManyRequests)]
+        [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status503ServiceUnavailable)]
         [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
         public async Task<IActionResult> Current(
-    [FromQuery, Required] string symbol,
-    CancellationToken ct = default)
+            [FromQuery, Required] string symbol,
+            CancellationToken ct = default)
         {
             if (string.IsNullOrWhiteSpace(symbol))
             {
@@ -295,9 +296,19 @@ namespace Portfolio.Api.Controllers
             try
             {
                 var result = await _alpha.GetLatestPriceAsync(symbol.ToUpperInvariant(), ct);
-                if (result == null)
-                    throw new NotFoundException($"No quote found for {symbol}.");
 
+                // 🧩 Wenn AlphaVantageClient graceful null zurückgibt (Timeout, RateLimit etc.)
+                if (result == null)
+                {
+                    return StatusCode(StatusCodes.Status503ServiceUnavailable, new ProblemDetails
+                    {
+                        Title = "Price temporarily unavailable",
+                        Detail = $"The latest quote for '{symbol}' could not be retrieved. Please try again shortly.",
+                        Status = StatusCodes.Status503ServiceUnavailable
+                    });
+                }
+
+                // ✅ Erfolgreicher Abruf
                 return Ok(new
                 {
                     symbol = result.Value.Symbol,
@@ -323,6 +334,26 @@ namespace Portfolio.Api.Controllers
                     Title = "Alpha Vantage per-minute rate limit",
                     Detail = ex.Message.Replace("AlphaVantageNote: ", ""),
                     Status = StatusCodes.Status429TooManyRequests
+                });
+            }
+            catch (TaskCanceledException)
+            {
+                // Timeout (z. B. 10s) → 503 zurückgeben
+                return StatusCode(StatusCodes.Status503ServiceUnavailable, new ProblemDetails
+                {
+                    Title = "Timeout",
+                    Detail = "The external data provider did not respond in time.",
+                    Status = StatusCodes.Status503ServiceUnavailable
+                });
+            }
+            catch (HttpRequestException ex)
+            {
+                // Netzwerkfehler
+                return StatusCode(StatusCodes.Status503ServiceUnavailable, new ProblemDetails
+                {
+                    Title = "Network error",
+                    Detail = ex.Message,
+                    Status = StatusCodes.Status503ServiceUnavailable
                 });
             }
         }
