@@ -25,52 +25,27 @@ public class PortfolioSummaryDto
     /// List of individual holdings in the user's portfolio.
     /// </summary>
     public List<HoldingDto> Holdings { get; set; } = new();
+
+    /// <summary>
+    /// Total realized profit or loss (sum of all closed transactions) in USD.
+    /// </summary>
+    public decimal? RealizedPLTotalUSD { get; set; }
+
+    /// <summary>
+    /// Total unrealized profit or loss (current open positions) in USD.
+    /// </summary>
+    public decimal? UnrealizedPLTotalUSD { get; set; }
+
+    /// <summary>
+    /// Combined profit or loss (realized + unrealized) in USD.
+    /// </summary>
+    public decimal? TotalProfitLossUSD { get; set; }
+
+    /// <summary>
+    /// Overall portfolio performance as a percentage.
+    /// </summary>
+    public decimal? TotalProfitLossPercent { get; set; }
+
 }
 
-/// <summary>
-/// Represents one specific holding in the user's portfolio,
-/// including market value and basic performance data.
-/// </summary>
-public class HoldingDto
-{
-    /// <summary>
-    /// ID of the related ticker.
-    /// </summary>
-    public int TickerId { get; set; }
 
-    /// <summary>
-    /// Ticker symbol (e.g. "AAPL").
-    /// </summary>
-    public string Symbol { get; set; } = string.Empty;
-
-    /// <summary>
-    /// Full company name.
-    /// </summary>
-    public string CompanyName { get; set; } = string.Empty;
-
-    /// <summary>
-    /// Number of shares held by the user.
-    /// </summary>
-    public decimal Shares { get; set; }
-
-    /// <summary>
-    /// Average purchase price per share (in USD).
-    /// </summary>
-    public decimal? PurchasePriceUSD { get; set; }
-
-    /// <summary>
-    /// Latest known market price per share (in USD).
-    /// </summary>
-    public decimal? CurrentPriceUSD { get; set; }
-
-    /// <summary>
-    /// Total current market value of this holding (in USD).
-    /// </summary>
-    public decimal CurrentValueUSD => Shares * (CurrentPriceUSD ?? 0);
-
-    /// <summary>
-    /// Optional performance difference (CurrentValue - PurchaseCost).
-    /// </summary>
-    public decimal? ProfitLossUSD =>
-        PurchasePriceUSD.HasValue ? (CurrentPriceUSD - PurchasePriceUSD) * Shares : null;
-}

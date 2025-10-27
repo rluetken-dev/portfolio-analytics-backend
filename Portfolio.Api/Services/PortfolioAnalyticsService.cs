@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Portfolio.Api.Data;
 using Portfolio.Api.DTOs;
+using Portfolio.Api.Services.Analytics;
 
 namespace Portfolio.Api.Services;
 
@@ -75,16 +76,112 @@ public class PortfolioAnalyticsService
             };
         }).ToList();
 
-        // Step 5: Compute total portfolio value
-        var portfolioValue = holdingDtos.Sum(h => h.CurrentValueUSD);
+        // Step 5: Enrich holdings with average buy price and unrealized P/L
+        foreach (var holding in holdingDtos)
+        {
+            var txs = await _context.UserCompanyTransactions
+                .AsNoTracking()
+                .Where(t => t.UserId == userId && t.TickerId == holding.TickerId)
+                .ToListAsync();
 
-        // Step 6: Build summary DTO
+            if (!txs.Any() || holding.Shares <= 0)
+                continue;
+
+            // Compute average buy price (USD)
+            var avgBuy = FinanceMath.CalculateAverageBuyPrice(txs);
+            holding.AvgBuyPriceUSD = avgBuy;
+
+            // Compute unrealized profit/loss (USD + %)
+            if (holding.CurrentPriceUSD.HasValue)
+            {
+                holding.UnrealizedPLUSD = FinanceMath.CalculateUnrealizedPLUSD(
+                    holding.CurrentPriceUSD,
+                    avgBuy,
+                    holding.Shares
+                );
+
+                holding.UnrealizedPLPercent = FinanceMath.CalculateUnrealizedPLPercent(
+                    holding.CurrentPriceUSD.Value,
+                    avgBuy
+                );
+            }
+        }
+
+        // Step 6: Calculate realized profit/loss using FIFO
+        foreach (var holding in holdingDtos)
+        {
+            var txs = await _context.UserCompanyTransactions
+                .AsNoTracking()
+                .Where(t => t.UserId == userId && t.TickerId == holding.TickerId)
+                .OrderBy(t => t.CreatedAt)
+                .ToListAsync();
+
+            if (!txs.Any())
+                continue;
+
+            // Compute realized P/L using FIFO logic
+            var realizedPL = FinanceMath.CalculateRealizedPLFIFO(txs);
+            holding.RealizedPLUSD = realizedPL;
+        }
+
+        // Step 7: Calculate realized P/L percentage
+        foreach (var holding in holdingDtos)
+        {
+            var txs = await _context.UserCompanyTransactions
+                .AsNoTracking()
+                .Where(t => t.UserId == userId && t.TickerId == holding.TickerId)
+                .OrderBy(t => t.CreatedAt)
+                .ToListAsync();
+
+            if (!txs.Any())
+                continue;
+
+            // Compute realized P/L using FIFO logic
+            var realizedPL = FinanceMath.CalculateRealizedPLFIFO(txs);
+            holding.RealizedPLUSD = realizedPL;
+
+            // Calculate realized P/L percentage
+            var realizedPercent = FinanceMath.CalculateRealizedPLPercentFIFO(txs);
+            holding.RealizedPLPercent = realizedPercent;
+        }
+
+        // Step 8: Compute total portfolio value
+        var portfolioValue = holdingDtos.Sum(h => h.CurrentValueUSD ?? 0m);
+
+        // Step 9: Build summary DTO
         var summary = new PortfolioSummaryDto
         {
             CashBalance = user.CashBalance,
             PortfolioValue = portfolioValue,
             Holdings = holdingDtos
         };
+
+        // Step 10: Calculate aggregated profit/loss metrics
+        var realizedTotal = holdingDtos
+            .Where(h => h.RealizedPLUSD.HasValue)
+            .Sum(h => h.RealizedPLUSD ?? 0m);
+
+        var unrealizedTotal = holdingDtos
+            .Where(h => h.UnrealizedPLUSD.HasValue)
+            .Sum(h => h.UnrealizedPLUSD ?? 0m);
+
+        var totalPL = realizedTotal + unrealizedTotal;
+
+        // Estimate total invested capital (sum of all buys)
+        var totalInvested = await _context.UserCompanyTransactions
+            .AsNoTracking()
+            .Where(t => t.UserId == userId && t.Shares > 0 && t.Price.HasValue)
+            .SumAsync(t => (decimal)t.Shares * (t.Price ?? 0m));
+
+        decimal? totalPLPercent = totalInvested > 0
+            ? (totalPL / totalInvested) * 100
+            : null;
+
+        // Assign to summary DTO
+        summary.RealizedPLTotalUSD = realizedTotal;
+        summary.UnrealizedPLTotalUSD = unrealizedTotal;
+        summary.TotalProfitLossUSD = totalPL;
+        summary.TotalProfitLossPercent = totalPLPercent;
 
         _logger.LogInformation("Built portfolio summary for user {UserId}. Total value: {TotalUSD}",
             userId, summary.TotalValue);

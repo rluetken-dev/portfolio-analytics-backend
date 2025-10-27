@@ -1,4 +1,6 @@
 using System;
+using Portfolio.Api.Models;
+
 
 namespace Portfolio.Api.Services.Analytics
 {
@@ -258,5 +260,124 @@ namespace Portfolio.Api.Services.Analytics
             if (Math.Abs(marketCap) < 1e-12) return null;
             return ownerEarnings / marketCap;
         }
+
+        /// <summary>
+        /// Calculates the average buy price for a series of buy transactions.
+        /// </summary>
+        public static decimal CalculateAverageBuyPrice(IEnumerable<UserCompanyTransaction> transactions)
+        {
+            var buys = transactions.Where(t => t.Shares > 0).ToList();
+            if (!buys.Any())
+                return 0m;
+
+            var totalCost = buys.Sum(t => t.Shares * (t.Price ?? 0m)); 
+            var totalShares = buys.Sum(t => t.Shares);
+            return totalShares > 0 ? totalCost / totalShares : 0m;
+        }
+
+        /// <summary>
+        /// Calculates unrealized profit/loss in USD for a holding.
+        /// Handles nullable input values safely.
+        /// </summary>
+        public static decimal CalculateUnrealizedPLUSD(decimal? currentPrice, decimal? avgBuyPrice, decimal? shares)
+        {
+            var cp = currentPrice ?? 0m;
+            var ap = avgBuyPrice ?? 0m;
+            var s = shares ?? 0m;
+            return (cp - ap) * s;
+        }
+
+        /// <summary>
+        /// Calculates unrealized profit/loss as a percentage.
+        /// </summary>
+        public static decimal? CalculateUnrealizedPLPercent(decimal currentPrice, decimal avgBuyPrice)
+        {
+            if (avgBuyPrice == 0) return null;
+            return ((currentPrice - avgBuyPrice) / avgBuyPrice) * 100;
+        }
+
+        /// <summary>
+        /// Calculates realized profit or loss (USD) using FIFO method
+        /// based on a user's buy and sell transactions.
+        /// </summary>
+        public static decimal CalculateRealizedPLFIFO(IEnumerable<UserCompanyTransaction> transactions)
+        {
+            if (transactions == null || !transactions.Any())
+                return 0m;
+
+            // Sort transactions by creation date (FIFO order)
+            var ordered = transactions.OrderBy(t => t.CreatedAt).ToList();
+
+            // Queue of buy lots (each represents remaining shares and cost basis)
+            var buyLots = new Queue<(int Shares, decimal Price)>();
+
+            decimal realizedPL = 0m;
+
+            foreach (var tx in ordered)
+            {
+                if (tx.Price == null || tx.Shares == 0)
+                    continue; // skip invalid entries
+
+                if (tx.Shares > 0)
+                {
+                    // BUY → add to queue
+                    buyLots.Enqueue((tx.Shares, tx.Price.Value));
+                }
+                else
+                {
+                    // SELL → process FIFO
+                    var remainingToSell = Math.Abs(tx.Shares);
+
+                    while (remainingToSell > 0 && buyLots.Count > 0)
+                    {
+                        var lot = buyLots.Peek();
+                        var sharesSold = Math.Min(lot.Shares, remainingToSell);
+
+                        // Calculate realized P/L for this portion
+                        realizedPL += (tx.Price.Value - lot.Price) * sharesSold;
+
+                        // Update or remove lot
+                        var remainingShares = lot.Shares - sharesSold;
+                        if (remainingShares > 0)
+                        {
+                            buyLots.Dequeue();
+                            buyLots.Enqueue((remainingShares, lot.Price)); // reinsert remainder
+                        }
+                        else
+                        {
+                            buyLots.Dequeue();
+                        }
+
+                        remainingToSell -= sharesSold;
+                    }
+                }
+            }
+
+            return realizedPL;
+        }
+
+        /// <summary>
+        /// Calculates realized profit or loss as a percentage
+        /// of the total invested capital (based on FIFO results).
+        /// </summary>
+        public static decimal? CalculateRealizedPLPercentFIFO(IEnumerable<UserCompanyTransaction> transactions)
+        {
+            if (transactions == null || !transactions.Any())
+                return null;
+
+            var realizedPL = CalculateRealizedPLFIFO(transactions);
+
+            // Null-safe total invested capital
+            var totalInvested = transactions
+                .Where(t => t.Shares > 0 && t.Price.HasValue)
+                .Sum(t => (decimal)t.Shares * (t.Price ?? 0m));
+
+            if (totalInvested == 0)
+                return null;
+
+            return (realizedPL / totalInvested) * 100;
+        }
+
+
     }
 }
