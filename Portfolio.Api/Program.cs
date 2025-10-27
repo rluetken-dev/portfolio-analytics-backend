@@ -213,6 +213,8 @@ builder.Services.AddScoped<ISeedService, SeedService>();
 
 builder.Services.AddScoped<MaintenanceService>();
 
+builder.Services.AddScoped<PortfolioAnalyticsService>();
+
 // English: lightweight client pointing to this API itself (same dev host/port)
 builder.Services.AddHttpClient("self", c =>
 {

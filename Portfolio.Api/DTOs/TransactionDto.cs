@@ -10,5 +10,9 @@ namespace Portfolio.Api.DTOs
         public int Shares { get; set; }           // Positive = buy, negative = sell
         public decimal? Price { get; set; }        // Price per share at transaction
         public string? Notes { get; set; }        // Optional note entered by user
+        public string? Symbol { get; set; }       // Company ticker symbol (e.g. "AAPL")
+        public string? CompanyName { get; set; }  // Company full name (for display)
+        public string Type => Shares >= 0 ? "Buy" : "Sell";  // Derived for frontend clarity
+        public decimal? TotalUSD => Price.HasValue ? Price * Math.Abs(Shares) : null; // convenience field
     }
 }
