@@ -109,6 +109,7 @@ The backend strives to return errors that the frontend can map into **simple cat
 ### Secrets (dev)
 ```bash
 dotnet user-secrets init
+dotnet user-secrets set "Jwt:Secret" "YOUR_LOCAL_JWT_SECRET"
 dotnet user-secrets set "Fmp:ApiKey" "YOUR_FMP_API_KEY"
 dotnet user-secrets set "AlphaVantage:ApiKey" "YOUR_AV_API_KEY"   # optional
 ```
@@ -118,7 +119,7 @@ dotnet user-secrets set "AlphaVantage:ApiKey" "YOUR_AV_API_KEY"   # optional
 export ConnectionStrings__Default="Data Source=/data/portfolio.db"
 export Fmp__ApiKey="your-prod-key"
 export AlphaVantage__ApiKey="your-prod-key"   # optional
-export ASPNETCORE_URLS="http://0.0.0.0:5179"
+export ASPNETCORE_URLS="http://0.0.0.0:5046"
 export ASPNETCORE_ENVIRONMENT="Production"
 ```
 
@@ -132,7 +133,7 @@ dotnet ef database update
 dotnet run
 
 # Swagger UI
-# → http://localhost:5179/swagger
+# → http://localhost:5046/swagger
 ```
 
 **Dev helpers**
@@ -237,9 +238,9 @@ POST /api/admin/prune
 ---
 
 ## Docs & Tooling
-- **OpenAPI / Swagger UI:** http://localhost:5179/swagger
+- **OpenAPI / Swagger UI:** http://localhost:5046/swagger
 - **Analytics endpoints (overview):** `docs/analytics-endpoints.md`
-- **Postman collection:** `docs/postman/collection.json`
+- **Postman collection:** `docs/portfolio_analytics_postman_collection.json`
 - **Architecture diagram:** `docs/architecture.png` (optional)
 - **ERD:** `docs/erd.png` (optional)
 

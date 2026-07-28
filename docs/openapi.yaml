@@ -6,7 +6,7 @@ info:
     Read-only fundamentals API backed by SQLite (EF Core). Sources ingested from FMP `/stable`.
     TTM metrics are derived from the **last 4 stored quarters** (no external calls).
 servers:
-  - url: http://localhost:5179
+  - url: http://localhost:5046
     description: Local Dev
 paths:
   /api/health:

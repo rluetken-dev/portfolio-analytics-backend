@@ -128,7 +128,7 @@
   "variable": [
     {
       "key": "baseUrl",
-      "value": "http://localhost:5179"
+      "value": "http://localhost:5046"
     },
     {
       "key": "symbol",
