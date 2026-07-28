@@ -178,7 +178,9 @@ builder.Services.AddCors(options =>
 // ---------------------------------------------------------------
 
 // --- JWT Authentication ---
-var secretKey = "my_ultra_secure_secret_key_1234567890!@#$"; // gleiche wie in JwtService
+var secretKey = builder.Configuration["Jwt:Secret"]
+    ?? throw new InvalidOperationException("JWT secret is not configured.");
+
 var key = Encoding.UTF8.GetBytes(secretKey);
 
 builder.Services.AddAuthentication(options =>
@@ -206,6 +208,7 @@ builder.Services.AddAuthorization(options =>
 });
 
 // Domain services
+builder.Services.AddScoped<JwtService>();
 builder.Services.AddScoped<IncomeIngestService>();
 builder.Services.AddScoped<BalanceSheetIngestService>();
 builder.Services.AddScoped<CashFlowIngestService>();

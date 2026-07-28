@@ -20,6 +20,7 @@ git clone https://github.com/rluetken-dev/portfolio-analytics-backend.git
 cd portfolio-analytics-backend/Portfolio.Api
 
 # Set API key (once)
+dotnet user-secrets set "Jwt:Secret" "<your_local_jwt_secret>"
 dotnet user-secrets set "Fmp:ApiKey" "<your_api_key>"
 dotnet user-secrets set "AlphaVantage:ApiKey" "<your_av_api_key>"   # optional
 
@@ -28,21 +29,18 @@ dotnet run
 ```
 
 The API will be available at  
-👉 [http://localhost:5179](http://localhost:5179)
+👉 [http://localhost:5046](http://localhost:5046)
 
 ---
 
 ## 📖 Documentation
 
-- [Detailed project documentation](docs/README.md)  
-- [OpenAPI Spec](docs/openapi.yaml)  
-- [Postman Collection](docs/portfolio_analytics_postman_collection.json)  
-- [Commit Conventions](docs/COMMITS.md)  
-
----
-
-## 📚 API Endpoints
-A full overview of all analytics endpoints can be found in [docs/analytics-endpoints.md](docs/analytics-endpoints.md).
+- **Detailed project documentation**: [docs/README.md](./docs/README.md)
+- **OpenAPI specification**: [docs/openapi.yaml](./docs/openapi.yaml)
+- **Swagger UI**: [http://localhost:5046/swagger](http://localhost:5046/swagger)
+- **Analytics endpoints overview**: [docs/analytics-endpoints.md](./docs/analytics-endpoints.md)
+- **Postman collection**: [docs/portfolio_analytics_postman_collection.json](./docs/portfolio_analytics_postman_collection.json)
+- **Commit conventions**: [docs/COMMITS.md](./docs/COMMITS.md)
 
 ---
 
@@ -56,14 +54,6 @@ portfolio-analytics-backend/
 ├─ .gitignore
 └─ README.md          # Project overview & quickstart
 ```
-
-## 📖 Documentation
-
-- **Detailed project documentation**: [README.md](./docs/README.md)
-- **OpenAPI / Swagger UI**: http://localhost:5179/swagger
-- **Analytics endpoints (overview)**: [docs/analytics-endpoints.md](./docs/analytics-endpoints.md)
-- **Postman collection**: [docs/postman/collection.json](./docs/postman/collection.json)
-- **Commit conventions**: [Conventional Commits](https://www.conventionalcommits.org/)
 
 ---
 

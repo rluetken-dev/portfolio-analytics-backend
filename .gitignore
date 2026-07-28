@@ -3,5 +3,6 @@ obj/
 *.db
 *.sqlite
 .vscode/
+.vs/
 .DS_Store
 Thumbs.db

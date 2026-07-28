@@ -21,9 +21,10 @@ jobs:
             8.0.x
 
       - name: Restore
-        working-directory: Portfolio.Api
-        run: dotnet restore
+        run: dotnet restore portfolio-analytics-backend.sln
 
       - name: Build (Release)
-        working-directory: Portfolio.Api
-        run: dotnet build --configuration Release --no-restore
+        run: dotnet build portfolio-analytics-backend.sln --configuration Release --no-restore
+        
+      - name: Test (Release)
+        run: dotnet test portfolio-analytics-backend.sln --configuration Release --no-build

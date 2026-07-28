@@ -15,10 +15,12 @@ namespace Portfolio.Api.Controllers
     public class UserController : ControllerBase
     {
         private readonly AppDbContext _context;
+        private readonly JwtService _jwtService;
 
-        public UserController(AppDbContext context)
+        public UserController(AppDbContext context, JwtService jwtService)
         {
             _context = context;
+            _jwtService = jwtService;
         }
 
         /// <summary>
@@ -57,7 +59,7 @@ namespace Portfolio.Api.Controllers
             await _context.SaveChangesAsync();
 
             // Generate JWT access token
-            var accessToken = JwtService.GenerateToken(user);
+            var accessToken = _jwtService.GenerateToken(user);
 
             // Generate and save refresh token
             var refreshToken = await RefreshTokenService.GenerateAndSaveAsync(user, _context);
@@ -116,7 +118,7 @@ namespace Portfolio.Api.Controllers
             }
 
             // Generate JWT access token
-            var accessToken = JwtService.GenerateToken(user);
+            var accessToken = _jwtService.GenerateToken(user);
 
             // Generate and save refresh token
             var refreshToken = await RefreshTokenService.GenerateAndSaveAsync(user, _context);
@@ -235,7 +237,7 @@ namespace Portfolio.Api.Controllers
             }
 
             // Generate new access token
-            var newAccessToken = JwtService.GenerateToken(storedToken.User);
+            var newAccessToken = _jwtService.GenerateToken(storedToken.User);
 
             // Optional: rolling refresh → revoke old + set new cookie
             storedToken.RevokedAt = DateTime.UtcNow;
