@@ -19,7 +19,8 @@ Data source: Financial Modeling Prep (**FMP `/stable`**).
 git clone https://github.com/rluetken-dev/portfolio-analytics-backend.git
 cd portfolio-analytics-backend/Portfolio.Api
 
-# Set API key (once)
+# Set local secrets once
+# FMP is required for live financial data; Alpha Vantage is optional.
 dotnet user-secrets set "Jwt:Secret" "<your_local_jwt_secret>"
 dotnet user-secrets set "Fmp:ApiKey" "<your_api_key>"
 dotnet user-secrets set "AlphaVantage:ApiKey" "<your_av_api_key>"   # optional
