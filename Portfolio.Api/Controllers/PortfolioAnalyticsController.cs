@@ -8,13 +8,12 @@ using Swashbuckle.AspNetCore.Annotations;
 namespace Portfolio.Api.Controllers;
 
 /// <summary>
-/// Provides aggregated portfolio-level analytics for the authenticated user.
-/// Combines cash balance, holdings value, and total portfolio overview.
+/// Provides portfolio-level analytics for the authenticated user.
 /// </summary>
 [ApiController]
 [Route("api/[controller]")]
 [Authorize]
-public class PortfolioAnalyticsController : ControllerBase
+public sealed class PortfolioAnalyticsController : ControllerBase
 {
     private readonly PortfolioAnalyticsService _portfolioService;
     private readonly ILogger<PortfolioAnalyticsController> _logger;
@@ -28,89 +27,103 @@ public class PortfolioAnalyticsController : ControllerBase
     }
 
     /// <summary>
-    /// Returns a summarized portfolio view for the currently authenticated user.
+    /// Returns a portfolio summary for the currently authenticated user.
     /// </summary>
     /// <remarks>
-    /// Example:
-    /// <br/>GET <c>/api/PortfolioAnalytics/summary</c>
-    /// <br/><br/>
-    /// The response includes:
-    /// <br/>• Cash balance (USD)
-    /// <br/>• Portfolio value (USD)
-    /// <br/>• Combined total value
-    /// <br/>• Holdings list (symbol, name, shares, etc.)
+    /// The response includes cash balance, portfolio value, total value, and holdings.
     /// </remarks>
     [HttpGet("summary")]
     [Produces("application/json")]
     [SwaggerOperation(
-        Summary = "Get aggregated portfolio summary",
-        Description = "Returns cash balance, portfolio value, and detailed holdings for the logged-in user.")]
+        Summary = "Get portfolio summary",
+        Description = "Returns cash balance, portfolio value, total value, and holdings for the logged-in user.")]
     [ProducesResponseType(typeof(PortfolioSummaryDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
     public async Task<ActionResult<PortfolioSummaryDto>> GetPortfolioSummary()
     {
+        if (!TryGetCurrentUserId(out int userId))
+        {
+            return Unauthorized(new ProblemDetails
+            {
+                Status = StatusCodes.Status401Unauthorized,
+                Title = "Unauthorized",
+                Detail = "Invalid or missing user ID claim."
+            });
+        }
+
         try
         {
-            // --- Extract userId from JWT ---
-            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-            if (string.IsNullOrEmpty(userIdClaim) || !int.TryParse(userIdClaim, out var userId))
-                return Unauthorized(new ProblemDetails
-                {
-                    Status = 401,
-                    Title = "Unauthorized",
-                    Detail = "Invalid or missing user ID claim."
-                });
+            PortfolioSummaryDto? summary = await _portfolioService.GetPortfolioSummaryAsync(userId);
 
-            // --- Delegate to service ---
-            var summary = await _portfolioService.GetPortfolioSummaryAsync(userId);
             if (summary == null)
+            {
                 return NotFound(new ProblemDetails
                 {
-                    Status = 404,
+                    Status = StatusCodes.Status404NotFound,
                     Title = "User not found",
                     Detail = $"No portfolio data found for user ID {userId}."
                 });
+            }
 
             return Ok(summary);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error retrieving portfolio summary.");
-            return StatusCode(500, new ProblemDetails
-            {
-                Status = 500,
-                Title = "Internal Server Error",
-                Detail = "An unexpected error occurred while processing the request."
-            });
+            _logger.LogError(ex, "Error retrieving portfolio summary for user {UserId}", userId);
+
+            return Problem(
+                title: "Portfolio summary failed",
+                detail: "An unexpected error occurred while processing the request.",
+                statusCode: StatusCodes.Status500InternalServerError);
         }
     }
 
     /// <summary>
-    /// Returns all recorded buy/sell transactions for the authenticated user.
+    /// Returns all recorded buy and sell transactions for the authenticated user.
     /// </summary>
-    /// <remarks>
-    /// Example:
-    /// <br/>GET <c>/api/PortfolioAnalytics/transactions</c>
-    /// <br/><br/>
-    /// Returns the user's complete transaction history with ticker info.
-    /// </remarks>
     [HttpGet("transactions")]
     [Produces("application/json")]
     [SwaggerOperation(
-        Summary = "Get all transactions for current user",
-        Description = "Returns the full buy/sell history for the logged-in user with ticker info.")]
+        Summary = "Get transactions",
+        Description = "Returns the full buy and sell transaction history for the logged-in user.")]
     [ProducesResponseType(typeof(List<TransactionDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
     public async Task<ActionResult<List<TransactionDto>>> GetTransactions()
     {
-        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        if (string.IsNullOrEmpty(userIdClaim) || !int.TryParse(userIdClaim, out var userId))
-            return Unauthorized();
+        if (!TryGetCurrentUserId(out int userId))
+        {
+            return Unauthorized(new ProblemDetails
+            {
+                Status = StatusCodes.Status401Unauthorized,
+                Title = "Unauthorized",
+                Detail = "Invalid or missing user ID claim."
+            });
+        }
 
-        var transactions = await _portfolioService.GetTransactionsAsync(userId);
-        return Ok(transactions);
+        try
+        {
+            List<TransactionDto> transactions = await _portfolioService.GetTransactionsAsync(userId);
+
+            return Ok(transactions);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error retrieving transactions for user {UserId}", userId);
+
+            return Problem(
+                title: "Transactions query failed",
+                detail: "An unexpected error occurred while processing the request.",
+                statusCode: StatusCodes.Status500InternalServerError);
+        }
     }
 
+    private bool TryGetCurrentUserId(out int userId)
+    {
+        string? userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+
+        return int.TryParse(userIdClaim, out userId);
+    }
 }

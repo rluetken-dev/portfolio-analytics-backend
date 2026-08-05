@@ -1,42 +1,33 @@
 namespace Portfolio.Api.Models;
 
 /// <summary>
-/// Represents a stock ticker (e.g., AAPL, MSFT).
-/// Each ticker can have many historical price records.
+/// Represents a tradable instrument such as a stock or ETF.
 /// </summary>
-public class Ticker
+public sealed class Ticker
 {
     public int Id { get; set; }
 
     /// <summary>
-    /// The stock symbol, e.g. "AAPL".
+    /// Ticker symbol, for example AAPL.
     /// </summary>
-    public string Symbol { get; set; } = default!;
+    public string Symbol { get; set; } = string.Empty;
 
     /// <summary>
-    /// Optional display name, e.g. "Apple Inc."
+    /// Display name, for example Apple Inc.
     /// </summary>
     public string? Name { get; set; }
 
     /// <summary>
-    /// Optional sector, e.g. "Technology".
-    /// Will be populated from an external API (e.g., FMP) during ingest.
+    /// Sector classification.
     /// </summary>
     public string? Sector { get; set; }
 
     /// <summary>
-    /// Timestamp of the most recent successful price data refresh (quotes).
-    /// Used by the frontend to detect outdated price series.
+    /// UTC timestamp of the most recent successful price refresh.
     /// </summary>
     public DateTime? LastPriceUpdate { get; set; }
 
-    /// <summary>
-    /// Navigation property to all related price records.
-    /// </summary>
     public ICollection<Price> Prices { get; set; } = new List<Price>();
 
-    /// <summary>
-    /// All user-company relationships referencing this ticker.
-    /// </summary>
     public ICollection<UserCompany> UserCompanies { get; set; } = new List<UserCompany>();
 }

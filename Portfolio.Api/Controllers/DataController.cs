@@ -1,247 +1,258 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Portfolio.Api.Data;
+using Portfolio.Api.Data.Entities;
 
-namespace Portfolio.Api.Controllers
+namespace Portfolio.Api.Controllers;
+
+/// <summary>
+/// Provides read-only endpoints for inspecting stored financial data.
+/// </summary>
+[ApiController]
+[Route("api/data")]
+public sealed class DataController : ControllerBase
 {
-    /// <summary>
-    /// Read-only endpoints to inspect stored data (SQL).
-    /// </summary>
-    [ApiController]
-    [Route("api/data")]
-    public class DataController : ControllerBase
+    private const int MinLimit = 1;
+    private const int MaxLimit = 100;
+
+    private readonly AppDbContext _db;
+
+    public DataController(AppDbContext db)
     {
-        private readonly AppDbContext _db;
-        public DataController(AppDbContext db) => _db = db;
+        _db = db;
+    }
 
-        /// <summary>
-        /// Returns stored income statements from SQL (newest first).
-        /// Example: GET /api/data/income/{symbol}?period=annual&amp;limit=5
-        /// </summary>
-        /// <param name="symbol">Ticker, e.g., "AAPL".</param>
-        /// <param name="period">"annual" or "quarter".</param>
-        /// <param name="limit">Max rows to return (1–100).</param>
-        /// <param name="ct">Cancellation token.</param>
-        /// <returns>Envelope with Symbol, Period, Count, Items.</returns>
-        /// <response code="200">Success.</response>
-        [HttpGet("income/{symbol}")]
-        public async Task<IActionResult> GetIncome(
-            string symbol,
-            string period = "annual",
-            int limit = 10,
-            CancellationToken ct = default)
+    /// <summary>
+    /// Returns stored income statements, newest first.
+    /// </summary>
+    /// <param name="symbol">Ticker symbol, for example AAPL.</param>
+    /// <param name="period">Statement frequency: annual or quarter.</param>
+    /// <param name="limit">Maximum number of rows to return, clamped to 1-100.</param>
+    /// <param name="ct">Cancellation token for the request.</param>
+    /// <response code="200">Returns stored income statements.</response>
+    [HttpGet("income/{symbol}")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetIncome(
+        string symbol,
+        string period = "annual",
+        int limit = 10,
+        CancellationToken ct = default)
+    {
+        string normalizedSymbol = NormalizeSymbol(symbol);
+        string normalizedPeriod = NormalizePeriod(period);
+        int normalizedLimit = NormalizeLimit(limit);
+
+        var items = await _db.IncomeStatements
+            .Where(statement => statement.Symbol == normalizedSymbol && statement.Frequency == normalizedPeriod)
+            .OrderByDescending(statement => statement.Date)
+            .Take(normalizedLimit)
+            .ToListAsync(ct);
+
+        return Ok(new
         {
-            // WHY: Keep params safe and results predictable.
-            var sym = symbol.ToUpperInvariant();
-            limit = Math.Clamp(limit, 1, 100);
+            Symbol = normalizedSymbol,
+            Period = normalizedPeriod,
+            Count = items.Count,
+            Items = items
+        });
+    }
 
-            var items = await _db.IncomeStatements
-                .Where(x => x.Symbol == sym && x.Frequency == period)
-                .OrderByDescending(x => x.Date)
-                .Take(limit)
-                .ToListAsync(ct);
+    /// <summary>
+    /// Returns stored balance sheet rows, newest first.
+    /// </summary>
+    /// <param name="symbol">Ticker symbol, for example AAPL.</param>
+    /// <param name="period">Statement frequency: annual or quarter.</param>
+    /// <param name="limit">Maximum number of rows to return, clamped to 1-100.</param>
+    /// <param name="ct">Cancellation token for the request.</param>
+    /// <response code="200">Returns stored balance sheet rows.</response>
+    [HttpGet("balance/{symbol}")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetBalance(
+        string symbol,
+        string period = "annual",
+        int limit = 10,
+        CancellationToken ct = default)
+    {
+        string normalizedSymbol = NormalizeSymbol(symbol);
+        string normalizedPeriod = NormalizePeriod(period);
+        int normalizedLimit = NormalizeLimit(limit);
 
-            return Ok(new
-            {
-                Symbol = sym,
-                Period = period,
-                Count = items.Count,
-                Items = items
-            });
-        }
+        var items = await _db.BalanceSheets
+            .Where(statement => statement.Symbol == normalizedSymbol && statement.Frequency == normalizedPeriod)
+            .OrderByDescending(statement => statement.Date)
+            .Take(normalizedLimit)
+            .ToListAsync(ct);
 
-        /// <summary>
-        /// Returns stored balance sheet rows from SQL (newest first).
-        /// Example: GET /api/data/balance/{symbol}?period=annual&amp;limit=5
-        /// </summary>
-        /// <param name="symbol">Ticker, e.g., "AAPL".</param>
-        /// <param name="period">"annual" or "quarter".</param>
-        /// <param name="limit">Max rows to return (1–100).</param>
-        /// <param name="ct">Cancellation token.</param>
-        /// <returns>Envelope with Symbol, Period, Count, Items.</returns>
-        /// <response code="200">Success.</response>
-        [HttpGet("balance/{symbol}")]
-        public async Task<IActionResult> GetBalance(
-            string symbol,
-            string period = "annual",
-            int limit = 10,
-            CancellationToken ct = default)
+        return Ok(new
         {
-            var sym = symbol.ToUpperInvariant();             // WHY: canonical casing
-            limit = Math.Clamp(limit, 1, 100);               // WHY: defensive cap
+            Symbol = normalizedSymbol,
+            Period = normalizedPeriod,
+            Count = items.Count,
+            Items = items
+        });
+    }
 
-            var items = await _db.BalanceSheets
-                .Where(x => x.Symbol == sym && x.Frequency == period)
-                .OrderByDescending(x => x.Date)
-                .Take(limit)
-                .ToListAsync(ct);
+    /// <summary>
+    /// Returns stored cash flow rows, newest first.
+    /// </summary>
+    /// <param name="symbol">Ticker symbol, for example AAPL.</param>
+    /// <param name="period">Statement frequency: annual or quarter.</param>
+    /// <param name="limit">Maximum number of rows to return, clamped to 1-100.</param>
+    /// <param name="ct">Cancellation token for the request.</param>
+    /// <response code="200">Returns stored cash flow rows.</response>
+    [HttpGet("cash/{symbol}")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetCash(
+        string symbol,
+        string period = "annual",
+        int limit = 10,
+        CancellationToken ct = default)
+    {
+        string normalizedSymbol = NormalizeSymbol(symbol);
+        string normalizedPeriod = NormalizePeriod(period);
+        int normalizedLimit = NormalizeLimit(limit);
 
-            return Ok(new
-            {
-                Symbol = sym,
-                Period = period,
-                Count = items.Count,
-                Items = items
-            });
-        }
+        var items = await _db.CashFlows
+            .Where(statement => statement.Symbol == normalizedSymbol && statement.Frequency == normalizedPeriod)
+            .OrderByDescending(statement => statement.Date)
+            .Take(normalizedLimit)
+            .ToListAsync(ct);
 
-        /// <summary>
-        /// Returns stored cash flow rows from SQL (newest first).
-        /// Example: GET /api/data/cash/{symbol}?period=annual&amp;limit=5
-        /// </summary>
-        /// <param name="symbol">Ticker, e.g., "AAPL".</param>
-        /// <param name="period">"annual" or "quarter".</param>
-        /// <param name="limit">Max rows to return (1–100).</param>
-        /// <param name="ct">Cancellation token.</param>
-        /// <returns>Envelope with Symbol, Period, Count, Items.</returns>
-        /// <response code="200">Success.</response>
-        [HttpGet("cash/{symbol}")]
-        public async Task<IActionResult> GetCash(
-            string symbol,
-            string period = "annual",
-            int limit = 10,
-            CancellationToken ct = default)
+        return Ok(new
         {
-            // WHY: Keep parameters safe and results predictable.
-            var sym = symbol.ToUpperInvariant();
-            limit = Math.Clamp(limit, 1, 100);
+            Symbol = normalizedSymbol,
+            Period = normalizedPeriod,
+            Count = items.Count,
+            Items = items
+        });
+    }
 
-            var items = await _db.CashFlows
-                .Where(x => x.Symbol == sym && x.Frequency == period)
-                .OrderByDescending(x => x.Date)
-                .Take(limit)
-                .ToListAsync(ct);
+    /// <summary>
+    /// Returns trailing twelve months metrics from stored quarterly rows.
+    /// </summary>
+    /// <param name="symbol">Ticker symbol, for example AAPL.</param>
+    /// <param name="ct">Cancellation token for the request.</param>
+    /// <response code="200">Returns TTM sums when complete quarterly data exists.</response>
+    [HttpGet("ttm/{symbol}")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetTtm(string symbol, CancellationToken ct = default)
+    {
+        string normalizedSymbol = NormalizeSymbol(symbol);
 
-            return Ok(new
-            {
-                Symbol = sym,
-                Period = period,
-                Count = items.Count,
-                Items = items
-            });
-        }
+        var incomeRows = await GetLatestQuarterlyIncomeRowsAsync(normalizedSymbol, ct);
+        var cashFlowRows = await GetLatestQuarterlyCashFlowRowsAsync(normalizedSymbol, ct);
 
-        /// <summary>
-        /// Returns TTM metrics (from stored quarterly rows) without calling external APIs.
-        /// Example: GET /api/data/ttm/{symbol}
-        /// </summary>
-        /// <param name="symbol">Ticker, e.g., "AAPL".</param>
-        /// <param name="ct">Cancellation token.</param>
-        /// <returns>Envelope with TTM sums (Revenue, NetIncome, FreeCashFlow) if 4 complete quarters exist.</returns>
-        /// <response code="200">Success.</response>
-        [HttpGet("ttm/{symbol}")]
-        public async Task<IActionResult> GetTtm(string symbol, CancellationToken ct = default)
+        long? ttmRevenue = SumIfComplete(incomeRows.Select(row => row.Revenue).ToList());
+        long? ttmNetIncome = SumIfComplete(incomeRows.Select(row => row.NetIncome).ToList());
+        long? ttmFreeCashFlow = SumIfComplete(cashFlowRows.Select(row => row.FreeCashFlow).ToList());
+
+        return Ok(new
         {
-            var sym = symbol.ToUpperInvariant();
+            Symbol = normalizedSymbol,
+            Period = "quarter",
+            Has4IncomeQuarters = incomeRows.Count == 4,
+            Has4CashQuarters = cashFlowRows.Count == 4,
+            Currency = GetSingleCurrencyOrNull(incomeRows),
+            RevenueTtm = ttmRevenue,
+            NetIncomeTtm = ttmNetIncome,
+            FreeCashFlowTtm = ttmFreeCashFlow,
+            QuartersIncome = incomeRows.Select(row => row.Date).ToList(),
+            QuartersCash = cashFlowRows.Select(row => row.Date).ToList()
+        });
+    }
 
-            // Pull last 4 quarterly income rows (newest first)
-            var incomeQ = await _db.IncomeStatements
-                .Where(x => x.Symbol == sym && x.Frequency == "quarter")
-                .OrderByDescending(x => x.Date)
-                .Take(4)
-                .ToListAsync(ct);
+    /// <summary>
+    /// Returns trailing twelve months ratios from stored quarterly rows.
+    /// </summary>
+    /// <param name="symbol">Ticker symbol, for example AAPL.</param>
+    /// <param name="ct">Cancellation token for the request.</param>
+    /// <response code="200">Returns TTM sums and margins when complete quarterly data exists.</response>
+    [HttpGet("ttm/{symbol}/ratios")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetTtmRatios(string symbol, CancellationToken ct = default)
+    {
+        string normalizedSymbol = NormalizeSymbol(symbol);
 
-            // Pull last 4 quarterly cash-flow rows (newest first)
-            var cashQ = await _db.CashFlows
-                .Where(x => x.Symbol == sym && x.Frequency == "quarter")
-                .OrderByDescending(x => x.Date)
-                .Take(4)
-                .ToListAsync(ct);
+        var incomeRows = await GetLatestQuarterlyIncomeRowsAsync(normalizedSymbol, ct);
+        var cashFlowRows = await GetLatestQuarterlyCashFlowRowsAsync(normalizedSymbol, ct);
 
-            // Helper: sum only if all 4 values are present (avoid half-baked TTM)
-            static long? SumIfComplete(IList<long?> xs)
-                => xs.Count == 4 && xs.All(v => v.HasValue) ? xs.Sum(v => v!.Value) : (long?)null;
+        long? ttmRevenue = SumIfComplete(incomeRows.Select(row => row.Revenue).ToList());
+        long? ttmNetIncome = SumIfComplete(incomeRows.Select(row => row.NetIncome).ToList());
+        long? ttmFreeCashFlow = SumIfComplete(cashFlowRows.Select(row => row.FreeCashFlow).ToList());
 
-            // Collect values for TTM
-            var revValues = incomeQ.Select(x => x.Revenue).ToList();
-            var netIncomeValues = incomeQ.Select(x => x.NetIncome).ToList();
-            var fcfValues = cashQ.Select(x => x.FreeCashFlow).ToList();
-
-            var ttmRevenue = SumIfComplete(revValues);
-            var ttmNetIncome = SumIfComplete(netIncomeValues);
-            var ttmFreeCashFlow = SumIfComplete(fcfValues);
-
-            // Pick a currency if all quarters agree; otherwise null
-            string? currency = null;
-            var currencies = incomeQ.Select(x => x.ReportedCurrency).Where(c => !string.IsNullOrWhiteSpace(c)).Distinct().ToList();
-            if (currencies.Count == 1) currency = currencies[0];
-
-            return Ok(new
-            {
-                Symbol = sym,
-                Period = "quarter",
-                Has4IncomeQuarters = incomeQ.Count == 4,
-                Has4CashQuarters = cashQ.Count == 4,
-                Currency = currency,
-                RevenueTtm = ttmRevenue,
-                NetIncomeTtm = ttmNetIncome,
-                FreeCashFlowTtm = ttmFreeCashFlow,
-                QuartersIncome = incomeQ.Select(x => x.Date).ToList(),
-                QuartersCash = cashQ.Select(x => x.Date).ToList()
-            });
-        }
-
-        /// <summary>
-        /// Returns TTM ratios computed from stored quarterly rows (no external calls).
-        /// Example: GET /api/data/ttm/{symbol}/ratios
-        /// </summary>
-        /// <param name="symbol">Ticker, e.g., "AAPL".</param>
-        /// <param name="ct">Cancellation token.</param>
-        /// <returns>Envelope with TTM sums and margins (Net/FCF).</returns>
-        /// <response code="200">Success.</response>
-        [HttpGet("ttm/{symbol}/ratios")]
-        public async Task<IActionResult> GetTtmRatios(string symbol, CancellationToken ct = default)
+        return Ok(new
         {
-            var sym = symbol.ToUpperInvariant();
+            Symbol = normalizedSymbol,
+            Has4IncomeQuarters = incomeRows.Count == 4,
+            Has4CashQuarters = cashFlowRows.Count == 4,
+            Currency = GetSingleCurrencyOrNull(incomeRows),
+            RevenueTtm = ttmRevenue,
+            NetIncomeTtm = ttmNetIncome,
+            FreeCashFlowTtm = ttmFreeCashFlow,
+            NetMarginTtm = DivideOrNull(ttmNetIncome, ttmRevenue),
+            FcfMarginTtm = DivideOrNull(ttmFreeCashFlow, ttmRevenue)
+        });
+    }
 
-            // Pull last 4 quarterly rows for income & cash (newest first)
-            var incomeQ = await _db.IncomeStatements
-                .Where(x => x.Symbol == sym && x.Frequency == "quarter")
-                .OrderByDescending(x => x.Date)
-                .Take(4)
-                .ToListAsync(ct);
+    private Task<List<IncomeStatementEntity>> GetLatestQuarterlyIncomeRowsAsync(
+        string symbol,
+        CancellationToken ct)
+    {
+        return _db.IncomeStatements
+            .Where(statement => statement.Symbol == symbol && statement.Frequency == "quarter")
+            .OrderByDescending(statement => statement.Date)
+            .Take(4)
+            .ToListAsync(ct);
+    }
 
-            var cashQ = await _db.CashFlows
-                .Where(x => x.Symbol == sym && x.Frequency == "quarter")
-                .OrderByDescending(x => x.Date)
-                .Take(4)
-                .ToListAsync(ct);
+    private Task<List<CashFlowEntity>> GetLatestQuarterlyCashFlowRowsAsync(
+        string symbol,
+        CancellationToken ct)
+    {
+        return _db.CashFlows
+            .Where(statement => statement.Symbol == symbol && statement.Frequency == "quarter")
+            .OrderByDescending(statement => statement.Date)
+            .Take(4)
+            .ToListAsync(ct);
+    }
 
-            // Helper: sum only if all 4 values are present
-            static long? SumIfComplete(IList<long?> xs)
-                => xs.Count == 4 && xs.All(v => v.HasValue) ? xs.Sum(v => v!.Value) : (long?)null;
+    private static string NormalizeSymbol(string symbol)
+    {
+        return symbol.Trim().ToUpperInvariant();
+    }
 
-            var ttmRevenue = SumIfComplete(incomeQ.Select(x => x.Revenue).ToList());
-            var ttmNetIncome = SumIfComplete(incomeQ.Select(x => x.NetIncome).ToList());
-            var ttmFreeCashFlow = SumIfComplete(cashQ.Select(x => x.FreeCashFlow).ToList());
+    private static string NormalizePeriod(string period)
+    {
+        return period.Trim().ToLowerInvariant();
+    }
 
-            // Compute margins safely (null if missing or division by zero)
-            double? netMarginTtm = (ttmRevenue.HasValue && ttmRevenue.Value != 0 && ttmNetIncome.HasValue)
-                ? (double)ttmNetIncome.Value / (double)ttmRevenue.Value
-                : (double?)null;
+    private static int NormalizeLimit(int limit)
+    {
+        return Math.Clamp(limit, MinLimit, MaxLimit);
+    }
 
-            double? fcfMarginTtm = (ttmRevenue.HasValue && ttmRevenue.Value != 0 && ttmFreeCashFlow.HasValue)
-                ? (double)ttmFreeCashFlow.Value / (double)ttmRevenue.Value
-                : (double?)null;
+    private static long? SumIfComplete(IList<long?> values)
+    {
+        return values.Count == 4 && values.All(value => value.HasValue)
+            ? values.Sum(value => value!.Value)
+            : null;
+    }
 
-            // Pick a currency if all quarters agree
-            string? currency = null;
-            var currencies = incomeQ.Select(x => x.ReportedCurrency).Where(c => !string.IsNullOrWhiteSpace(c)).Distinct().ToList();
-            if (currencies.Count == 1) currency = currencies[0];
+    private static double? DivideOrNull(long? numerator, long? denominator)
+    {
+        return numerator.HasValue && denominator.HasValue && denominator.Value != 0
+            ? (double)numerator.Value / denominator.Value
+            : null;
+    }
 
-            return Ok(new
-            {
-                Symbol = sym,
-                Has4IncomeQuarters = incomeQ.Count == 4,
-                Has4CashQuarters = cashQ.Count == 4,
-                Currency = currency,
-                RevenueTtm = ttmRevenue,
-                NetIncomeTtm = ttmNetIncome,
-                FreeCashFlowTtm = ttmFreeCashFlow,
-                NetMarginTtm = netMarginTtm,   // e.g., 0.24 = 24%
-                FcfMarginTtm = fcfMarginTtm    // e.g., 0.21 = 21%
-            });
-        }
+    private static string? GetSingleCurrencyOrNull(IEnumerable<IncomeStatementEntity> incomeRows)
+    {
+        var currencies = incomeRows
+            .Select(row => row.ReportedCurrency)
+            .Where(currency => !string.IsNullOrWhiteSpace(currency))
+            .Distinct()
+            .ToList();
+
+        return currencies.Count == 1 ? currencies[0] : null;
     }
 }
-

@@ -1,478 +1,520 @@
 using System.ComponentModel.DataAnnotations;
-using Microsoft.AspNetCore.Mvc;
-using Swashbuckle.AspNetCore.Annotations;
-using Portfolio.Api.Services;
+using System.Net.Http.Headers;
 using System.Text.Json;
+using Microsoft.AspNetCore.Mvc;
 using Portfolio.Api.Exceptions;
+using Portfolio.Api.Services;
 using Portfolio.Api.Utils;
+using Swashbuckle.AspNetCore.Annotations;
 
-namespace Portfolio.Api.Controllers
+namespace Portfolio.Api.Controllers;
+
+/// <summary>
+/// Provides fundamentals endpoints backed by external provider clients.
+/// </summary>
+[ApiController]
+[Route("api/fundamentals")]
+public sealed class FundamentalsController : ControllerBase
 {
-    /// <summary>
-    /// Simple fundamentals API (FMP-backed).
-    /// Currently exposes quarterly revenue; easy to extend with more metrics later.
-    /// </summary>
-    [ApiController]
-    [Route("api/fundamentals")]
-    public class FundamentalsController : ControllerBase
+    private const int RevenueLimitMin = 1;
+    private const int RevenueLimitMax = 12;
+    private const int StatementLimitMin = 1;
+    private const int StatementLimitMax = 20;
+    private const int RefreshYearsMin = 1;
+    private const int RefreshYearsMax = 10;
+
+    private readonly FmpClient _fmp;
+    private readonly AlphaVantageClient _alpha;
+    private readonly ILogger<FundamentalsController> _logger;
+
+    public FundamentalsController(
+        FmpClient fmp,
+        AlphaVantageClient alpha,
+        ILogger<FundamentalsController> logger)
     {
-        private readonly FmpClient _fmp;
-        private readonly AlphaVantageClient _alpha;
+        _fmp = fmp;
+        _alpha = alpha;
+        _logger = logger;
+    }
 
-        private readonly ILogger<FundamentalsController> _log;
+    /// <summary>
+    /// Returns quarterly or annual revenue rows for the requested symbol.
+    /// </summary>
+    /// <remarks>
+    /// Tries FMP quarterly data first, then FMP annual data, then Alpha Vantage quarterly data.
+    /// </remarks>
+    [HttpGet("revenue")]
+    [Produces("application/json")]
+    [SwaggerOperation(
+        Summary = "Revenue series",
+        Description = "Tries FMP quarterly first, then FMP annual, then Alpha Vantage quarterly data.")]
+    [ProducesResponseType(typeof(IEnumerable<RevenueDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status503ServiceUnavailable)]
+    public async Task<IActionResult> GetRevenue(
+        [FromQuery, Required] string symbol,
+        [FromQuery] int limit = 8,
+        CancellationToken ct = default)
+    {
+        Guard.BadRequestIf(string.IsNullOrWhiteSpace(symbol), "Symbol required.");
 
-        public FundamentalsController(FmpClient fmp, AlphaVantageClient alpha, ILogger<FundamentalsController> log)
+        string normalizedSymbol = NormalizeSymbol(symbol);
+        int normalizedLimit = Math.Clamp(limit, RevenueLimitMin, RevenueLimitMax);
+
+        var fmpQuarterly = await _fmp.GetQuarterlyRevenueAsync(normalizedSymbol, normalizedLimit, ct);
+        if (fmpQuarterly.Count > 0)
         {
-            _fmp = fmp;
-            _alpha = alpha;
-            _log = log;
+            return Ok(ToRevenueDtos(normalizedSymbol, fmpQuarterly));
         }
 
-        /// <summary>
-        /// Lightweight DTO for revenue rows returned to clients.
-        /// </summary>
-        public record RevenueDto
+        var fmpAnnual = await _fmp.GetAnnualRevenueAsync(normalizedSymbol, normalizedLimit, ct);
+        if (fmpAnnual.Count > 0)
         {
-            /// <summary>Requested ticker symbol (uppercased).</summary>
-            public string Symbol { get; init; } = string.Empty;
-
-            /// <summary>Quarter period end date (as returned by FMP, ISO yyyy-MM-dd).</summary>
-            public DateOnly PeriodEnd { get; init; }
-
-            /// <summary>Revenue for the quarter (reported currency; raw value).</summary>
-            public decimal Revenue { get; init; }
-
-            /// <summary>Reported currency code if provided by FMP (e.g., USD).</summary>
-            public string? Currency { get; init; }
+            return Ok(ToRevenueDtos(normalizedSymbol, fmpAnnual));
         }
 
-        /// <summary>
-        /// Returns quarterly revenue (most recent first) for the given symbol via FMP.
-        /// </summary>
-        /// <remarks>
-        /// Example:
-        /// <br/>GET <c>/api/fundamentals/revenue?symbol=AAPL&amp;limit=8</c>
-        /// </remarks>
-        [HttpGet("revenue")]
-        [Produces("application/json")]
-        [SwaggerOperation(
-     Summary = "Revenue series (FMP quarterly → FMP annual → AV quarterly fallback)",
-     Description = "Tries FMP quarterly first; if unavailable, falls back to FMP annual; if still empty, uses Alpha Vantage INCOME_STATEMENT (quarterlyReports).")]
-        [ProducesResponseType(typeof(IEnumerable<RevenueDto>), StatusCodes.Status200OK)]
-        [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
-        public async Task<IActionResult> GetRevenue(
-     [FromQuery, Required] string symbol,
-     [FromQuery] int limit = 8,
-     CancellationToken ct = default)
+        var alphaVantageRows = await _alpha.GetQuarterlyRevenueAvAsync(normalizedSymbol, normalizedLimit, ct);
+
+        return Ok(ToRevenueDtos(normalizedSymbol, alphaVantageRows));
+    }
+
+    /// <summary>
+    /// Fetches income statement rows from FMP's stable API, newest first.
+    /// </summary>
+    /// <param name="symbol">Ticker symbol, for example AAPL.</param>
+    /// <param name="period">Statement frequency: annual or quarter.</param>
+    /// <param name="limit">Maximum number of rows to return, clamped to 1-20.</param>
+    /// <param name="ct">Cancellation token for the request.</param>
+    /// <response code="200">Returns income statement rows.</response>
+    [HttpGet("{symbol}/income-statement/stable")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status503ServiceUnavailable)]
+    public async Task<IActionResult> GetIncomeStatementStable(
+        string symbol,
+        string period = "annual",
+        int limit = 5,
+        CancellationToken ct = default)
+    {
+        string normalizedSymbol = NormalizeSymbol(symbol);
+        string normalizedPeriod = NormalizePeriod(period);
+        int normalizedLimit = Math.Clamp(limit, StatementLimitMin, StatementLimitMax);
+
+        var rows = await _fmp.GetIncomeStatementStableAsync(
+            normalizedSymbol,
+            normalizedLimit,
+            normalizedPeriod,
+            ct);
+
+        return Ok(new
         {
-            Guard.BadRequestIf(string.IsNullOrWhiteSpace(symbol), "Symbol required.");
+            Symbol = normalizedSymbol,
+            Period = normalizedPeriod,
+            Count = rows?.Count ?? 0,
+            Items = rows
+        });
+    }
 
-            limit = Math.Clamp(limit, 1, 12);
-            var sym = symbol.ToUpperInvariant();
+    /// <summary>
+    /// Returns trailing twelve months key metrics for one symbol from FMP's stable API.
+    /// </summary>
+    /// <param name="symbol">Ticker symbol, for example AAPL.</param>
+    /// <param name="ct">Cancellation token for the request.</param>
+    /// <response code="200">Returns metrics if provider data is available.</response>
+    [HttpGet("{symbol}/metrics/ttm")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status503ServiceUnavailable)]
+    public async Task<IActionResult> GetKeyMetricsTtm(string symbol, CancellationToken ct = default)
+    {
+        string normalizedSymbol = NormalizeSymbol(symbol);
+        var metrics = await _fmp.GetKeyMetricsTtmAsync(normalizedSymbol, ct);
 
-            // 1) Try FMP quarterly
-            var fmpQuarterly = await _fmp.GetQuarterlyRevenueAsync(sym, limit, ct);
-            if (fmpQuarterly.Count > 0)
+        return Ok(new
+        {
+            Symbol = normalizedSymbol,
+            HasData = metrics is not null,
+            Metrics = metrics
+        });
+    }
+
+    /// <summary>
+    /// Fetches balance sheet rows from FMP's stable API, newest first.
+    /// </summary>
+    /// <param name="symbol">Ticker symbol, for example AAPL.</param>
+    /// <param name="period">Statement frequency: annual or quarter.</param>
+    /// <param name="limit">Maximum number of rows to return, clamped to 1-20.</param>
+    /// <param name="ct">Cancellation token for the request.</param>
+    /// <response code="200">Returns balance sheet rows.</response>
+    [HttpGet("{symbol}/balance-sheet/stable")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status503ServiceUnavailable)]
+    public async Task<IActionResult> GetBalanceSheetStable(
+        string symbol,
+        string period = "annual",
+        int limit = 3,
+        CancellationToken ct = default)
+    {
+        string normalizedSymbol = NormalizeSymbol(symbol);
+        string normalizedPeriod = NormalizePeriod(period);
+        int normalizedLimit = Math.Clamp(limit, StatementLimitMin, StatementLimitMax);
+
+        var rows = await _fmp.GetBalanceSheetStableAsync(
+            normalizedSymbol,
+            normalizedLimit,
+            normalizedPeriod,
+            ct);
+
+        return Ok(new
+        {
+            Symbol = normalizedSymbol,
+            Period = normalizedPeriod,
+            Count = rows?.Count ?? 0,
+            Items = rows
+        });
+    }
+
+    /// <summary>
+    /// Fetches cash flow rows from FMP's stable API, newest first.
+    /// </summary>
+    /// <param name="symbol">Ticker symbol, for example AAPL.</param>
+    /// <param name="period">Statement frequency: annual or quarter.</param>
+    /// <param name="limit">Maximum number of rows to return, clamped to 1-20.</param>
+    /// <param name="ct">Cancellation token for the request.</param>
+    /// <response code="200">Returns cash flow rows.</response>
+    [HttpGet("{symbol}/cash-flow/stable")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status503ServiceUnavailable)]
+    public async Task<IActionResult> GetCashFlowStable(
+        string symbol,
+        string period = "annual",
+        int limit = 3,
+        CancellationToken ct = default)
+    {
+        string normalizedSymbol = NormalizeSymbol(symbol);
+        string normalizedPeriod = NormalizePeriod(period);
+        int normalizedLimit = Math.Clamp(limit, StatementLimitMin, StatementLimitMax);
+
+        var rows = await _fmp.GetCashFlowStableAsync(
+            normalizedSymbol,
+            normalizedLimit,
+            normalizedPeriod,
+            ct);
+
+        return Ok(new
+        {
+            Symbol = normalizedSymbol,
+            Period = normalizedPeriod,
+            Count = rows?.Count ?? 0,
+            Items = rows
+        });
+    }
+
+    /// <summary>
+    /// Returns a compact fundamentals snapshot from FMP's stable API.
+    /// </summary>
+    /// <param name="symbol">Ticker symbol, for example AAPL.</param>
+    /// <param name="period">Statement frequency for income, balance, and cash data.</param>
+    /// <param name="limit">Maximum rows per statement, clamped to 1-20.</param>
+    /// <param name="ct">Cancellation token for the request.</param>
+    /// <response code="200">Returns a snapshot. Individual sections may be null if one upstream request fails.</response>
+    [HttpGet("{symbol}/snapshot/stable")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetSnapshotStable(
+        string symbol,
+        string period = "annual",
+        int limit = 3,
+        CancellationToken ct = default)
+    {
+        string normalizedSymbol = NormalizeSymbol(symbol);
+        string normalizedPeriod = NormalizePeriod(period);
+        int normalizedLimit = Math.Clamp(limit, StatementLimitMin, StatementLimitMax);
+
+        List<FmpClient.IncomeStatementStableRow>? income = null;
+        List<FmpClient.BalanceSheetStableRow>? balance = null;
+        List<FmpClient.CashFlowStableRow>? cash = null;
+        FmpClient.KeyMetricsTtm? metrics = null;
+
+        try
+        {
+            income = await _fmp.GetIncomeStatementStableAsync(
+                normalizedSymbol,
+                normalizedLimit,
+                normalizedPeriod,
+                ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Income fetch failed for {Symbol}", normalizedSymbol);
+        }
+
+        try
+        {
+            balance = await _fmp.GetBalanceSheetStableAsync(
+                normalizedSymbol,
+                normalizedLimit,
+                normalizedPeriod,
+                ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Balance fetch failed for {Symbol}", normalizedSymbol);
+        }
+
+        try
+        {
+            cash = await _fmp.GetCashFlowStableAsync(
+                normalizedSymbol,
+                normalizedLimit,
+                normalizedPeriod,
+                ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Cash flow fetch failed for {Symbol}", normalizedSymbol);
+        }
+
+        try
+        {
+            metrics = await _fmp.GetKeyMetricsTtmAsync(normalizedSymbol, ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Metrics fetch failed for {Symbol}", normalizedSymbol);
+        }
+
+        return Ok(new
+        {
+            Symbol = normalizedSymbol,
+            Period = normalizedPeriod,
+            Income = income,
+            Balance = balance,
+            Cash = cash,
+            Metrics = metrics
+        });
+    }
+
+    /// <summary>
+    /// Fetches and stores fundamentals for a symbol by calling the ingest endpoints.
+    /// </summary>
+    [HttpPost("refresh")]
+    [Produces("application/json")]
+    [SwaggerOperation(
+        Summary = "Fetch and store fundamentals",
+        Description = "Calls income, balance, and cash-flow ingest endpoints and returns inserted/skipped counters.")]
+    [ProducesResponseType(typeof(FundamentalsRefreshResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status502BadGateway)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status503ServiceUnavailable)]
+    public async Task<IActionResult> RefreshFundamentals(
+        [FromQuery, Required] string symbol,
+        [FromQuery] string period = "annual",
+        [FromQuery] int years = 5,
+        [FromServices] IHttpClientFactory? httpFactory = null,
+        CancellationToken ct = default)
+    {
+        Guard.BadRequestIf(string.IsNullOrWhiteSpace(symbol), "Symbol required.");
+
+        string normalizedSymbol = NormalizeSymbol(symbol);
+
+        string normalizedPeriod = NormalizePeriod(period);
+        if (normalizedPeriod != "annual" && normalizedPeriod != "quarter")
+        {
+            throw new BadRequestException("Period must be 'annual' or 'quarter'.");
+        }
+
+        int normalizedYears = Math.Clamp(years, RefreshYearsMin, RefreshYearsMax);
+        int limit = Math.Max(1, normalizedYears);
+
+        using HttpClient? fallbackClient = httpFactory is null ? CreateFallbackLocalClient() : null;
+        HttpClient http = httpFactory?.CreateClient("self") ?? fallbackClient!;
+
+        AddJsonAcceptHeader(http);
+
+        var income = await TryHitIngestAsync(
+            http,
+            $"/api/ingest/income/{Uri.EscapeDataString(normalizedSymbol)}?period={normalizedPeriod}&limit={limit}",
+            "Income",
+            normalizedSymbol,
+            ct);
+
+        var balance = await TryHitIngestAsync(
+            http,
+            $"/api/ingest/balance/{Uri.EscapeDataString(normalizedSymbol)}?period={normalizedPeriod}&limit={limit}",
+            "Balance",
+            normalizedSymbol,
+            ct);
+
+        var cash = await TryHitIngestAsync(
+            http,
+            $"/api/ingest/cash/{Uri.EscapeDataString(normalizedSymbol)}?period={normalizedPeriod}&limit={limit}",
+            "Cash flow",
+            normalizedSymbol,
+            ct);
+
+        return Ok(new FundamentalsRefreshResponse(
+            Ok: true,
+            Symbol: normalizedSymbol,
+            Period: normalizedPeriod,
+            Years: normalizedYears,
+            Inserted: new FundamentalsCounters(income.Inserted, balance.Inserted, cash.Inserted),
+            Skipped: new FundamentalsCounters(income.Skipped, balance.Skipped, cash.Skipped)));
+    }
+
+    public sealed record RevenueDto
+    {
+        public string Symbol { get; init; } = string.Empty;
+        public DateOnly PeriodEnd { get; init; }
+        public decimal Revenue { get; init; }
+        public string? Currency { get; init; }
+    }
+
+    public sealed record FundamentalsCounters(int Income, int Balance, int Cash);
+
+    public sealed record FundamentalsRefreshResponse(
+        bool Ok,
+        string Symbol,
+        string Period,
+        int Years,
+        FundamentalsCounters Inserted,
+        FundamentalsCounters Skipped);
+
+    private sealed record IngestCounters(int Inserted, int Skipped);
+
+    private async Task<IngestCounters> TryHitIngestAsync(
+        HttpClient http,
+        string path,
+        string sectionName,
+        string symbol,
+        CancellationToken ct)
+    {
+        try
+        {
+            return await HitIngestAsync(http, path, ct);
+        }
+        catch (HttpRequestException ex) when (IsPlanLimited(ex.Message))
+        {
+            _logger.LogInformation("{Section} ingest skipped due to provider plan limits for {Symbol}", sectionName, symbol);
+            return new IngestCounters(Inserted: 0, Skipped: 0);
+        }
+        catch (HttpRequestException ex)
+        {
+            _logger.LogWarning(ex, "{Section} ingest failed for {Symbol}", sectionName, symbol);
+            return new IngestCounters(Inserted: 0, Skipped: 0);
+        }
+    }
+
+    private static async Task<IngestCounters> HitIngestAsync(
+        HttpClient http,
+        string path,
+        CancellationToken ct)
+    {
+        using HttpResponseMessage response = await http.GetAsync(path, ct);
+        string raw = await response.Content.ReadAsStringAsync(ct);
+
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new HttpRequestException(
+                $"HTTP {(int)response.StatusCode} {response.ReasonPhrase} on {path}: {raw}");
+        }
+
+        try
+        {
+            using JsonDocument document = JsonDocument.Parse(raw);
+            JsonElement root = document.RootElement;
+
+            return new IngestCounters(
+                Inserted: ReadCounter(root, "upserted", "inserted"),
+                Skipped: ReadCounter(root, "skipped"));
+        }
+        catch (JsonException ex)
+        {
+            throw new HttpRequestException($"HTTP 200 but invalid JSON on {path}: {raw}", ex);
+        }
+    }
+
+    private static int ReadCounter(JsonElement root, params string[] names)
+    {
+        foreach (string name in names)
+        {
+            if (root.TryGetProperty(name, out JsonElement value) &&
+                value.ValueKind == JsonValueKind.Number &&
+                value.TryGetInt32(out int result))
             {
-                var dtoQ = fmpQuarterly.Select(p => new RevenueDto
-                {
-                    Symbol = sym,
-                    PeriodEnd = p.PeriodEnd,
-                    Revenue = p.Revenue,
-                    Currency = p.Currency
-                }).ToList();
-                return Ok(dtoQ);
+                return result;
             }
-
-            // 2) Fallback to FMP annual
-            var fmpAnnual = await _fmp.GetAnnualRevenueAsync(sym, limit, ct);
-            if (fmpAnnual.Count > 0)
-            {
-                var dtoA = fmpAnnual.Select(p => new RevenueDto
-                {
-                    Symbol = sym,
-                    PeriodEnd = p.PeriodEnd,
-                    Revenue = p.Revenue,
-                    Currency = p.Currency
-                }).ToList();
-                return Ok(dtoA);
-            }
-
-            // 3) Fallback to Alpha Vantage quarterly (INCOME_STATEMENT)
-            var avRows = await _alpha.GetQuarterlyRevenueAvAsync(sym, limit, ct);
-            var dtoAv = avRows.Select(p => new RevenueDto
-            {
-                Symbol = sym,
-                PeriodEnd = p.PeriodEnd,
-                Revenue = p.Revenue,
-                Currency = p.Currency
-            }).ToList();
-
-            return Ok(dtoAv);
         }
 
-        /// <summary>
-        /// Fetches Income Statement rows from FMP's /stable API (most recent first).
-        /// Example: GET /api/fundamentals/{symbol}/income-statement/stable?period=quarter&amp;limit=5
-        /// </summary>
-        /// <param name="symbol">Ticker, e.g., "AAPL".</param>
-        /// <param name="period">"annual" or "quarter" (plan-dependent).</param>
-        /// <param name="limit">Max rows to return (typical 1–20).</param>
-        /// <param name="ct">Cancellation token.</param>
-        /// <returns>Envelope with Symbol, Period, Count, Items.</returns>
-        /// <response code="200">Success.</response>
-        [HttpGet("{symbol}/income-statement/stable")]
-        public async Task<IActionResult> GetIncomeStatementStable(
-            string symbol,
-            string period = "annual",
-            int limit = 5,
-            CancellationToken ct = default)
-        {
-            // WHY: Pass `period` through so quarterly works; include it in the envelope for clarity.
-            var rows = await _fmp.GetIncomeStatementStableAsync(symbol, limit, period, ct);
+        return 0;
+    }
 
-            return Ok(new
+    private static HttpClient CreateFallbackLocalClient()
+    {
+        return new HttpClient
+        {
+            BaseAddress = new Uri("http://localhost:5046")
+        };
+    }
+
+    private static void AddJsonAcceptHeader(HttpClient http)
+    {
+        if (!http.DefaultRequestHeaders.Accept.Any(header =>
+                string.Equals(header.MediaType, "application/json", StringComparison.OrdinalIgnoreCase)))
+        {
+            http.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+        }
+    }
+
+    private static bool IsPlanLimited(string? message)
+    {
+        if (string.IsNullOrWhiteSpace(message))
+        {
+            return false;
+        }
+
+        string normalizedMessage = message.ToLowerInvariant();
+
+        return normalizedMessage.Contains("402 payment required") ||
+            normalizedMessage.Contains("premium query parameter") ||
+            normalizedMessage.Contains("not available under your current subscription") ||
+            normalizedMessage.Contains("subscription page");
+    }
+
+    private static string NormalizeSymbol(string symbol)
+    {
+        return symbol.Trim().ToUpperInvariant();
+    }
+
+    private static string NormalizePeriod(string period)
+    {
+        return period.Trim().ToLowerInvariant();
+    }
+
+    private static List<RevenueDto> ToRevenueDtos(
+        string symbol,
+        IEnumerable<FmpClient.RevenuePoint> points)
+    {
+        return points
+            .Select(point => new RevenueDto
             {
                 Symbol = symbol,
-                Period = period,
-                Count = rows?.Count ?? 0,
-                Items = rows
-            });
-        }
+                PeriodEnd = point.PeriodEnd,
+                Revenue = point.Revenue,
+                Currency = point.Currency
+            })
+            .ToList();
+    }
 
-        /// <summary>
-        /// Returns trailing-twelve-months (TTM) key metrics for a single symbol
-        /// via FMP's /stable API.
-        /// Example: GET /api/fundamentals/{symbol}/metrics/ttm
-        /// </summary>
-        /// <param name="symbol">Ticker symbol, e.g., "AAPL".</param>
-        /// <param name="ct">Cancellation token.</param>
-        /// <returns>Envelope with Symbol, HasData, and Metrics.</returns>
-        /// <response code="200">
-        /// Success. May return HasData = false if no metrics are available.
-        /// </response>
-        [HttpGet("{symbol}/metrics/ttm")]
-        public async Task<IActionResult> GetKeyMetricsTtm(
-            string symbol,
-            CancellationToken ct = default)
-        {
-            // English:
-            // - Ask FMP /stable for TTM key metrics of a single symbol.
-            // - Return a small envelope for easier client debugging.
-            // - If nothing is returned, we still respond 200 with HasData = false.
-            var metrics = await _fmp.GetKeyMetricsTtmAsync(symbol, ct);
-
-            return Ok(new
+    private static List<RevenueDto> ToRevenueDtos(
+        string symbol,
+        IEnumerable<AlphaVantageClient.AvRevenuePoint> points)
+    {
+        return points
+            .Select(point => new RevenueDto
             {
                 Symbol = symbol,
-                HasData = metrics is not null,
-                Metrics = metrics
-            });
-        }
-
-        /// <summary>
-        /// Fetches Balance Sheet rows from FMP's /stable API (most recent first).
-        /// Example: GET /api/fundamentals/{symbol}/balance-sheet/stable?period=annual&amp;limit=3
-        /// </summary>
-        /// <param name="symbol">Ticker, e.g., "AAPL".</param>
-        /// <param name="period">"annual" or "quarter" (plan-dependent).</param>
-        /// <param name="limit">Max rows to return (typical 1–20).</param>
-        /// <param name="ct">Cancellation token.</param>
-        /// <returns>Envelope with Symbol, Period, Count, and Items.</returns>
-        /// <response code="200">Success.</response>
-        // GET /api/fundamentals/{symbol}/balance-sheet/stable?period=annual&limit=3
-        [HttpGet("{symbol}/balance-sheet/stable")]
-        public async Task<IActionResult> GetBalanceSheetStable(
-            string symbol,
-            string period = "annual",
-            int limit = 3,
-            CancellationToken ct = default)
-        {
-            // English: Call the client wrapper for /stable/balance-sheet and return a small envelope.
-            var rows = await _fmp.GetBalanceSheetStableAsync(symbol, limit, period, ct);
-
-            return Ok(new
-            {
-                Symbol = symbol,
-                Period = period,
-                Count = rows?.Count ?? 0,
-                Items = rows
-            });
-        }
-
-        /// <summary>
-        /// Fetches Cash Flow rows from FMP's /stable API (most recent first).
-        /// Example: GET /api/fundamentals/{symbol}/cash-flow/stable?period=annual&amp;limit=3
-        /// </summary>
-        /// <param name="symbol">Ticker, e.g., "AAPL".</param>
-        /// <param name="period">"annual" or "quarter" (plan-dependent).</param>
-        /// <param name="limit">Max rows to return (typical 1–20).</param>
-        /// <param name="ct">Cancellation token.</param>
-        /// <returns>Envelope with Symbol, Period, Count, and Items.</returns>
-        /// <response code="200">Success.</response>
-        // GET /api/fundamentals/{symbol}/cash-flow/stable?period=annual&limit=3
-        [HttpGet("{symbol}/cash-flow/stable")]
-        public async Task<IActionResult> GetCashFlowStable(
-            string symbol,
-            string period = "annual",
-            int limit = 3,
-            CancellationToken ct = default)
-        {
-            // English: Call client wrapper for /stable/cash-flow-statement and wrap response.
-            var rows = await _fmp.GetCashFlowStableAsync(symbol, limit, period, ct);
-
-            return Ok(new
-            {
-                Symbol = symbol,
-                Period = period,
-                Count = rows?.Count ?? 0,
-                Items = rows
-            });
-        }
-
-        /// <summary>
-        /// Returns a compact fundamentals snapshot (Income, Balance, Cash, Metrics) via FMP's /stable API.
-        /// Example: GET /api/fundamentals/{symbol}/snapshot/stable?period=annual&amp;limit=3
-        /// NOTE: `period` applies to Income, Balance and Cash (Metrics are TTM and ignore `period`).
-        /// </summary>
-        /// <param name="symbol">Ticker, e.g., "AAPL".</param>
-        /// <param name="period">"annual" or "quarter" (plan-dependent).</param>
-        /// <param name="limit">Max rows per statement (typical 1–20).</param>
-        /// <param name="ct">Cancellation token.</param>
-        /// <returns>Envelope with Symbol, Period, and sections: Income, Balance, Cash, Metrics.</returns>
-        /// <response code="200">Success; individual sections may be null on upstream errors.</response>
-        // GET /api/fundamentals/{symbol}/snapshot/stable?period=annual&limit=3
-        [HttpGet("{symbol}/snapshot/stable")]
-        public async Task<IActionResult> GetSnapshotStable(
-            string symbol,
-            string period = "annual",
-            int limit = 3,
-            CancellationToken ct = default)
-        {
-            // WHY: Fetch each part independently; failures shouldn't break the whole snapshot.
-            List<Portfolio.Api.Services.FmpClient.IncomeStatementStableRow>? income = null;
-            List<Portfolio.Api.Services.FmpClient.BalanceSheetStableRow>? balance = null;
-            List<Portfolio.Api.Services.FmpClient.CashFlowStableRow>? cash = null;
-            Portfolio.Api.Services.FmpClient.KeyMetricsTtm? metrics = null;
-
-            try
-            {
-                // FIX: pass `period` through so Income respects annual/quarter choice.
-                income = await _fmp.GetIncomeStatementStableAsync(symbol, limit, period, ct);
-            }
-            catch (Exception ex) { _log.LogWarning(ex, "Income fetch failed for {Symbol}", symbol); }
-
-            try
-            {
-                balance = await _fmp.GetBalanceSheetStableAsync(symbol, limit, period, ct);
-            }
-            catch (Exception ex) { _log.LogWarning(ex, "Balance fetch failed for {Symbol}", symbol); }
-
-            try
-            {
-                cash = await _fmp.GetCashFlowStableAsync(symbol, limit, period, ct);
-            }
-            catch (Exception ex) { _log.LogWarning(ex, "Cash flow fetch failed for {Symbol}", symbol); }
-
-            try
-            {
-                // NOTE: TTM metrics are period-agnostic.
-                metrics = await _fmp.GetKeyMetricsTtmAsync(symbol, ct);
-            }
-            catch (Exception ex) { _log.LogWarning(ex, "Metrics fetch failed for {Symbol}", symbol); }
-
-            return Ok(new
-            {
-                Symbol = symbol,
-                Period = period,
-                Income = income,
-                Balance = balance,
-                Cash = cash,
-                Metrics = metrics
-            });
-        }
-
-        // English: DTOs for request/response of the refresh endpoint
-        public sealed record FundamentalsCounters(int Income, int Balance, int Cash);
-        public sealed record FundamentalsRefreshResponse(
-            bool Ok,
-            string Symbol,
-            string Period, // "annual" | "quarter"
-            int Years,
-            FundamentalsCounters Inserted,
-            FundamentalsCounters Skipped
-        );
-
-        // English: call our own ingest endpoints and normalize counters
-        private static async Task<(int inserted, int skipped)> HitIngestAsync(
-            HttpClient http, string path, CancellationToken ct)
-        {
-            using var resp = await http.GetAsync(path, ct);
-            resp.EnsureSuccessStatusCode();
-
-            using var stream = await resp.Content.ReadAsStreamAsync(ct);
-            using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: ct);
-            var root = doc.RootElement;
-
-            // English: tolerate different shapes: inserted/upserts + skipped
-            int inserted = 0;
-            if (root.TryGetProperty("inserted", out var iProp) && iProp.TryGetInt32(out var iVal))
-                inserted = iVal;
-            else if (root.TryGetProperty("upserts", out var uProp) && uProp.TryGetInt32(out var uVal))
-                inserted = uVal;
-
-            int skipped = 0;
-            if (root.TryGetProperty("skipped", out var sProp) && sProp.TryGetInt32(out var sVal))
-                skipped = sVal;
-
-            return (inserted, skipped);
-        }
-
-        // English: detect plan/paid-tier errors in upstream message
-        static bool IsPlanLimited(string? msg)
-        {
-            if (string.IsNullOrWhiteSpace(msg)) return false;
-            var m = msg.ToLowerInvariant();
-            return m.Contains("402 payment required") ||
-                   m.Contains("premium query parameter") ||
-                   m.Contains("not available under your current subscription") ||
-                   m.Contains("subscription page");
-        }
-
-        /// <summary>
-        /// Persist fundamentals (annual or quarter) for a symbol into the DB.
-        /// </summary>
-        [HttpPost("refresh")]
-        [Produces("application/json")]
-        [SwaggerOperation(
-            Summary = "Fetch & store fundamentals (income/balance/cash)",
-            Description = "Calls ingest endpoints and returns counters; income has one retry; errors include upstream body."
-        )]
-        [ProducesResponseType(typeof(FundamentalsRefreshResponse), StatusCodes.Status200OK)]
-        [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
-        [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status502BadGateway)]
-        public async Task<IActionResult> RefreshFundamentals(
-            [FromQuery, Required] string symbol,
-            [FromQuery] string period = "annual",   // "annual" | "quarter"
-            [FromQuery] int years = 5,
-            [FromServices] IHttpClientFactory? httpFactory = null,
-            CancellationToken ct = default
-        )
-        {
-            // English: normalize + validate
-            var sym = symbol?.Trim().ToUpperInvariant();
-            Guard.BadRequestIf(string.IsNullOrWhiteSpace(sym), "symbol required");
-
-            var per = (period ?? "annual").Trim().ToLowerInvariant();
-            if (per != "annual" && per != "quarter")
-                throw new BadRequestException("Period must be 'annual' or 'quarter'.");
-
-            years = Math.Clamp(years, 1, 10);
-            var limit = Math.Max(1, years);
-
-            // English: get an HttpClient; fall back to a local client if DI not configured
-            var http = httpFactory?.CreateClient("self") ?? new HttpClient
-            {
-                BaseAddress = new Uri("http://localhost:5046")
-            };
-            http.DefaultRequestHeaders.Accept.ParseAdd("application/json");
-
-            // English: call ingest endpoint; include status/body on errors for diagnostics
-            static async Task<(int inserted, int skipped)> HitAsync(HttpClient c, string path, CancellationToken token)
-            {
-                using var resp = await c.GetAsync(path, token);
-                var raw = await resp.Content.ReadAsStringAsync(token);
-
-                if (!resp.IsSuccessStatusCode)
-                {
-                    // English: propagate status + body so callers can show the real cause
-                    throw new HttpRequestException($"HTTP {(int)resp.StatusCode} {resp.ReasonPhrase} on {path}: {raw}");
-                }
-
-                try
-                {
-                    using var doc = System.Text.Json.JsonDocument.Parse(raw);
-                    var root = doc.RootElement;
-
-                    // English: support both 'upserted' and 'inserted'
-                    int inserted = 0;
-                    if (root.TryGetProperty("upserted", out var up) && up.ValueKind == System.Text.Json.JsonValueKind.Number && up.TryGetInt32(out var upVal))
-                        inserted = upVal;
-                    else if (root.TryGetProperty("inserted", out var ins) && ins.ValueKind == System.Text.Json.JsonValueKind.Number && ins.TryGetInt32(out var insVal))
-                        inserted = insVal;
-
-                    int skipped = 0;
-                    if (root.TryGetProperty("skipped", out var sk) && sk.ValueKind == System.Text.Json.JsonValueKind.Number && sk.TryGetInt32(out var skVal))
-                        skipped = skVal;
-
-                    return (inserted, skipped);
-                }
-                catch (System.Text.Json.JsonException)
-                {
-                    // English: surface unexpected payloads clearly
-                    throw new HttpRequestException($"HTTP 200 but invalid JSON on {path}: {raw}");
-                }
-            }
-
-            // English: declare counters upfront so they're in scope after try/catch
-            var income = (inserted: 0, skipped: 0);
-            var balance = (inserted: 0, skipped: 0);
-            var cash = (inserted: 0, skipped: 0);            
-
-            // --- Income ingest ---
-            try
-            {
-                income = await HitAsync(http, $"/api/ingest/income/{sym}?period={per}&limit={limit}", ct);
-            }
-            catch (HttpRequestException ex)
-            {
-                if (IsPlanLimited(ex.Message))
-                {
-                    _log.LogInformation("Income ingest skipped (plan limit) for {Symbol}", sym);
-                    // leave counters at 0
-                }
-                else
-                {
-                    _log.LogWarning("Income ingest failed for {Symbol}: {Msg}", sym, ex.Message);
-                    // continue without throwing
-                }
-            }
-
-            // --- Balance ingest ---
-            try
-            {
-                balance = await HitAsync(http, $"/api/ingest/balance/{sym}?period={per}&limit={limit}", ct);
-            }
-            catch (HttpRequestException ex)
-            {
-                if (IsPlanLimited(ex.Message))
-                    _log.LogInformation("Balance ingest skipped (plan limit) for {Symbol}", sym);
-                else
-                    _log.LogWarning("Balance ingest failed for {Symbol}: {Msg}", sym, ex.Message);
-            }
-
-            // --- Cash ingest ---
-            try
-            {
-                cash = await HitAsync(http, $"/api/ingest/cash/{sym}?period={per}&limit={limit}", ct);
-            }
-            catch (HttpRequestException ex)
-            {
-                if (IsPlanLimited(ex.Message))
-                    _log.LogInformation("Cash ingest skipped (plan limit) for {Symbol}", sym);
-                else
-                    _log.LogWarning("Cash ingest failed for {Symbol}: {Msg}", sym, ex.Message);
-            }
-
-            var payload = new FundamentalsRefreshResponse(
-                Ok: true,
-                Symbol: sym!,
-                Period: per,
-                Years: years,
-                Inserted: new FundamentalsCounters(income.inserted, balance.inserted, cash.inserted),
-                Skipped: new FundamentalsCounters(income.skipped, balance.skipped, cash.skipped)
-            );
-            return Ok(payload);
-        }
+                PeriodEnd = point.PeriodEnd,
+                Revenue = point.Revenue,
+                Currency = point.Currency
+            })
+            .ToList();
     }
 }

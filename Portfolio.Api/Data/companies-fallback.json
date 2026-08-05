@@ -6,8 +6,8 @@
       "GOOGL",
       "AMZN",
       "NVDA",
-      "TSLA",
       "META",
+      "TSLA",
       "BRK.B"
     ],
     "dow30": [
@@ -38,9 +38,12 @@
       "GOOGL",
       "AMZN",
       "META",
-      "TSLA",
       "NVDA",
-      "CRM"
+      "CRM",
+      "ADBE",
+      "ORCL",
+      "AMD",
+      "NFLX"
     ],
     "etf": [
       "VOO",
@@ -51,23 +54,34 @@
       "VWO",
       "BND"
     ],
+    "automotive": [
+      "TSLA",
+      "BMW.DE",
+      "MBG.DE",
+      "VWAGY"
+    ],
     "default": [
       "AAPL",
       "MSFT",
       "GOOGL",
       "AMZN",
       "NVDA",
-      "TSLA",
       "META",
       "BRK.B",
       "JNJ",
-      "JPM"
+      "JPM",
+      "VOO"
     ]
   },
   "Companies": [
     {
       "Symbol": "AAPL",
       "Name": "Apple Inc.",
+      "Sector": "Technology"
+    },
+    {
+      "Symbol": "MSFT",
+      "Name": "Microsoft Corporation",
       "Sector": "Technology"
     },
     {
@@ -81,19 +95,19 @@
       "Sector": "Consumer Cyclical"
     },
     {
-      "Symbol": "TSLA",
-      "Name": "Tesla Inc.",
-      "Sector": "Consumer Cyclical"
+      "Symbol": "NVDA",
+      "Name": "NVIDIA Corporation",
+      "Sector": "Technology"
     },
     {
       "Symbol": "META",
       "Name": "Meta Platforms Inc.",
-      "Sector": "Technology"
+      "Sector": "Communication Services"
     },
     {
-      "Symbol": "NVDA",
-      "Name": "NVIDIA Corporation",
-      "Sector": "Technology"
+      "Symbol": "TSLA",
+      "Name": "Tesla Inc.",
+      "Sector": "Consumer Cyclical"
     },
     {
       "Symbol": "BRK.B",
@@ -101,139 +115,9 @@
       "Sector": "Financial Services"
     },
     {
-      "Symbol": "CRM",
-      "Name": "Salesforce Inc.",
-      "Sector": "Technology"
-    },
-    {
-      "Symbol": "ORCL",
-      "Name": "Oracle Corporation",
-      "Sector": "Technology"
-    },
-    {
-      "Symbol": "ADBE",
-      "Name": "Adobe Inc.",
-      "Sector": "Technology"
-    },
-    {
-      "Symbol": "BA",
-      "Name": "Boeing Co.",
-      "Sector": "Industrials"
-    },
-    {
-      "Symbol": "CAT",
-      "Name": "Caterpillar Inc.",
-      "Sector": "Industrials"
-    },
-    {
-      "Symbol": "CVX",
-      "Name": "Chevron Corporation",
-      "Sector": "Energy"
-    },
-    {
-      "Symbol": "CSCO",
-      "Name": "Cisco Systems Inc.",
-      "Sector": "Technology"
-    },
-    {
-      "Symbol": "KO",
-      "Name": "Coca-Cola Co.",
-      "Sector": "Consumer Defensive"
-    },
-    {
-      "Symbol": "DIS",
-      "Name": "Walt Disney Co.",
-      "Sector": "Communication Services"
-    },
-    {
-      "Symbol": "DOW",
-      "Name": "Dow Inc.",
-      "Sector": "Industrials"
-    },
-    {
-      "Symbol": "GS",
-      "Name": "Goldman Sachs Group Inc.",
-      "Sector": "Financial Services"
-    },
-    {
-      "Symbol": "HD",
-      "Name": "Home Depot Inc.",
-      "Sector": "Consumer Cyclical"
-    },
-    {
-      "Symbol": "IBM",
-      "Name": "International Business Machines Corp.",
-      "Sector": "Technology"
-    },
-    {
-      "Symbol": "INTC",
-      "Name": "Intel Corporation",
-      "Sector": "Technology"
-    },
-    {
-      "Symbol": "JNJ",
-      "Name": "Johnson & Johnson",
-      "Sector": "Healthcare"
-    },
-    {
       "Symbol": "JPM",
       "Name": "JPMorgan Chase & Co.",
       "Sector": "Financial Services"
-    },
-    {
-      "Symbol": "MCD",
-      "Name": "McDonald's Corp.",
-      "Sector": "Consumer Cyclical"
-    },
-    {
-      "Symbol": "MMM",
-      "Name": "3M Co.",
-      "Sector": "Industrials"
-    },
-    {
-      "Symbol": "MRK",
-      "Name": "Merck & Co Inc.",
-      "Sector": "Healthcare"
-    },
-    {
-      "Symbol": "NKE",
-      "Name": "Nike Inc.",
-      "Sector": "Consumer Cyclical"
-    },
-    {
-      "Symbol": "PG",
-      "Name": "Procter & Gamble Co.",
-      "Sector": "Consumer Defensive"
-    },
-    {
-      "Symbol": "TRV",
-      "Name": "Travelers Companies Inc.",
-      "Sector": "Financial Services"
-    },
-    {
-      "Symbol": "UNH",
-      "Name": "UnitedHealth Group Inc.",
-      "Sector": "Healthcare"
-    },
-    {
-      "Symbol": "V",
-      "Name": "Visa Inc.",
-      "Sector": "Financial Services"
-    },
-    {
-      "Symbol": "VZ",
-      "Name": "Verizon Communications Inc.",
-      "Sector": "Communication Services"
-    },
-    {
-      "Symbol": "WMT",
-      "Name": "Walmart Inc.",
-      "Sector": "Consumer Defensive"
-    },
-    {
-      "Symbol": "WBA",
-      "Name": "Walgreens Boots Alliance Inc.",
-      "Sector": "Consumer Defensive"
     },
     {
       "Symbol": "BAC",
@@ -246,9 +130,89 @@
       "Sector": "Financial Services"
     },
     {
+      "Symbol": "KO",
+      "Name": "Coca-Cola Co.",
+      "Sector": "Consumer Defensive"
+    },
+    {
+      "Symbol": "CVX",
+      "Name": "Chevron Corporation",
+      "Sector": "Energy"
+    },
+    {
       "Symbol": "OXY",
       "Name": "Occidental Petroleum Corp.",
       "Sector": "Energy"
+    },
+    {
+      "Symbol": "JNJ",
+      "Name": "Johnson & Johnson",
+      "Sector": "Healthcare"
+    },
+    {
+      "Symbol": "PG",
+      "Name": "Procter & Gamble Co.",
+      "Sector": "Consumer Defensive"
+    },
+    {
+      "Symbol": "HD",
+      "Name": "Home Depot Inc.",
+      "Sector": "Consumer Cyclical"
+    },
+    {
+      "Symbol": "DIS",
+      "Name": "Walt Disney Co.",
+      "Sector": "Communication Services"
+    },
+    {
+      "Symbol": "V",
+      "Name": "Visa Inc.",
+      "Sector": "Financial Services"
+    },
+    {
+      "Symbol": "UNH",
+      "Name": "UnitedHealth Group Inc.",
+      "Sector": "Healthcare"
+    },
+    {
+      "Symbol": "ORCL",
+      "Name": "Oracle Corporation",
+      "Sector": "Technology"
+    },
+    {
+      "Symbol": "CRM",
+      "Name": "Salesforce Inc.",
+      "Sector": "Technology"
+    },
+    {
+      "Symbol": "ADBE",
+      "Name": "Adobe Inc.",
+      "Sector": "Technology"
+    },
+    {
+      "Symbol": "AMD",
+      "Name": "Advanced Micro Devices Inc.",
+      "Sector": "Technology"
+    },
+    {
+      "Symbol": "NFLX",
+      "Name": "Netflix Inc.",
+      "Sector": "Communication Services"
+    },
+    {
+      "Symbol": "BA",
+      "Name": "Boeing Co.",
+      "Sector": "Industrials"
+    },
+    {
+      "Symbol": "CAT",
+      "Name": "Caterpillar Inc.",
+      "Sector": "Industrials"
+    },
+    {
+      "Symbol": "CSCO",
+      "Name": "Cisco Systems Inc.",
+      "Sector": "Technology"
     },
     {
       "Symbol": "MCO",
@@ -291,704 +255,19 @@
       "Sector": "ETF"
     },
     {
-      "Symbol": "059090.KS",
-      "Name": "MiCo Ltd",
-      "Sector": null
-    },
-    {
-      "Symbol": "059090.KQ",
-      "Name": "MiCo Ltd.",
-      "Sector": null
-    },
-    {
-      "Symbol": "UMICY",
-      "Name": "Umicore S.A.",
-      "Sector": null
-    },
-    {
-      "Symbol": "UMICF",
-      "Name": "Umicore S.A.",
-      "Sector": null
-    },
-    {
-      "Symbol": "UMI.BR",
-      "Name": "Umicore S.A.",
-      "Sector": null
-    },
-    {
-      "Symbol": "NVJP.DE",
-      "Name": "Umicore S.A.",
-      "Sector": null
-    },
-    {
-      "Symbol": "092040.KQ",
-      "Name": "Amicogen, Inc.",
-      "Sector": null
-    },
-    {
-      "Symbol": "AMIF.L",
-      "Name": "Amicorp FS (UK) plc",
-      "Sector": null
-    },
-    {
-      "Symbol": "SOMICONV.BO",
-      "Name": "Somi Conveyor Beltings Limited",
-      "Sector": null
-    },
-    {
-      "Symbol": "SOMICONVEY.NS",
-      "Name": "Somi Conveyor Beltings Limited",
-      "Sector": null
-    },
-    {
-      "Symbol": "MIC",
-      "Name": "Macquarie Infrastructure Holdings, LLC",
-      "Sector": null
-    },
-    {
-      "Symbol": "MICT",
-      "Name": "MICT, Inc.",
-      "Sector": null
-    },
-    {
-      "Symbol": "MICS",
-      "Name": "The Singing Machine Company, Inc.",
-      "Sector": null
-    },
-    {
-      "Symbol": "MICR",
-      "Name": "Micron Solutions, Inc.",
-      "Sector": null
-    },
-    {
-      "Symbol": "MICTW",
-      "Name": "Micronet Enertec Technologies Inc. Warrant",
-      "Sector": null
-    },
-    {
-      "Symbol": "MICRD",
-      "Name": "Micron Solutions, Inc.",
-      "Sector": null
-    },
-    {
-      "Symbol": "MICLF",
-      "Name": "Mycronic AB (publ)",
-      "Sector": null
-    },
-    {
-      "Symbol": "MICGX",
-      "Name": "Mirae Asset Discovery Fds Emerging Markets Great Consumer Fd Cl I",
-      "Sector": null
-    },
-    {
-      "Symbol": "MICFX",
-      "Name": "Matthews China Instl",
-      "Sector": null
-    },
-    {
-      "Symbol": "MICDX",
-      "Name": "Matthews China Dividend Fund",
-      "Sector": null
-    },
-    {
-      "Symbol": "MICROSE.BO",
-      "Name": "Microse India Ltd.",
-      "Sector": null
-    },
-    {
-      "Symbol": "SALT.L",
-      "Name": "MicroSalt Plc",
-      "Sector": null
-    },
-    {
-      "Symbol": "MSCC",
-      "Name": "Microsemi Corp.",
-      "Sector": null
-    },
-    {
-      "Symbol": "MSYS.L",
-      "Name": "Microsaic Systems plc",
-      "Sector": null
-    },
-    {
-      "Symbol": "MSFT.NE",
-      "Name": "Microsoft Corporation",
-      "Sector": null
-    },
-    {
-      "Symbol": "MSFT",
-      "Name": "Microsoft Corporation",
-      "Sector": null
-    },
-    {
-      "Symbol": "MSF.F",
-      "Name": "Microsoft Corporation",
-      "Sector": null
-    },
-    {
-      "Symbol": "MSF.DE",
-      "Name": "Microsoft Corporation",
-      "Sector": null
-    },
-    {
-      "Symbol": "MSF.BR",
-      "Name": "Microsoft Corporation",
-      "Sector": null
-    },
-    {
-      "Symbol": "4338.HK",
-      "Name": "Microsoft Corporation",
-      "Sector": null
-    },
-    {
-      "Symbol": "GJT",
-      "Name": "Strats(SM) Trust For Allstate Corp Securities, Series 2006-3 06-3 ASSET BKD",
-      "Sector": null
-    },
-    {
-      "Symbol": "GJS",
-      "Name": "STRATS Trust for Goldman Sachs Group Securities, Series 2006-2",
-      "Sector": null
-    },
-    {
-      "Symbol": "GJR",
-      "Name": "Strats Trust For Procter & Gambel Security CTF 2006-1",
-      "Sector": null
-    },
-    {
-      "Symbol": "GJP",
-      "Name": "STRATS Trust For Dominion Resources Inc. Securities, Series 2005-6",
-      "Sector": null
-    },
-    {
-      "Symbol": "GJO",
-      "Name": "Strats Trust Wal Mart Stores Inc. STRT CTF 05-4",
-      "Sector": null
-    },
-    {
-      "Symbol": "GJH",
-      "Name": "STRATS Trust for United States Cellular Corp. Securities, Series 2004-6 STRATS 6.375",
-      "Sector": null
-    },
-    {
-      "Symbol": "GJUN",
-      "Name": "FT Vest U.S. Equity Moderate Buffer ETF - June",
-      "Sector": null
-    },
-    {
-      "Symbol": "GJUL",
-      "Name": "FT Vest U.S. Equity Moderate Buffer ETF - July",
-      "Sector": null
-    },
-    {
-      "Symbol": "GJST",
-      "Name": "GEO JS Tech Group Corp.",
-      "Sector": null
-    },
-    {
-      "Symbol": "GJCU",
-      "Name": "NP Life Sciences Health Industry Group Inc.",
-      "Sector": null
-    },
-    {
-      "Symbol": "GJGB.L",
-      "Name": "VanEck Junior Gold Miners UCITS ETF",
-      "Sector": null
-    },
-    {
-      "Symbol": "LGJG.L",
-      "Name": "L&G Japan Equity UCITS ETF",
-      "Sector": null
-    },
-    {
-      "Symbol": "AMD",
-      "Name": "Advanced Micro Devices, Inc.",
-      "Sector": null
-    },
-    {
-      "Symbol": "AMDY",
-      "Name": "YieldMax AMD Option Income Strategy ETF",
-      "Sector": null
-    },
-    {
-      "Symbol": "AMDU",
-      "Name": "Defiance Leveraged Long + Income AMD ETF",
-      "Sector": null
-    },
-    {
-      "Symbol": "AMDS",
-      "Name": "GraniteShares 1x Short AMD Daily ETF",
-      "Sector": null
-    },
-    {
-      "Symbol": "AMDL",
-      "Name": "GraniteShares 2x Long AMD Daily ETF",
-      "Sector": null
-    },
-    {
-      "Symbol": "AMDG",
-      "Name": "Leverage Shares 2X Long AMD Daily ETF",
-      "Sector": null
-    },
-    {
-      "Symbol": "AMDD",
-      "Name": "Direxion Daily AMD Bear 1X Shares",
-      "Sector": null
-    },
-    {
-      "Symbol": "AMDWX",
-      "Name": "Amana Mutual Funds Trust Developing World Fund",
-      "Sector": null
-    },
-    {
-      "Symbol": "AMDWF",
-      "Name": "Amada Co., Ltd.",
-      "Sector": null
-    },
-    {
-      "Symbol": "AMDVX",
-      "Name": "American Century Mid Cap Value Fund",
-      "Sector": null
-    },
-    {
-      "Symbol": "BMWYY",
-      "Name": "Bayerische Motoren Werke AG",
-      "Sector": null
-    },
-    {
-      "Symbol": "BMW.WA",
-      "Name": "Bayerische Motoren Werke AG",
-      "Sector": null
-    },
-    {
-      "Symbol": "BMW.SW",
-      "Name": "Bayerische Motoren Werke AG",
-      "Sector": null
-    },
-    {
       "Symbol": "BMW.DE",
       "Name": "Bayerische Motoren Werke AG",
-      "Sector": null
-    },
-    {
-      "Symbol": "BMW.BO",
-      "Name": "BMW Industries Ltd.",
-      "Sector": null
-    },
-    {
-      "Symbol": "BMW3.DE",
-      "Name": "Bayerische Motoren Werke AG",
-      "Sector": null
-    },
-    {
-      "Symbol": "PBMWW",
-      "Name": "Psyence Biomedical Ltd. Warrant",
-      "Sector": null
-    },
-    {
-      "Symbol": "PRBMW",
-      "Name": "Parabellum Acquisition Corp.",
-      "Sector": null
-    },
-    {
-      "Symbol": "MBGYY",
-      "Name": "Mercedes-Benz Group AG",
-      "Sector": null
-    },
-    {
-      "Symbol": "MBG.WA",
-      "Name": "Mercedes-Benz Group AG",
-      "Sector": null
+      "Sector": "Consumer Cyclical"
     },
     {
       "Symbol": "MBG.DE",
       "Name": "Mercedes-Benz Group AG",
-      "Sector": null
-    },
-    {
-      "Symbol": "MBGAF",
-      "Name": "Mercedes-Benz Group AG",
-      "Sector": null
-    },
-    {
-      "Symbol": "DMLRY",
-      "Name": "Mercedes-Benz Group AG",
-      "Sector": null
-    },
-    {
-      "Symbol": "DDAIF",
-      "Name": "Mercedes-Benz Group AG",
-      "Sector": null
-    },
-    {
-      "Symbol": "DAI.DE",
-      "Name": "Mercedes-Benz Group AG",
-      "Sector": null
-    },
-    {
-      "Symbol": "3MBE.L",
-      "Name": "Leverage Shares 3x Long Mercedes Benz (MBG) ETP Securities",
-      "Sector": null
-    },
-    {
-      "Symbol": "SMBE.L",
-      "Name": "Leverage Shares 3x Short Mercedes Benz (MBG) ETP Securities",
-      "Sector": null
-    },
-    {
-      "Symbol": "AMAT",
-      "Name": "Applied Materials, Inc.",
-      "Sector": null
-    },
-    {
-      "Symbol": "AMAT.L",
-      "Name": "Amati AIM VCT plc",
-      "Sector": null
-    },
-    {
-      "Symbol": "AMATA.BK",
-      "Name": "Amata Corporation Public Company Limited",
-      "Sector": null
-    },
-    {
-      "Symbol": "AMATAV.BK",
-      "Name": "Amata VN Public Company Limited",
-      "Sector": null
-    },
-    {
-      "Symbol": "AMATAR.BK",
-      "Name": "Amata Summit Growth Freehold and Leasehold Real Estate Investment Trust",
-      "Sector": null
-    },
-    {
-      "Symbol": "AMAUSD",
-      "Name": "AMATEN USD",
-      "Sector": null
-    },
-    {
-      "Symbol": "5952.T",
-      "Name": "Amatei Incorporated",
-      "Sector": null
-    },
-    {
-      "Symbol": "MLAAH.PA",
-      "Name": "Amatheon Agri Holding N.V.",
-      "Sector": null
-    },
-    {
-      "Symbol": "HAMAT.TA",
-      "Name": "Hamat Group Ltd.",
-      "Sector": null
-    },
-    {
-      "Symbol": "KAMATHOTEL.NS",
-      "Name": "Kamat Hotels (India) Limited",
-      "Sector": null
-    },
-    {
-      "Symbol": "AMFL",
-      "Name": "American Films, Inc.",
-      "Sector": null
-    },
-    {
-      "Symbol": "AMFC",
-      "Name": "AMB Financial Corp.",
-      "Sector": null
-    },
-    {
-      "Symbol": "AMFPF",
-      "Name": "Amplifon S.p.A.",
-      "Sector": null
-    },
-    {
-      "Symbol": "AMFFX",
-      "Name": "American Funds American Mutual Fund Class F-1",
-      "Sector": null
-    },
-    {
-      "Symbol": "AMFCX",
-      "Name": "American Funds American Mutual Fund",
-      "Sector": null
-    },
-    {
-      "Symbol": "AMFAX",
-      "Name": "AlphaSimplex Managed Futures Strategy Fund Class A",
-      "Sector": null
-    },
-    {
-      "Symbol": "AMFG.JK",
-      "Name": "PT Asahimas Flat Glass Tbk",
-      "Sector": null
-    },
-    {
-      "Symbol": "AMFORG.BO",
-      "Name": "Amforge Industries Limited",
-      "Sector": null
-    },
-    {
-      "Symbol": "AFIPA",
-      "Name": "AMFI Corp.",
-      "Sector": null
-    },
-    {
-      "Symbol": "FUNN",
-      "Name": "Amfil Technologies Inc.",
-      "Sector": null
-    },
-    {
-      "Symbol": "SDFI",
-      "Name": "AB Short Duration Income ETF",
-      "Sector": null
-    },
-    {
-      "Symbol": "SDFUSD",
-      "Name": "ShadowFi USD",
-      "Sector": null
-    },
-    {
-      "Symbol": "SDF.SW",
-      "Name": "K+s AG",
-      "Sector": null
-    },
-    {
-      "Symbol": "SDF.DE",
-      "Name": "K+s AG",
-      "Sector": null
-    },
-    {
-      "Symbol": "SDF.AX",
-      "Name": "Steadfast Group Limited",
-      "Sector": null
-    },
-    {
-      "Symbol": "USDF",
-      "Name": "US-Dadi Fertilizer Industry International, Inc.",
-      "Sector": null
-    },
-    {
-      "Symbol": "USDFJD",
-      "Name": "USD/FJD",
-      "Sector": null
-    },
-    {
-      "Symbol": "RSDFIN.BO",
-      "Name": "RSD Finance Limited",
-      "Sector": null
-    },
-    {
-      "Symbol": "SWSDF",
-      "Name": "Swiss Life Holding AG",
-      "Sector": null
-    },
-    {
-      "Symbol": "SLSDF",
-      "Name": "Select Sands Corp.",
-      "Sector": null
-    },
-    {
-      "Symbol": "LKST",
-      "Name": "LookSmart Group, Inc.",
-      "Sector": null
-    },
-    {
-      "Symbol": "LKSB",
-      "Name": "Lakeside Bancshares, Inc.",
-      "Sector": null
-    },
-    {
-      "Symbol": "LKSGF",
-      "Name": "Luks Group (Vietnam Holdings) Company Limited",
-      "Sector": null
-    },
-    {
-      "Symbol": "ALKS",
-      "Name": "Alkermes plc",
-      "Sector": null
-    },
-    {
-      "Symbol": "ALKSV",
-      "Name": "Alkermes plc Ordinary Shares Ex-distribution When Issued",
-      "Sector": null
-    },
-    {
-      "Symbol": "XLKS.L",
-      "Name": "Invesco Technology S&P US Select Sector UCITS ETF",
-      "Sector": null
-    },
-    {
-      "Symbol": "KLKSUSD",
-      "Name": "Kalkulus USD",
-      "Sector": null
-    },
-    {
-      "Symbol": "VWAPY",
-      "Name": "Volkswagen AG",
-      "Sector": null
-    },
-    {
-      "Symbol": "VWAP.BR",
-      "Name": "Volkswagen AG",
-      "Sector": null
+      "Sector": "Consumer Cyclical"
     },
     {
       "Symbol": "VWAGY",
       "Name": "Volkswagen AG",
-      "Sector": null
-    },
-    {
-      "Symbol": "INTELSOFT.BO",
-      "Name": "Integra Telecommunication & Software Limited",
-      "Sector": null
-    },
-    {
-      "Symbol": "PATELSAI.BO",
-      "Name": "Patels Airtemp (India) Limited",
-      "Sector": null
-    },
-    {
-      "Symbol": "INTEQ",
-      "Name": "Intelsat S.A.",
-      "Sector": null
-    },
-    {
-      "Symbol": "EUTLF",
-      "Name": "Eutelsat Communications S.A.",
-      "Sector": null
-    },
-    {
-      "Symbol": "ETL.PA",
-      "Name": "Eutelsat Communications S.A.",
-      "Sector": null
-    },
-    {
-      "Symbol": "ETL.L",
-      "Name": "Eutelsat Communications S.A.",
-      "Sector": null
-    },
-    {
-      "Symbol": "ETCMY",
-      "Name": "Eutelsat Communications S.A.",
-      "Sector": null
-    },
-    {
-      "Symbol": "NFLX.NE",
-      "Name": "Netflix, Inc.",
-      "Sector": null
-    },
-    {
-      "Symbol": "NFLX",
-      "Name": "Netflix, Inc.",
-      "Sector": null
-    },
-    {
-      "Symbol": "NFC.DE",
-      "Name": "Netflix, Inc.",
-      "Sector": null
-    },
-    {
-      "Symbol": "DNFLXUSD",
-      "Name": "Netflix Tokenized Stock Defichain USD",
-      "Sector": null
-    },
-    {
-      "Symbol": "1NFL.L",
-      "Name": "LS 1x Netflix Tracker ETC",
-      "Sector": null
-    },
-    {
-      "Symbol": "NFL3.L",
-      "Name": "Leverage Shares 3x Netflix ETC",
-      "Sector": null
-    },
-    {
-      "Symbol": "3NFL.L",
-      "Name": "Leverage Shares 3x Netflix ETC",
-      "Sector": null
-    },
-    {
-      "Symbol": "3NFE.L",
-      "Name": "Leverage Shares 3x Netflix ETC",
-      "Sector": null
-    },
-    {
-      "Symbol": "3NFE.F",
-      "Name": "Leverage Shares 3x Netflix ETC",
-      "Sector": null
-    },
-    {
-      "Symbol": "NFLE.L",
-      "Name": "Leverage Shares 2x Netflix ETC A",
-      "Sector": null
-    },
-    {
-      "Symbol": "NEFF",
-      "Name": "Neff Corporation",
-      "Sector": null
-    },
-    {
-      "Symbol": "NEFB",
-      "Name": "Neffs Bancorp, Inc.",
-      "Sector": null
-    },
-    {
-      "Symbol": "NEFSX",
-      "Name": "Natixis Funds Trust I U.S. Equity Opportunities Fund Class A",
-      "Sector": null
-    },
-    {
-      "Symbol": "NEFOX",
-      "Name": "Natixis Funds Trust II Oakmark Fund",
-      "Sector": null
-    },
-    {
-      "Symbol": "NEFJX",
-      "Name": "Natixis Funds Trust I Vaughan Nelson Small Cap Value Fund",
-      "Sector": null
-    },
-    {
-      "Symbol": "NEFBP",
-      "Name": "Neffs Bancorp, Inc. PFD SER A",
-      "Sector": null
-    },
-    {
-      "Symbol": "NEF.DE",
-      "Name": "Neste Oyj",
-      "Sector": null
-    },
-    {
-      "Symbol": "NFAZ.ME",
-      "Name": "NEFAZ Publicly Traded Company",
-      "Sector": null
-    },
-    {
-      "Symbol": "9605.SR",
-      "Name": "Neft Alsharq Company for Chemical Industries",
-      "Sector": null
-    },
-    {
-      "Symbol": "BNEFF",
-      "Name": "Bonterra Energy Corp.",
-      "Sector": null
-    },
-    {
-      "Symbol": "NETD",
-      "Name": "Nabors Energy Transition Corp. II Class A Ordinary Shares",
-      "Sector": null
-    },
-    {
-      "Symbol": "NETDW",
-      "Name": "Nabors Energy Transition Corp. II Warrant",
-      "Sector": null
-    },
-    {
-      "Symbol": "NETDU",
-      "Name": "Nabors Energy Transition Corp. II",
-      "Sector": null
-    },
-    {
-      "Symbol": "0777.HK",
-      "Name": "NetDragon Websoft Holdings Limited",
-      "Sector": null
+      "Sector": "Consumer Cyclical"
     }
   ]
 }

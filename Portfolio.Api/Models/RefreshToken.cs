@@ -1,19 +1,18 @@
-using System;
+namespace Portfolio.Api.Models;
 
-namespace Portfolio.Api.Models
+public sealed class RefreshToken
 {
-    public class RefreshToken
-    {
-        public int Id { get; set; } // Primary Key
+    public int Id { get; set; }
 
-        public required string Token { get; set; } // Required: must always be set
+    public required string Token { get; set; }
 
-        public DateTime ExpiresAt { get; set; } // Expiration date
+    public DateTime ExpiresAt { get; set; }
 
-        public DateTime? RevokedAt { get; set; } // Null if active, set when user logs out
+    public DateTime? RevokedAt { get; set; }
 
-        // Foreign Key to User
-        public int UserId { get; set; }
-        public required User User { get; set; } // Required: must always be set
-    }
+    public bool IsActive => RevokedAt == null && ExpiresAt > DateTime.UtcNow;
+
+    public int UserId { get; set; }
+
+    public required User User { get; set; }
 }

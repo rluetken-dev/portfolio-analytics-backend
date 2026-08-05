@@ -1,11 +1,11 @@
-using Microsoft.AspNetCore.Mvc;
-using Portfolio.Api.Data;
-using Portfolio.Api.Models;
-using Portfolio.Api.Services;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using Portfolio.Api.Data;
 using Portfolio.Api.DTOs;
 using Portfolio.Api.Exceptions;
+using Portfolio.Api.Models;
+using Portfolio.Api.Services;
 using Portfolio.Api.Utils;
 
 namespace Portfolio.Api.Controllers
@@ -27,9 +27,9 @@ namespace Portfolio.Api.Controllers
         /// Registers a new user account.
         /// </summary>
         /// <remarks>
-        /// Creates a new user, hashes the password, and issues both an access token and a refresh token (HttpOnly cookie).
+        /// Creates a new user, hashes the password, and issues both an access token and a refresh token.
         /// </remarks>
-        /// <param name="request">The registration data (username + password).</param>
+        /// <param name="request">The registration data.</param>
         /// <returns>Returns tokens and basic user info.</returns>
         /// <response code="200">Registration successful.</response>
         /// <response code="400">Username already taken or invalid input.</response>
@@ -38,33 +38,25 @@ namespace Portfolio.Api.Controllers
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         public async Task<IActionResult> Register([FromBody] RegisterRequest request)
         {
-            // Check if username already exists
-            if (_context.Users.Any(u => u.Username == request.Username))
+            if (_context.Users.Any(user => user.Username == request.Username))
             {
-                throw new BadRequestException("Username already taken");
+                throw new BadRequestException("Username already taken.");
             }
 
-            // Hash the password
             var passwordHash = PasswordHasher.HashPassword(request.Password);
 
-            // Create new user
             var user = new User
             {
                 Username = request.Username,
                 PasswordHash = passwordHash
             };
 
-            // Save to database
             _context.Users.Add(user);
             await _context.SaveChangesAsync();
 
-            // Generate JWT access token
             var accessToken = _jwtService.GenerateToken(user);
-
-            // Generate and save refresh token
             var refreshToken = await RefreshTokenService.GenerateAndSaveAsync(user, _context);
 
-            // Set refresh token as HttpOnly cookie
             Response.Cookies.Append("refreshToken", refreshToken.Token, new CookieOptions
             {
                 HttpOnly = true,
@@ -73,7 +65,6 @@ namespace Portfolio.Api.Controllers
                 Expires = refreshToken.ExpiresAt
             });
 
-            // Return tokens and user info
             return Ok(new
             {
                 accessToken,
@@ -91,7 +82,7 @@ namespace Portfolio.Api.Controllers
         /// Logs an existing user in.
         /// </summary>
         /// <remarks>
-        /// Validates username and password, issues new JWT access and refresh tokens.
+        /// Validates username and password, then issues a new JWT access token and refresh token.
         /// </remarks>
         /// <param name="request">Login credentials.</param>
         /// <returns>Access token and user info.</returns>
@@ -102,28 +93,22 @@ namespace Portfolio.Api.Controllers
         [ProducesResponseType(StatusCodes.Status401Unauthorized)]
         public async Task<IActionResult> Login([FromBody] LoginRequest request)
         {
-            // Find user by username
             var user = await _context.Users
-                .FirstOrDefaultAsync(u => u.Username == request.Username);
+                .FirstOrDefaultAsync(user => user.Username == request.Username);
 
             if (user == null)
             {
                 throw new UnauthorizedException("Invalid username or password.");
             }
 
-            // Verify password
             if (!PasswordHasher.VerifyPassword(request.Password, user.PasswordHash))
             {
                 throw new UnauthorizedException("Invalid username or password.");
             }
 
-            // Generate JWT access token
             var accessToken = _jwtService.GenerateToken(user);
-
-            // Generate and save refresh token
             var refreshToken = await RefreshTokenService.GenerateAndSaveAsync(user, _context);
 
-            // Set refresh token as HttpOnly Secure cookie
             Response.Cookies.Append("refreshToken", refreshToken.Token, new CookieOptions
             {
                 HttpOnly = true,
@@ -132,11 +117,14 @@ namespace Portfolio.Api.Controllers
                 Expires = refreshToken.ExpiresAt
             });
 
-            // Return only the access token + user info
             return Ok(new
             {
                 AccessToken = accessToken,
-                User = new { Id = user.Id, Username = user.Username }
+                User = new
+                {
+                    Id = user.Id,
+                    Username = user.Username
+                }
             });
         }
 
@@ -147,7 +135,7 @@ namespace Portfolio.Api.Controllers
         /// Requires a valid JWT access token in the Authorization header.
         /// </remarks>
         /// <response code="200">Returns user ID and username.</response>
-        /// <response code="401">If the request is not authorized.</response>
+        /// <response code="401">Request is not authorized.</response>
         [HttpGet("me")]
         [Authorize]
         [ProducesResponseType(StatusCodes.Status200OK)]
@@ -177,42 +165,37 @@ namespace Portfolio.Api.Controllers
 
             if (!string.IsNullOrEmpty(refreshToken))
             {
-                // Suche RefreshToken in DB
                 var storedToken = await _context.RefreshTokens
-                    .FirstOrDefaultAsync(rt => rt.Token == refreshToken);
+                    .FirstOrDefaultAsync(token => token.Token == refreshToken);
 
                 if (storedToken != null && storedToken.RevokedAt == null)
                 {
-                    storedToken.RevokedAt = DateTime.UtcNow; // Ungültig machen
+                    storedToken.RevokedAt = DateTime.UtcNow;
                     await _context.SaveChangesAsync();
                 }
             }
 
-            // Cookie löschen (überschreiben + sofort ablaufen lassen)
-            Response.Cookies.Append("refreshToken", "",
-                new CookieOptions
-                {
-                    HttpOnly = true,
-                    Secure = true,
-                    SameSite = SameSiteMode.None,
-                    Expires = DateTime.UtcNow.AddDays(-1) // abgelaufen
-                });
+            Response.Cookies.Append("refreshToken", string.Empty, new CookieOptions
+            {
+                HttpOnly = true,
+                Secure = true,
+                SameSite = SameSiteMode.None,
+                Expires = DateTime.UtcNow.AddDays(-1)
+            });
 
-            return Ok(new { message = "Logged out" });
+            return Ok(new { message = "Logged out." });
         }
 
-
         /// <summary>
-        /// Refreshes the access token using a valid refresh token (from cookie).
+        /// Refreshes the access token using a valid refresh token cookie.
         /// </summary>
         /// <response code="200">New access token issued.</response>
-        /// <response code="401">Invalid or expired refresh token.</response>
+        /// <response code="401">Refresh token is missing, invalid, expired, or revoked.</response>
         [HttpPost("refresh")]
         [ProducesResponseType(StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status401Unauthorized)]
         public async Task<IActionResult> Refresh()
         {
-            // Get refresh token from cookies
             var refreshToken = Request.Cookies["refreshToken"];
 
             if (string.IsNullOrEmpty(refreshToken))
@@ -220,31 +203,27 @@ namespace Portfolio.Api.Controllers
                 throw new UnauthorizedException("Refresh token missing.");
             }
 
-            // Find token in DB
             var storedToken = await _context.RefreshTokens
-                .Include(rt => rt.User)
-                .FirstOrDefaultAsync(rt => rt.Token == refreshToken);
+                .Include(token => token.User)
+                .FirstOrDefaultAsync(token => token.Token == refreshToken);
 
             if (storedToken == null)
             {
                 throw new UnauthorizedException("Invalid refresh token.");
             }
 
-            // Check if token is expired or revoked
             if (storedToken.ExpiresAt <= DateTime.UtcNow || storedToken.RevokedAt != null)
             {
                 throw new UnauthorizedException("Refresh token expired or revoked.");
             }
 
-            // Generate new access token
             var newAccessToken = _jwtService.GenerateToken(storedToken.User);
 
-            // Optional: rolling refresh → revoke old + set new cookie
             storedToken.RevokedAt = DateTime.UtcNow;
+
             var newRefreshToken = await RefreshTokenService.GenerateAndSaveAsync(storedToken.User, _context);
             await _context.SaveChangesAsync();
 
-            // Set new refresh token as cookie
             Response.Cookies.Append("refreshToken", newRefreshToken.Token, new CookieOptions
             {
                 HttpOnly = true,
@@ -266,27 +245,29 @@ namespace Portfolio.Api.Controllers
         /// Requires a valid JWT access token.
         /// </remarks>
         /// <response code="200">Returns the user's balance.</response>
-        /// <response code="401">If the request is unauthorized.</response>
+        /// <response code="401">Request is unauthorized.</response>
         [HttpGet("balance")]
         [Authorize]
         [ProducesResponseType(StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status401Unauthorized)]
         public async Task<IActionResult> GetBalance()
         {
-            // Extract current username from JWT
             var username = User.Identity?.Name;
-            if (string.IsNullOrEmpty(username))
-                return Unauthorized("User not authenticated.");
 
-            // Load user from DB (read-only)
+            if (string.IsNullOrEmpty(username))
+            {
+                return Unauthorized("User not authenticated.");
+            }
+
             var user = await _context.Users
                 .AsNoTracking()
-                .FirstOrDefaultAsync(u => u.Username == username);
+                .FirstOrDefaultAsync(user => user.Username == username);
 
             if (user == null)
+            {
                 return NotFound("User not found.");
+            }
 
-            // Return cash balance in JSON
             return Ok(new
             {
                 username = user.Username,
@@ -300,10 +281,10 @@ namespace Portfolio.Api.Controllers
         /// <remarks>
         /// Requires a valid JWT access token.
         /// </remarks>
-        /// <param name="amount">Deposit amount (must be greater than 0).</param>
+        /// <param name="amount">Deposit amount. Must be greater than zero.</param>
         /// <response code="200">Deposit successful, returns new balance.</response>
-        /// <response code="400">Invalid amount.</response>
-        /// <response code="401">Unauthorized.</response>
+        /// <response code="400">Deposit amount is invalid.</response>
+        /// <response code="401">Request is unauthorized.</response>
         [HttpPost("deposit")]
         [Authorize]
         [ProducesResponseType(StatusCodes.Status200OK)]
@@ -311,27 +292,29 @@ namespace Portfolio.Api.Controllers
         [ProducesResponseType(StatusCodes.Status401Unauthorized)]
         public async Task<IActionResult> Deposit([FromBody] decimal amount)
         {
-            // Validate input
             if (amount <= 0)
+            {
                 return BadRequest("Deposit amount must be greater than zero.");
+            }
 
-            // Get current username from JWT
             var username = User.Identity?.Name;
+
             if (string.IsNullOrEmpty(username))
+            {
                 return Unauthorized("User not authenticated.");
+            }
 
-            // Load user from DB
-            var user = await _context.Users.FirstOrDefaultAsync(u => u.Username == username);
+            var user = await _context.Users
+                .FirstOrDefaultAsync(user => user.Username == username);
+
             if (user == null)
+            {
                 return NotFound("User not found.");
+            }
 
-            // Increase balance
             user.CashBalance += amount;
-
-            // Save changes
             await _context.SaveChangesAsync();
 
-            // Return new balance
             return Ok(new
             {
                 username = user.Username,
@@ -343,12 +326,12 @@ namespace Portfolio.Api.Controllers
         /// Withdraws money from the current user's balance.
         /// </summary>
         /// <remarks>
-        /// Requires a valid JWT access token. Fails if balance is insufficient.
+        /// Requires a valid JWT access token. Fails if the user's balance is insufficient.
         /// </remarks>
-        /// <param name="amount">Withdrawal amount (must be greater than 0).</param>
+        /// <param name="amount">Withdrawal amount. Must be greater than zero.</param>
         /// <response code="200">Withdrawal successful, returns new balance.</response>
-        /// <response code="400">Invalid amount or insufficient funds.</response>
-        /// <response code="401">Unauthorized.</response>
+        /// <response code="400">Withdrawal amount is invalid or balance is insufficient.</response>
+        /// <response code="401">Request is unauthorized.</response>
         [HttpPost("withdraw")]
         [Authorize]
         [ProducesResponseType(StatusCodes.Status200OK)]
@@ -357,18 +340,29 @@ namespace Portfolio.Api.Controllers
         public async Task<IActionResult> Withdraw([FromBody] decimal amount)
         {
             if (amount <= 0)
+            {
                 return BadRequest("Withdrawal amount must be greater than zero.");
+            }
 
             var username = User.Identity?.Name;
-            if (string.IsNullOrEmpty(username))
-                return Unauthorized("User not authenticated.");
 
-            var user = await _context.Users.FirstOrDefaultAsync(u => u.Username == username);
+            if (string.IsNullOrEmpty(username))
+            {
+                return Unauthorized("User not authenticated.");
+            }
+
+            var user = await _context.Users
+                .FirstOrDefaultAsync(user => user.Username == username);
+
             if (user == null)
+            {
                 return NotFound("User not found.");
+            }
 
             if (user.CashBalance < amount)
+            {
                 return BadRequest("Insufficient funds.");
+            }
 
             user.CashBalance -= amount;
             await _context.SaveChangesAsync();

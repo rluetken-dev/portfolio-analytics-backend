@@ -1,623 +1,681 @@
-// File: Controllers/QuotesController.cs
 using System.ComponentModel.DataAnnotations;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Polly.RateLimit;
 using Portfolio.Api.Data;
+using Portfolio.Api.Exceptions;
 using Portfolio.Api.Models;
 using Portfolio.Api.Services;
-using Swashbuckle.AspNetCore.Annotations;
-using Polly.RateLimit;
-using Portfolio.Api.Exceptions;
 using Portfolio.Api.Utils;
+using Swashbuckle.AspNetCore.Annotations;
 
-namespace Portfolio.Api.Controllers
+namespace Portfolio.Api.Controllers;
+
+/// <summary>
+/// Provides price ingestion and read endpoints for cached quote data.
+/// </summary>
+[ApiController]
+[Route("api/[controller]")]
+public sealed class QuotesController : ControllerBase
 {
-    /// <summary>
-    /// Price ingestion &amp; read API.
-    /// 
-    /// Pipeline overview:
-    /// 1) <c>POST /api/quotes/refresh</c>
-    ///    - Calls Alpha Vantage (tries DAILY_ADJUSTED, falls back to DAILY).
-    ///    - Upserts daily OHLCV (+ adjusted close when available) into SQLite.
-    ///    - Enforces idempotency via UNIQUE index on (TickerId, TradingDate).
-    /// 2) <c>GET /api/quotes/latest</c>
-    ///    - Returns the N most recent rows for a symbol (quick checks/monitoring).
-    /// 3) <c>GET /api/quotes/timeseries</c>
-    ///    - Returns daily closes for a symbol in a date range (charting/analytics).
-    /// 4) <c>GET /api/quotes/quarters</c>
-    ///    - Aggregates per quarter (average close) for lightweight KPI views.
-    /// 
-    /// Data model:
-    /// - <see cref="Ticker"/>: master list of instruments (Symbol, optional Name).
-    /// - <see cref="Price"/>: daily records (TradingDate, OHLCV, AdjustedClose, Volume, Source, audit).
-    /// 
-    /// Resilience:
-    /// - Premium-guarded endpoints return an 'Information' message → we fall back to DAILY.
-    /// - Partial failures are logged per symbol; loop continues for others.
-    /// - Free-tier friendly throttling: small delay between symbols.
-    /// </summary>
-    [ApiController]
-    [Route("api/[controller]")]
-    public class QuotesController : ControllerBase
+    private const int MaxRefreshSymbols = 50;
+    private const int MaxLatestRows = 50;
+    private const int MaxQuarterRows = 40;
+    private const int DefaultTimeseriesDays = 365;
+    private const int MaxTimeseriesDays = 3650;
+    private const int DefaultOhlcDays = 180;
+
+    private readonly AppDbContext _db;
+    private readonly AlphaVantageClient _alpha;
+    private readonly ILogger<QuotesController> _logger;
+
+    public QuotesController(
+        AppDbContext db,
+        AlphaVantageClient alpha,
+        ILogger<QuotesController> logger)
     {
-        private readonly AppDbContext _db;
-        private readonly AlphaVantageClient _alpha;
-        private readonly ILogger<QuotesController> _log;
+        _db = db;
+        _alpha = alpha;
+        _logger = logger;
+    }
 
-        public QuotesController(AppDbContext db, AlphaVantageClient alpha, ILogger<QuotesController> log)
+    /// <summary>
+    /// Fetches daily quote data for one or more symbols and stores it locally.
+    /// </summary>
+    [HttpPost("refresh")]
+    [Produces("application/json")]
+    [SwaggerOperation(
+        Summary = "Fetch and store daily quotes",
+        Description = "Calls Alpha Vantage daily time series data for each symbol and stores new or updated price rows.")]
+    [ProducesResponseType(typeof(RefreshResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status429TooManyRequests)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status503ServiceUnavailable)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> Refresh(
+        [FromQuery, Required] string symbols,
+        [FromQuery] string range = "30d",
+        CancellationToken ct = default)
+    {
+        string[] symbolList = ParseSymbols(symbols);
+
+        if (!TryParseRange(range, out int requestedDays, out bool fullHistory))
         {
-            _db = db;
-            _alpha = alpha;
-            _log = log;
+            throw new BadRequestException("Range must be like '30d', '12m', or 'full'.");
         }
 
-        /// <summary>
-        /// Fetches recent daily closes for the given symbols and persists them into SQLite.
-        /// </summary>
-        /// <remarks>
-        /// Example:
-        /// <br/>POST <c>/api/quotes/refresh?symbols=AAPL,MSFT&amp;range=30d</c>
-        /// </remarks>
-        [HttpPost("refresh")]
-        [Produces("application/json")]
-        [SwaggerOperation(
-            Summary = "Fetch & store daily quotes",
-            Description = "Calls Alpha Vantage TIME_SERIES_DAILY for each symbol, stores only new rows, and returns inserted/skipped counts.")]
-        [ProducesResponseType(typeof(RefreshResponse), StatusCodes.Status200OK)]
-        [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
-        [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status503ServiceUnavailable)]
-        public async Task<IActionResult> Refresh(
-            [FromQuery, Required] string symbols,
-            [FromQuery] string range = "30d",
-            CancellationToken ct = default)
+        int inserted = 0;
+        int skipped = 0;
+
+        foreach (string symbol in symbolList)
         {
-            // ---- 1) Parse & validate input ----
-            var list = symbols
-                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-                .Select(s => s.ToUpperInvariant())
-                .ToArray();
-
-            if (list.Length == 0 || list.Length > 50)
-                throw new BadRequestException("Symbols must contain 1–50 comma-separated tickers.");
-
-            if (!TryParseRange(range, out var days, out var fullHistory))
-                throw new BadRequestException("Range must be like '30d', '12m', or 'full'.");
-
-            foreach (var s in list)
-            {
-                // Allow A–Z, 0–9, dot, dash; length 1..10
-                if (s.Length is < 1 or > 10 || !s.All(ch => char.IsLetterOrDigit(ch) || ch is '.' or '-'))
-                    throw new BadRequestException($"Invalid symbol: '{s}'.");
-            }
-
-            // ---- 2) Fetch & upsert loop ----
-            var inserted = 0;
-            var skipped = 0;
-
-            foreach (var sym in list)
-            {
-                try
-                {
-                    // Fetch and persist daily OHLCV + adjusted close using TIME_SERIES_DAILY_ADJUSTED.
-                    // NOTE: We resolve the ticker once (outside the loop) to avoid repeated DB lookups per row.
-                    var ticker = await _db.Tickers.FirstOrDefaultAsync(t => t.Symbol == sym, ct);
-                    if (ticker is null)
-                    {
-                        ticker = new Ticker { Symbol = sym };
-                        _db.Tickers.Add(ticker);
-                        await _db.SaveChangesAsync(ct);
-                    }
-                    
-                    // Find latest known trading date for this ticker (EF-safe version)
-                    var lastKnownDate = await _db.Prices
-                        .Where(p => p.TickerId == ticker.Id)
-                        .OrderByDescending(p => p.TradingDate)
-                        .Select(p => (DateTime?)p.TradingDate.ToDateTime(TimeOnly.MinValue))
-                        .FirstOrDefaultAsync(ct);
-
-                    // Calculate days since last update to limit fetch window
-                    if (lastKnownDate.HasValue && !fullHistory)
-                    {
-                        var daysSince = (DateTime.UtcNow.Date - lastKnownDate.Value.Date).Days + 1; // +1 ensures we fetch the next day
-                        days = Math.Min(days, Math.Max(daysSince, 1)); // shrink range dynamically, but always >=1
-                    }
-
-                    await foreach (var (date, open, high, low, close, adjClose, volume) in _alpha.GetDailyAdjustedAsync(sym, days, ct, fullHistory))
-                    {
-                        // Idempotent upsert: update if row exists, otherwise insert a new one.
-                        var row = await _db.Prices.FirstOrDefaultAsync(
-                            p => p.TickerId == ticker.Id && p.TradingDate == date, ct);
-
-                        if (row is null)
-                        {
-                            // Insert new row
-                            _db.Prices.Add(new Price
-                            {
-                                TickerId = ticker.Id,
-                                TradingDate = date,
-                                Open = open,
-                                High = high,
-                                Low = low,
-                                Close = close,
-                                AdjustedClose = adjClose,
-                                Volume = volume,
-                                Source = "alpha_vantage",
-                                CreatedUtc = DateTime.UtcNow
-                            });
-                            inserted++;
-                        }
-                        else
-                        {
-                            // Update existing row (fill/refresh full OHLCV payload)
-                            row.Open = open;
-                            row.High = high;
-                            row.Low = low;
-                            row.Close = close;
-                            row.AdjustedClose = adjClose;
-                            row.Volume = volume;
-                            row.Source = "alpha_vantage";
-                            row.UpdatedUtc = DateTime.UtcNow;
-                            skipped++; // we touched an existing row; counting as "skipped/new=0" keeps totals simple
-                        }
-                    }
-
-                    // Persist batched inserts once (keeps transaction short and efficient).
-                    await _db.SaveChangesAsync(ct);
-
-                    // Update ticker refresh timestamp
-                    ticker.LastPriceUpdate = DateTime.UtcNow;
-                    await _db.SaveChangesAsync(ct);
-
-                    // Free-tier friendly delay (~5 req/min on Alpha Vantage).
-                    await Task.Delay(1500, ct);
-                }
-                catch (RateLimitRejectedException ex)
-                {
-                    _log.LogWarning(ex, "Rate limit hit during fundamentals ingest for {Symbol}", sym);
-
-                    // ex.RetryAfter ist direkt ein TimeSpan
-                    Response.Headers["Retry-After"] = ex.RetryAfter.TotalSeconds.ToString("F0");
-
-                    return StatusCode(StatusCodes.Status429TooManyRequests, new ProblemDetails
-                    {
-                        Title = "Rate limit reached",
-                        Status = StatusCodes.Status429TooManyRequests,
-                        Detail = $"Please retry after {ex.RetryAfter.TotalSeconds:F0} seconds."
-                    });
-                }
-                catch (ServiceUnavailableException ex)
-                {
-                    return StatusCode(StatusCodes.Status503ServiceUnavailable, new ProblemDetails
-                    {
-                        Title = "External provider is not configured",
-                        Status = StatusCodes.Status503ServiceUnavailable,
-                        Detail = ex.Message
-                    });
-                }
-                catch (Exception ex)
-                {
-                    _log.LogError(ex, "Fundamentals ingest failed for {Symbol}", sym);
-                    return StatusCode(StatusCodes.Status500InternalServerError, new ProblemDetails
-                    {
-                        Title = "Fundamentals ingest failed",
-                        Status = StatusCodes.Status500InternalServerError,
-                        Detail = ex.Message
-                    });
-                }
-
-            }
-
-            // return a typed DTO instead of an anonymous object
-            var response = new RefreshResponse
-            {
-                Ok = true,
-                Symbols = list,
-                Inserted = inserted,
-                Skipped = skipped
-            };
-            return Ok(response);
-        }
-
-        /// <summary>
-        /// Returns the most recent cached closes for a symbol.
-        /// </summary>
-        /// <remarks>
-        /// Example:
-        /// <br/>GET <c>/api/quotes/latest?symbol=AAPL&amp;take=5</c>
-        /// </remarks>
-       [HttpGet("latest")]
-        [Produces("application/json")]
-        [SwaggerOperation(
-            Summary = "Get recent cached closes",
-            Description = "Returns up to N most recent price rows for a given symbol (default 5).")]
-        [ProducesResponseType(typeof(IEnumerable<object>), StatusCodes.Status200OK)]
-        [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
-        public async Task<IActionResult> Latest(
-            [FromQuery, Required] string symbol,
-            [FromQuery] int take = 5,
-            CancellationToken ct = default)
-        {
-            Guard.BadRequestIf(string.IsNullOrWhiteSpace(symbol), "Symbol required.");
-
-            take = Math.Clamp(take, 1, 50);
-
-            var sym = symbol.ToUpperInvariant();
-
-            var rows = await _db.Prices
-                .AsNoTracking()
-                .Include(p => p.Ticker)
-                .Where(p => p.Ticker.Symbol == sym)
-                .OrderByDescending(p => p.TradingDate)
-                .Take(take)
-                .Select(p => new
-                {
-                    symbol = p.Ticker.Symbol,
-                    date = p.TradingDate.ToString("yyyy-MM-dd"),
-                    open = p.Open,
-                    high = p.High,
-                    low = p.Low,
-                    close = p.Close,
-                    adjustedClose = p.AdjustedClose,
-                    volume = p.Volume,
-                    source = p.Source
-                })
-                .ToListAsync(ct);
-
-            if (rows.Count == 0)
-            {
-                return NotFound(new ProblemDetails
-                {
-                    Title = "No cached prices found",
-                    Detail = $"No recent data for symbol '{sym}'.",
-                    Status = StatusCodes.Status404NotFound
-                });
-            }
-
-            // just return the rows array (frontend expects this)
-            return Ok(rows);
-        }
-
-       /// <summary>
-        /// Gets the most recent price for a symbol (live from Alpha Vantage).
-        /// </summary>
-        /// <remarks>
-        /// Example: GET /api/quotes/current?symbol=AAPL
-        /// </remarks>
-        [HttpGet("current")]
-        [Produces("application/json")]
-        [SwaggerOperation(
-            Summary = "Get current price",
-            Description = "Calls Alpha Vantage GLOBAL_QUOTE and returns the most recent price.")]
-        [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
-        [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
-        [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
-        [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status429TooManyRequests)]
-        [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status503ServiceUnavailable)]
-        [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
-        public async Task<IActionResult> Current(
-            [FromQuery, Required] string symbol,
-            CancellationToken ct = default)
-        {
-            if (string.IsNullOrWhiteSpace(symbol))
-            {
-                throw new BadRequestException("Bad Request: Symbol is required.");
-            }
-
             try
             {
-                var result = await _alpha.GetLatestPriceAsync(symbol.ToUpperInvariant(), ct);
+                var result = await RefreshSymbolAsync(symbol, requestedDays, fullHistory, ct);
 
-                // AlphaVantageClient returns null for temporary provider failures.
-                if (result == null)
-                {
-                    return StatusCode(StatusCodes.Status503ServiceUnavailable, new ProblemDetails
-                    {
-                        Title = "Price temporarily unavailable",
-                        Detail = $"The latest quote for '{symbol}' could not be retrieved. Please try again shortly.",
-                        Status = StatusCodes.Status503ServiceUnavailable
-                    });
-                }
-               
-                return Ok(new
-                {
-                    symbol = result.Value.Symbol,
-                    price = result.Value.Price,
-                    latestTradingDay = result.Value.LatestTradingDay
-                });
+                inserted += result.Inserted;
+                skipped += result.Skipped;
+
+                await Task.Delay(TimeSpan.FromMilliseconds(1500), ct);
             }
-            catch (InvalidOperationException ex) when (ex.Message.StartsWith("AlphaVantageInfo"))
+            catch (RateLimitRejectedException ex)
             {
-                // Daily limit reached (e.g., 25 calls/day in the Free Plan)
-                return StatusCode(StatusCodes.Status429TooManyRequests, new ProblemDetails
-                {
-                    Title = "Alpha Vantage daily limit reached",
-                    Detail = ex.Message.Replace("AlphaVantageInfo: ", ""),
-                    Status = StatusCodes.Status429TooManyRequests
-                });
+                _logger.LogWarning(ex, "Rate limit reached during quote refresh for {Symbol}", symbol);
+
+                Response.Headers["Retry-After"] = ex.RetryAfter.TotalSeconds.ToString("F0");
+
+                return Problem(
+                    title: "Rate limit reached",
+                    detail: $"Please retry after {ex.RetryAfter.TotalSeconds:F0} seconds.",
+                    statusCode: StatusCodes.Status429TooManyRequests);
             }
-            catch (InvalidOperationException ex) when (ex.Message.StartsWith("AlphaVantageNote"))
+            catch (ServiceUnavailableException ex)
             {
-                // Per-minute limit reached (e.g., 5 calls/minute in the Free Plan)
-                return StatusCode(StatusCodes.Status429TooManyRequests, new ProblemDetails
-                {
-                    Title = "Alpha Vantage per-minute rate limit",
-                    Detail = ex.Message.Replace("AlphaVantageNote: ", ""),
-                    Status = StatusCodes.Status429TooManyRequests
-                });
+                return Problem(
+                    title: "External provider is not configured",
+                    detail: ex.Message,
+                    statusCode: StatusCodes.Status503ServiceUnavailable);
             }
-            catch (TaskCanceledException)
-            {              
-                return StatusCode(StatusCodes.Status503ServiceUnavailable, new ProblemDetails
-                {
-                    Title = "Timeout",
-                    Detail = "The external data provider did not respond in time.",
-                    Status = StatusCodes.Status503ServiceUnavailable
-                });
-            }
-            catch (HttpRequestException ex)
-            {             
-                return StatusCode(StatusCodes.Status503ServiceUnavailable, new ProblemDetails
-                {
-                    Title = "Network error",
-                    Detail = ex.Message,
-                    Status = StatusCodes.Status503ServiceUnavailable
-                });
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Quote refresh failed for {Symbol}", symbol);
+
+                return Problem(
+                    title: "Quote refresh failed",
+                    detail: ex.Message,
+                    statusCode: StatusCodes.Status500InternalServerError);
             }
         }
 
-        /// <summary>
-        /// Returns aggregated quarterly data for a symbol (average close per quarter).
-        /// </summary>
-        /// <remarks>
-        /// Example: GET /api/quotes/quarters?symbol=AAPL&amp;take=8
-        /// </remarks>
-        [HttpGet("quarters")]
-        [Produces("application/json")]
-        [SwaggerOperation(
-            Summary = "Quarterly aggregates (avg close)",
-            Description = "Aggregates stored daily closes into quarterly buckets and returns the last N quarters.")]
-        [ProducesResponseType(typeof(IEnumerable<object>), StatusCodes.Status200OK)]
-        [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
-        public async Task<IActionResult> Quarters(
-            [FromQuery, Required] string symbol,
-            [FromQuery] int take = 8,
-            CancellationToken ct = default)
+        return Ok(new RefreshResponse
         {
-            Guard.BadRequestIf(string.IsNullOrWhiteSpace(symbol), "Symbol required.");
+            Ok = true,
+            Symbols = symbolList,
+            Inserted = inserted,
+            Skipped = skipped
+        });
+    }
 
-            take = Math.Clamp(take, 1, 40);
-            var sym = symbol.ToUpperInvariant();
+    /// <summary>
+    /// Returns the most recent cached price rows for a symbol.
+    /// </summary>
+    [HttpGet("latest")]
+    [Produces("application/json")]
+    [SwaggerOperation(
+        Summary = "Get recent cached closes",
+        Description = "Returns up to N most recent cached price rows for a symbol.")]
+    [ProducesResponseType(typeof(IEnumerable<object>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> Latest(
+        [FromQuery, Required] string symbol,
+        [FromQuery] int take = 5,
+        CancellationToken ct = default)
+    {
+        string normalizedSymbol = NormalizeSymbol(symbol);
+        int normalizedTake = Math.Clamp(take, 1, MaxLatestRows);
 
-            // 1) Fetch all price records for the given symbol.
-            //    Note: For very large histories, you might want to add an explicit date filter here.
-            var list = await _db.Prices
-                .Where(p => p.Ticker.Symbol == sym)
-                .ToListAsync(ct);
+        var rows = await _db.Prices
+            .AsNoTracking()
+            .Include(price => price.Ticker)
+            .Where(price => price.Ticker.Symbol == normalizedSymbol)
+            .OrderByDescending(price => price.TradingDate)
+            .Take(normalizedTake)
+            .Select(price => new
+            {
+                symbol = price.Ticker.Symbol,
+                date = price.TradingDate.ToString("yyyy-MM-dd"),
+                open = price.Open,
+                high = price.High,
+                low = price.Low,
+                close = price.Close,
+                adjustedClose = price.AdjustedClose,
+                volume = price.Volume,
+                source = price.Source
+            })
+            .ToListAsync(ct);
 
-            // 2) Group records by quarter (Year + Quarter) and calculate average closing price.
-            var quarterly = list
-                .GroupBy(p => new
-                {
-                    p.TradingDate.Year,
-                    Quarter = (p.TradingDate.Month - 1) / 3 + 1
-                })
-                .Select(g => new
-                {
-                    g.Key.Year,
-                    g.Key.Quarter,
-                    From = g.Min(x => x.TradingDate),
-                    To = g.Max(x => x.TradingDate),
-                    AvgClose = Math.Round(g.Average(x => x.Close), 4)
-                })
-                .OrderByDescending(x => x.Year)
-                .ThenByDescending(x => x.Quarter)
-                .Take(take)
-                .ToList();
-
-            return Ok(quarterly);
+        if (rows.Count == 0)
+        {
+            return NotFound(new ProblemDetails
+            {
+                Title = "No cached prices found",
+                Detail = $"No recent data for symbol '{normalizedSymbol}'.",
+                Status = StatusCodes.Status404NotFound
+            });
         }
 
-        /// <summary>
-        /// Returns daily close time series for a symbol within an optional date range.
-        /// </summary>
-        /// <remarks>
-        /// <para>Examples:</para>
-        /// <para>GET <c>/api/quotes/timeseries?symbol=AAPL&amp;from=2024-01-01&amp;to=2025-09-09</c></para>
-        /// <para>If no dates are provided, the endpoint defaults to the last 365 days up to today.</para>
-        /// <para>If that window returns no rows and the client did not provide <c>from</c>/<c>to</c>,
-        /// we fallback to the last 365 days relative to the DB max date for that symbol.</para>
-        /// </remarks>
-        [HttpGet("timeseries")]
-        [Produces("application/json")]
-        [SwaggerOperation(
-            Summary = "Daily close time series",
-            Description = "Reads stored daily closes from SQLite for the given symbol and date range (inclusive).")]
-        [ProducesResponseType(typeof(IEnumerable<TimeseriesPoint>), StatusCodes.Status200OK)]
-        [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
-        public async Task<IActionResult> Timeseries(
-            [FromQuery, Required] string symbol,
-            [FromQuery] string? from = null,
-            [FromQuery] string? to = null,
-            CancellationToken ct = default)
+        return Ok(rows);
+    }
+
+    /// <summary>
+    /// Gets the most recent live price for a symbol from Alpha Vantage.
+    /// </summary>
+    [HttpGet("current")]
+    [Produces("application/json")]
+    [SwaggerOperation(
+        Summary = "Get current price",
+        Description = "Calls Alpha Vantage GLOBAL_QUOTE and returns the most recent price.")]
+    [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status429TooManyRequests)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status503ServiceUnavailable)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> Current(
+        [FromQuery, Required] string symbol,
+        CancellationToken ct = default)
+    {
+        string normalizedSymbol = NormalizeSymbol(symbol);
+
+        try
         {
-            Guard.BadRequestIf(string.IsNullOrWhiteSpace(symbol), "Symbol required.");
+            var result = await _alpha.GetLatestPriceAsync(normalizedSymbol, ct);
 
-            var sym = symbol.ToUpperInvariant();
-
-            // ----- Parse dates with sensible defaults -----
-            var today = DateOnly.FromDateTime(DateTime.UtcNow);
-            DateOnly fromDate, toDate;
-
-            if (string.IsNullOrWhiteSpace(to))
-                toDate = today;
-            else if (!DateOnly.TryParse(to, out toDate))
-                throw new BadRequestException("Invalid 'to' date (use yyyy-MM-dd).");
-
-            if (string.IsNullOrWhiteSpace(from))
-                fromDate = toDate.AddDays(-365); // default: last 365 days
-            else if (!DateOnly.TryParse(from, out fromDate))
-                throw new BadRequestException("Invalid 'from' date (use yyyy-MM-dd).");
-
-            if (fromDate > toDate)
-                throw new BadRequestException("'From' must be <= 'To'.");
-
-            // Optional guard to avoid accidental huge ranges
-            var maxSpanDays = 3650; // ~10 years
-            if ((toDate.DayNumber - fromDate.DayNumber) > maxSpanDays)
-                throw new BadRequestException($"Date range too large (> {maxSpanDays} days).");
-
-            // English: track if caller explicitly set a range
-            bool explicitRange = !string.IsNullOrWhiteSpace(from) || !string.IsNullOrWhiteSpace(to);
-
-            // ----- Primary query: requested (or default) window relative to 'today' -----
-            var data = await _db.Prices
-                .Where(p => p.Ticker.Symbol == sym && p.TradingDate >= fromDate && p.TradingDate <= toDate)
-                .OrderBy(p => p.TradingDate)
-                .Select(p => new TimeseriesPoint { Date = p.TradingDate, Close = p.Close }) // English: lightweight projection
-                .ToListAsync(ct);
-
-            // English: Fallback only if client did not set from/to AND result is empty
-            if (!explicitRange && data.Count == 0)
+            if (result == null)
             {
-                // English: find DB max date for this symbol
-                var maxDate = await _db.Prices
-                    .Where(p => p.Ticker.Symbol == sym)
-                    .MaxAsync(p => (DateOnly?)p.TradingDate, ct);
-
-                if (maxDate is null)
-                    return Ok(Array.Empty<TimeseriesPoint>()); // English: still no data in DB
-
-                var fbFrom = maxDate.Value.AddDays(-365); // same default span
-                data = await _db.Prices
-                    .Where(p => p.Ticker.Symbol == sym && p.TradingDate >= fbFrom && p.TradingDate <= maxDate.Value)
-                    .OrderBy(p => p.TradingDate)
-                    .Select(p => new TimeseriesPoint { Date = p.TradingDate, Close = p.Close })
-                    .ToListAsync(ct);
+                return Problem(
+                    title: "Price temporarily unavailable",
+                    detail: $"The latest quote for '{normalizedSymbol}' could not be retrieved. Please try again later.",
+                    statusCode: StatusCodes.Status503ServiceUnavailable);
             }
 
-            return Ok(data);
+            return Ok(new
+            {
+                symbol = result.Value.Symbol,
+                price = result.Value.Price,
+                latestTradingDay = result.Value.LatestTradingDay
+            });
         }
-
-
-        // ---- helpers ----
-
-        // returns: true/false + parsed days + fullHistory flag
-        private static bool TryParseRange(string range, out int days, out bool fullHistory)
+        catch (ServiceUnavailableException ex)
         {
-            days = 30;
-            fullHistory = false;
-            if (string.IsNullOrWhiteSpace(range)) return true;
-
-            var s = range.Trim().ToLowerInvariant();
-
-            if (s == "full")
-            {
-                fullHistory = true;
-                days = 3650; // irrelevanter Platzhalter, wir streamen eh alles durch
-                return true;
-            }
-
-            // Support '12m', '24m', '36m' etc.
-            if (s.EndsWith('m') && int.TryParse(s[..^1], out var months) && months is >= 1 and <= 120)
-            {
-                days = Math.Clamp(months * 30, 1, 3650);
-                return true;
-            }
-
-            // Existing 'Nd' logic
-            if (s.EndsWith('d') && int.TryParse(s[..^1], out var d) && d is >= 1 and <= 1000)
-            {
-                days = d;
-                return true;
-            }
-
-            return false;
+            return Problem(
+                title: "External provider is not configured",
+                detail: ex.Message,
+                statusCode: StatusCodes.Status503ServiceUnavailable);
         }
-
-        // Slim DTO for candles
-        public record OhlcRowDto(string Date, decimal Open, decimal High, decimal Low, decimal Close, decimal? Volume);
-
-        // Compact helper to format DateOnly as ISO (no timezone surprises)
-        private static string Iso(DateOnly d) => d.ToString("yyyy-MM-dd");
-
-        /// <summary>
-        /// Daily OHLCV time series in ascending order.
-        /// </summary>
-        /// <remarks>
-        /// <para>Examples:</para>
-        /// <para>GET <c>/api/quotes/ohlc?symbol=AAPL</c></para>
-        /// <para>GET <c>/api/quotes/ohlc?symbol=AAPL&amp;from=2025-03-01&amp;to=2025-09-15</c></para>
-        /// <para>Fallback: if <c>from</c>/<c>to</c> are omitted and the default window is empty,
-        /// the endpoint returns the last 180 days relative to the DB max date.</para>
-        /// </remarks>
-        [HttpGet("ohlc")]
-        [Produces("application/json")]
-        public async Task<IActionResult> Ohlc(
-            [FromQuery] string symbol,
-            [FromQuery] DateTime? from = null,
-            [FromQuery] DateTime? to = null,
-            CancellationToken ct = default)
+        catch (InvalidOperationException ex) when (ex.Message.StartsWith("AlphaVantageInfo", StringComparison.Ordinal))
         {
-            // English: normalize inputs
-            var sym = (symbol ?? string.Empty).Trim().ToUpperInvariant();
-            Guard.BadRequestIf(string.IsNullOrWhiteSpace(sym), "Symbol required.");
+            return Problem(
+                title: "Alpha Vantage daily limit reached",
+                detail: ex.Message.Replace("AlphaVantageInfo: ", string.Empty, StringComparison.Ordinal),
+                statusCode: StatusCodes.Status429TooManyRequests);
+        }
+        catch (InvalidOperationException ex) when (ex.Message.StartsWith("AlphaVantageNote", StringComparison.Ordinal))
+        {
+            return Problem(
+                title: "Alpha Vantage rate limit reached",
+                detail: ex.Message.Replace("AlphaVantageNote: ", string.Empty, StringComparison.Ordinal),
+                statusCode: StatusCodes.Status429TooManyRequests);
+        }
+        catch (TaskCanceledException ex)
+        {
+            _logger.LogWarning(ex, "Current price request timed out for {Symbol}", normalizedSymbol);
 
-            // English: track if caller explicitly set a range
-            bool explicitRange = from.HasValue || to.HasValue;
+            return Problem(
+                title: "External provider timeout",
+                detail: "The external data provider did not respond in time.",
+                statusCode: StatusCodes.Status503ServiceUnavailable);
+        }
+        catch (HttpRequestException ex)
+        {
+            _logger.LogWarning(ex, "Current price request failed for {Symbol}", normalizedSymbol);
 
-            // Default window: last 180 calendar days relative to 'today'
-            var toDt = (to ?? DateTime.UtcNow.Date).Date;
-            var fromDt = (from ?? toDt.AddDays(-180)).Date;
+            return Problem(
+                title: "External provider network error",
+                detail: ex.Message,
+                statusCode: StatusCodes.Status503ServiceUnavailable);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Current price request failed for {Symbol}", normalizedSymbol);
 
-            var fromD = DateOnly.FromDateTime(fromDt);
-            var toD = DateOnly.FromDateTime(toDt);
-
-            // Resolve ticker id once
-            var tickerId = await _db.Tickers
-                .Where(t => t.Symbol == sym)
-                .Select(t => t.Id)
-                .FirstOrDefaultAsync(ct);
-
-            if (tickerId == 0)
-                return Ok(Array.Empty<OhlcRowDto>()); // no ticker → empty array
-
-            // Base query
-            var baseQ = _db.Prices.AsNoTracking().Where(p => p.TickerId == tickerId);
-
-            // Primary window (today-relative or explicit)
-            var rowsRaw = await baseQ
-                .Where(p => p.TradingDate >= fromD && p.TradingDate <= toD)
-                .OrderBy(p => p.TradingDate)
-                .Select(p => new { p.TradingDate, p.Open, p.High, p.Low, p.Close, p.Volume })
-                .ToListAsync(ct);
-
-            // Fallback only when client did NOT provide from/to AND result is empty
-            if (!explicitRange && rowsRaw.Count == 0)
-            {
-                var maxDate = await baseQ.MaxAsync(p => (DateOnly?)p.TradingDate, ct);
-                if (maxDate is null)
-                    return Ok(Array.Empty<OhlcRowDto>());
-
-                var fbFrom = maxDate.Value.AddDays(-180);
-                rowsRaw = await baseQ
-                    .Where(p => p.TradingDate >= fbFrom && p.TradingDate <= maxDate.Value)
-                    .OrderBy(p => p.TradingDate)
-                    .Select(p => new { p.TradingDate, p.Open, p.High, p.Low, p.Close, p.Volume })
-                    .ToListAsync(ct);
-            }
-
-            // Map to DTO
-            var rows = rowsRaw.Select(p => new OhlcRowDto(
-                Iso(p.TradingDate),   // date "YYYY-MM-DD"
-                p.Open,
-                p.High,
-                p.Low,
-                p.Close,
-                p.Volume
-            )).ToList();
-
-            return Ok(rows);
+            return Problem(
+                title: "Current price request failed",
+                detail: "An unexpected error occurred while processing the request.",
+                statusCode: StatusCodes.Status500InternalServerError);
         }
     }
-}
 
+    /// <summary>
+    /// Returns quarterly average close values for a symbol.
+    /// </summary>
+    [HttpGet("quarters")]
+    [Produces("application/json")]
+    [SwaggerOperation(
+        Summary = "Quarterly average close values",
+        Description = "Aggregates stored daily closes into quarterly buckets and returns the last N quarters.")]
+    [ProducesResponseType(typeof(IEnumerable<object>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> Quarters(
+        [FromQuery, Required] string symbol,
+        [FromQuery] int take = 8,
+        CancellationToken ct = default)
+    {
+        string normalizedSymbol = NormalizeSymbol(symbol);
+        int normalizedTake = Math.Clamp(take, 1, MaxQuarterRows);
+
+        var prices = await _db.Prices
+            .AsNoTracking()
+            .Where(price => price.Ticker.Symbol == normalizedSymbol)
+            .ToListAsync(ct);
+
+        var quarterly = prices
+            .GroupBy(price => new
+            {
+                price.TradingDate.Year,
+                Quarter = (price.TradingDate.Month - 1) / 3 + 1
+            })
+            .Select(group => new
+            {
+                group.Key.Year,
+                group.Key.Quarter,
+                From = group.Min(price => price.TradingDate),
+                To = group.Max(price => price.TradingDate),
+                AvgClose = Math.Round(group.Average(price => price.Close), 4)
+            })
+            .OrderByDescending(row => row.Year)
+            .ThenByDescending(row => row.Quarter)
+            .Take(normalizedTake)
+            .ToList();
+
+        return Ok(quarterly);
+    }
+
+    /// <summary>
+    /// Returns daily close time series for a symbol within an optional date range.
+    /// </summary>
+    [HttpGet("timeseries")]
+    [Produces("application/json")]
+    [SwaggerOperation(
+        Summary = "Daily close time series",
+        Description = "Reads stored daily closes for the given symbol and inclusive date range.")]
+    [ProducesResponseType(typeof(IEnumerable<TimeseriesPoint>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> Timeseries(
+        [FromQuery, Required] string symbol,
+        [FromQuery] string? from = null,
+        [FromQuery] string? to = null,
+        CancellationToken ct = default)
+    {
+        string normalizedSymbol = NormalizeSymbol(symbol);
+        bool explicitRange = !string.IsNullOrWhiteSpace(from) || !string.IsNullOrWhiteSpace(to);
+
+        (DateOnly fromDate, DateOnly toDate) = ParseDateRange(from, to, DefaultTimeseriesDays);
+
+        var data = await GetTimeseriesAsync(normalizedSymbol, fromDate, toDate, ct);
+
+        if (!explicitRange && data.Count == 0)
+        {
+            DateOnly? maxDate = await GetMaxTradingDateAsync(normalizedSymbol, ct);
+
+            if (maxDate is null)
+            {
+                return Ok(Array.Empty<TimeseriesPoint>());
+            }
+
+            data = await GetTimeseriesAsync(
+                normalizedSymbol,
+                maxDate.Value.AddDays(-DefaultTimeseriesDays),
+                maxDate.Value,
+                ct);
+        }
+
+        return Ok(data);
+    }
+
+    /// <summary>
+    /// Returns daily OHLCV rows for a symbol within an optional date range.
+    /// </summary>
+    [HttpGet("ohlc")]
+    [Produces("application/json")]
+    [SwaggerOperation(
+        Summary = "Daily OHLCV time series",
+        Description = "Reads stored daily OHLCV rows for the given symbol and inclusive date range.")]
+    [ProducesResponseType(typeof(IEnumerable<OhlcRowDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> Ohlc(
+        [FromQuery, Required] string symbol,
+        [FromQuery] DateTime? from = null,
+        [FromQuery] DateTime? to = null,
+        CancellationToken ct = default)
+    {
+        string normalizedSymbol = NormalizeSymbol(symbol);
+        bool explicitRange = from.HasValue || to.HasValue;
+
+        DateOnly toDate = DateOnly.FromDateTime((to ?? DateTime.UtcNow.Date).Date);
+        DateOnly fromDate = DateOnly.FromDateTime((from ?? DateTime.UtcNow.Date.AddDays(-DefaultOhlcDays)).Date);
+
+        Guard.BadRequestIf(fromDate > toDate, "'From' must be <= 'To'.");
+
+        int tickerId = await _db.Tickers
+            .Where(ticker => ticker.Symbol == normalizedSymbol)
+            .Select(ticker => ticker.Id)
+            .FirstOrDefaultAsync(ct);
+
+        if (tickerId == 0)
+        {
+            return Ok(Array.Empty<OhlcRowDto>());
+        }
+
+        List<OhlcRowDto> rows = await GetOhlcRowsAsync(tickerId, fromDate, toDate, ct);
+
+        if (!explicitRange && rows.Count == 0)
+        {
+            DateOnly? maxDate = await _db.Prices
+                .AsNoTracking()
+                .Where(price => price.TickerId == tickerId)
+                .MaxAsync(price => (DateOnly?)price.TradingDate, ct);
+
+            if (maxDate is null)
+            {
+                return Ok(Array.Empty<OhlcRowDto>());
+            }
+
+            rows = await GetOhlcRowsAsync(
+                tickerId,
+                maxDate.Value.AddDays(-DefaultOhlcDays),
+                maxDate.Value,
+                ct);
+        }
+
+        return Ok(rows);
+    }
+
+    public sealed record OhlcRowDto(
+        string Date,
+        decimal Open,
+        decimal High,
+        decimal Low,
+        decimal Close,
+        long Volume);
+
+    private sealed record RefreshSymbolResult(int Inserted, int Skipped);
+
+    private async Task<RefreshSymbolResult> RefreshSymbolAsync(
+        string symbol,
+        int requestedDays,
+        bool fullHistory,
+        CancellationToken ct)
+    {
+        Ticker ticker = await GetOrCreateTickerAsync(symbol, ct);
+        int fetchDays = await CalculateFetchDaysAsync(ticker.Id, requestedDays, fullHistory, ct);
+
+        int inserted = 0;
+        int skipped = 0;
+
+        await foreach (var (date, open, high, low, close, adjustedClose, volume) in
+            _alpha.GetDailyAdjustedAsync(symbol, fetchDays, ct, fullHistory))
+        {
+            Price? row = await _db.Prices.FirstOrDefaultAsync(
+                price => price.TickerId == ticker.Id && price.TradingDate == date,
+                ct);
+
+            if (row is null)
+            {
+                _db.Prices.Add(new Price
+                {
+                    TickerId = ticker.Id,
+                    TradingDate = date,
+                    Open = open,
+                    High = high,
+                    Low = low,
+                    Close = close,
+                    AdjustedClose = adjustedClose,
+                    Volume = volume,
+                    Source = "alpha_vantage",
+                    CreatedUtc = DateTime.UtcNow
+                });
+
+                inserted++;
+            }
+            else
+            {
+                row.Open = open;
+                row.High = high;
+                row.Low = low;
+                row.Close = close;
+                row.AdjustedClose = adjustedClose;
+                row.Volume = volume;
+                row.Source = "alpha_vantage";
+                row.UpdatedUtc = DateTime.UtcNow;
+
+                skipped++;
+            }
+        }
+
+        ticker.LastPriceUpdate = DateTime.UtcNow;
+        await _db.SaveChangesAsync(ct);
+
+        return new RefreshSymbolResult(inserted, skipped);
+    }
+
+    private async Task<Ticker> GetOrCreateTickerAsync(string symbol, CancellationToken ct)
+    {
+        Ticker? ticker = await _db.Tickers.FirstOrDefaultAsync(
+            existingTicker => existingTicker.Symbol == symbol,
+            ct);
+
+        if (ticker is not null)
+        {
+            return ticker;
+        }
+
+        ticker = new Ticker { Symbol = symbol };
+
+        _db.Tickers.Add(ticker);
+        await _db.SaveChangesAsync(ct);
+
+        return ticker;
+    }
+
+    private async Task<int> CalculateFetchDaysAsync(
+        int tickerId,
+        int requestedDays,
+        bool fullHistory,
+        CancellationToken ct)
+    {
+        if (fullHistory)
+        {
+            return requestedDays;
+        }
+
+        DateOnly? lastKnownDate = await _db.Prices
+            .Where(price => price.TickerId == tickerId)
+            .OrderByDescending(price => price.TradingDate)
+            .Select(price => (DateOnly?)price.TradingDate)
+            .FirstOrDefaultAsync(ct);
+
+        if (lastKnownDate is null)
+        {
+            return requestedDays;
+        }
+
+        int daysSinceLastUpdate = DateOnly.FromDateTime(DateTime.UtcNow).DayNumber - lastKnownDate.Value.DayNumber + 1;
+
+        return Math.Min(requestedDays, Math.Max(daysSinceLastUpdate, 1));
+    }
+
+    private Task<List<TimeseriesPoint>> GetTimeseriesAsync(
+        string symbol,
+        DateOnly fromDate,
+        DateOnly toDate,
+        CancellationToken ct)
+    {
+        return _db.Prices
+            .AsNoTracking()
+            .Where(price => price.Ticker.Symbol == symbol &&
+                price.TradingDate >= fromDate &&
+                price.TradingDate <= toDate)
+            .OrderBy(price => price.TradingDate)
+            .Select(price => new TimeseriesPoint
+            {
+                Date = price.TradingDate,
+                Close = price.Close
+            })
+            .ToListAsync(ct);
+    }
+
+    private Task<DateOnly?> GetMaxTradingDateAsync(string symbol, CancellationToken ct)
+    {
+        return _db.Prices
+            .AsNoTracking()
+            .Where(price => price.Ticker.Symbol == symbol)
+            .MaxAsync(price => (DateOnly?)price.TradingDate, ct);
+    }
+
+    private Task<List<OhlcRowDto>> GetOhlcRowsAsync(
+        int tickerId,
+        DateOnly fromDate,
+        DateOnly toDate,
+        CancellationToken ct)
+    {
+        return _db.Prices
+            .AsNoTracking()
+            .Where(price => price.TickerId == tickerId &&
+                price.TradingDate >= fromDate &&
+                price.TradingDate <= toDate)
+            .OrderBy(price => price.TradingDate)
+            .Select(price => new OhlcRowDto(
+                price.TradingDate.ToString("yyyy-MM-dd"),
+                price.Open,
+                price.High,
+                price.Low,
+                price.Close,
+                price.Volume))
+            .ToListAsync(ct);
+    }
+
+    private static string[] ParseSymbols(string symbols)
+    {
+        Guard.BadRequestIf(string.IsNullOrWhiteSpace(symbols), "Symbols required.");
+
+        string[] parsedSymbols = symbols
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(NormalizeSymbol)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        if (parsedSymbols.Length == 0 || parsedSymbols.Length > MaxRefreshSymbols)
+        {
+            throw new BadRequestException($"Symbols must contain 1-{MaxRefreshSymbols} comma-separated tickers.");
+        }
+
+        return parsedSymbols;
+    }
+
+    private static string NormalizeSymbol(string symbol)
+    {
+        if (string.IsNullOrWhiteSpace(symbol))
+        {
+            throw new BadRequestException("Symbol required.");
+        }
+
+        string normalizedSymbol = symbol.Trim().ToUpperInvariant();
+
+        if (normalizedSymbol.Length is < 1 or > 10 ||
+            !normalizedSymbol.All(character => char.IsLetterOrDigit(character) || character is '.' or '-'))
+        {
+            throw new BadRequestException($"Invalid symbol: '{normalizedSymbol}'.");
+        }
+
+        return normalizedSymbol;
+    }
+
+    private static (DateOnly FromDate, DateOnly ToDate) ParseDateRange(
+        string? from,
+        string? to,
+        int defaultDays)
+    {
+        DateOnly today = DateOnly.FromDateTime(DateTime.UtcNow);
+
+        DateOnly toDate;
+        if (string.IsNullOrWhiteSpace(to))
+        {
+            toDate = today;
+        }
+        else if (!DateOnly.TryParse(to, out toDate))
+        {
+            throw new BadRequestException("Invalid 'to' date. Use yyyy-MM-dd.");
+        }
+
+        DateOnly fromDate;
+        if (string.IsNullOrWhiteSpace(from))
+        {
+            fromDate = toDate.AddDays(-defaultDays);
+        }
+        else if (!DateOnly.TryParse(from, out fromDate))
+        {
+            throw new BadRequestException("Invalid 'from' date. Use yyyy-MM-dd.");
+        }
+
+        if (fromDate > toDate)
+        {
+            throw new BadRequestException("'From' must be <= 'To'.");
+        }
+
+        if (toDate.DayNumber - fromDate.DayNumber > MaxTimeseriesDays)
+        {
+            throw new BadRequestException($"Date range too large. Maximum is {MaxTimeseriesDays} days.");
+        }
+
+        return (fromDate, toDate);
+    }
+
+    private static bool TryParseRange(string range, out int days, out bool fullHistory)
+    {
+        days = 30;
+        fullHistory = false;
+
+        if (string.IsNullOrWhiteSpace(range))
+        {
+            return true;
+        }
+
+        string normalizedRange = range.Trim().ToLowerInvariant();
+
+        if (normalizedRange == "full")
+        {
+            fullHistory = true;
+            days = MaxTimeseriesDays;
+            return true;
+        }
+
+        if (normalizedRange.EndsWith('m') &&
+            int.TryParse(normalizedRange[..^1], out int months) &&
+            months is >= 1 and <= 120)
+        {
+            days = Math.Clamp(months * 30, 1, MaxTimeseriesDays);
+            return true;
+        }
+
+        if (normalizedRange.EndsWith('d') &&
+            int.TryParse(normalizedRange[..^1], out int parsedDays) &&
+            parsedDays is >= 1 and <= 1000)
+        {
+            days = parsedDays;
+            return true;
+        }
+
+        return false;
+    }
+}

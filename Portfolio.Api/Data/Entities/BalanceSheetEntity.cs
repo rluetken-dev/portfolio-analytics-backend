@@ -1,35 +1,53 @@
-namespace Portfolio.Api.Data.Entities
+namespace Portfolio.Api.Data.Entities;
+
+/// <summary>
+/// Represents one balance sheet observation stored in the local database.
+/// Annual and quarterly rows are distinguished by <see cref="Frequency" />.
+/// </summary>
+public sealed class BalanceSheetEntity
 {
     /// <summary>
-    /// SQL row for a balance sheet observation.
-    /// NOTE: Stores both annual and quarterly rows distinguished by Frequency.
+    /// Surrogate primary key.
     /// </summary>
-    public class BalanceSheetEntity
-    {
-        public int Id { get; set; } // Surrogate PK
+    public int Id { get; set; }
 
-        /// <summary>Ticker symbol, uppercased (e.g., "AAPL").</summary>
-        public string Symbol { get; set; } = string.Empty;
+    /// <summary>
+    /// Uppercase ticker symbol, for example AAPL.
+    /// </summary>
+    public string Symbol { get; set; } = string.Empty;
 
-        /// <summary>Period end date from FMP (ISO yyyy-MM-dd).</summary>
-        public DateOnly Date { get; set; }
+    /// <summary>
+    /// Statement period end date.
+    /// </summary>
+    public DateOnly Date { get; set; }
 
-        /// <summary>"annual" or "quarter" to distinguish frequency.</summary>
-        public string Frequency { get; set; } = "annual";
+    /// <summary>
+    /// Statement frequency: annual or quarter.
+    /// </summary>
+    public string Frequency { get; set; } = "annual";
 
-        /// <summary>Reported currency code (e.g., "USD").</summary>
-        public string? ReportedCurrency { get; set; }
+    /// <summary>
+    /// Reported currency code, for example USD.
+    /// </summary>
+    public string? ReportedCurrency { get; set; }
 
-        /// <summary>Total assets (raw integer from API).</summary>
-        public long? TotalAssets { get; set; }
+    /// <summary>
+    /// Total assets.
+    /// </summary>
+    public long? TotalAssets { get; set; }
 
-        /// <summary>Total liabilities (raw integer from API).</summary>
-        public long? TotalLiabilities { get; set; }
+    /// <summary>
+    /// Total liabilities.
+    /// </summary>
+    public long? TotalLiabilities { get; set; }
 
-        /// <summary>Total stockholders' equity (raw integer from API).</summary>
-        public long? TotalStockholdersEquity { get; set; }
+    /// <summary>
+    /// Total stockholders' equity.
+    /// </summary>
+    public long? TotalStockholdersEquity { get; set; }
 
-        /// <summary>Cash and cash equivalents (raw integer from API).</summary>
-        public long? CashAndCashEquivalents { get; set; }
-    }
+    /// <summary>
+    /// Cash and cash equivalents.
+    /// </summary>
+    public long? CashAndCashEquivalents { get; set; }
 }

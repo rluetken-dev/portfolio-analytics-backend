@@ -1,119 +1,99 @@
+using System.Reflection;
+using System.Text;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.IdentityModel.Tokens;
+using Newtonsoft.Json;
 using Polly;
 using Polly.Extensions.Http;
-using Portfolio.Api.Services;
 using Portfolio.Api.Data;
-using Microsoft.EntityFrameworkCore;
-using System.Reflection;
-using Swashbuckle.AspNetCore.Annotations;
-using Portfolio.Api.Seed;
-using Newtonsoft.Json;
-using Portfolio.Api.Models;
-using Microsoft.AspNetCore.Authentication.JwtBearer;
-using Microsoft.IdentityModel.Tokens;
-using System.Text;
 using Portfolio.Api.Middleware;
-
+using Portfolio.Api.Models;
+using Portfolio.Api.Seed;
+using Portfolio.Api.Services;
+using Swashbuckle.AspNetCore.Annotations;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// 🧩 Explicitly configure Kestrel to listen on all network interfaces (important for WSL2)
-builder.WebHost.ConfigureKestrel(options =>
-{
-    options.Listen(System.Net.IPAddress.Any, 5046); // IPv4 only
-    options.Listen(System.Net.IPAddress.IPv6Any, 5046); // IPv6 also (optional)
-});
-
-// // 🧠 Enable detailed model binding + validation logs
-// builder.Logging.AddFilter("Microsoft.AspNetCore.Mvc.Infrastructure", LogLevel.Debug);
-
-// --- Rate Limit & Retry Policies ---
-
-// AlphaVantage Policies
+// External provider resilience policies
 var alphaVantageRateLimit = Policy.RateLimitAsync<HttpResponseMessage>(
-    4, // max 5 calls
+    4,
     TimeSpan.FromMinutes(1),
-    4
-);
+    4);
 
 var alphaVantageRetry = HttpPolicyExtensions
     .HandleTransientHttpError()
-    .OrResult(msg => msg.StatusCode == System.Net.HttpStatusCode.TooManyRequests)
-    .WaitAndRetryAsync(
-        5,
-        attempt => TimeSpan.FromSeconds(5 * attempt)
-    );
+    .OrResult(response => response.StatusCode == System.Net.HttpStatusCode.TooManyRequests)
+    .WaitAndRetryAsync(5, attempt => TimeSpan.FromSeconds(5 * attempt));
 
-// FMP Policies
 var fmpRateLimit = Policy.RateLimitAsync<HttpResponseMessage>(
     5,
     TimeSpan.FromMinutes(1),
-    5
-);
+    5);
 
 var fmpRetry = HttpPolicyExtensions
     .HandleTransientHttpError()
-    .OrResult(msg => msg.StatusCode == System.Net.HttpStatusCode.TooManyRequests)
-    .WaitAndRetryAsync(
-        3,
-        attempt => TimeSpan.FromSeconds(5 * attempt)
-    );
+    .OrResult(response => response.StatusCode == System.Net.HttpStatusCode.TooManyRequests)
+    .WaitAndRetryAsync(3, attempt => TimeSpan.FromSeconds(5 * attempt));
 
-// --- Fallback read JSON ---
-var fallbackPath = Path.Combine(builder.Environment.ContentRootPath, "Data", "companies-fallback.json");
-var fallbackJson = File.ReadAllText(fallbackPath);
-var fallbackData = JsonConvert.DeserializeObject<FallbackData>(fallbackJson) ?? new FallbackData();
+// Local fallback company data
+string fallbackPath = Path.Combine(
+    builder.Environment.ContentRootPath,
+    "Data",
+    "companies-fallback.json");
+
+FallbackData fallbackData = File.Exists(fallbackPath)
+    ? JsonConvert.DeserializeObject<FallbackData>(File.ReadAllText(fallbackPath)) ?? new FallbackData()
+    : new FallbackData();
 
 builder.Services.AddSingleton(fallbackData);
-builder.Services.AddSingleton(fallbackPath);
 
-builder.Services.AddMemoryCache();
+// Database
+builder.Services.AddDbContext<AppDbContext>(options =>
+    options.UseSqlite(builder.Configuration.GetConnectionString("Default")));
 
-// --- existing DbContext registration ---
-builder.Services.AddDbContext<AppDbContext>(opt =>
-    opt.UseSqlite(builder.Configuration.GetConnectionString("Default")));
-
-// --- HttpClients with Policies ---
-
-// AlphaVantage client
+// External provider HTTP clients
 builder.Services.AddHttpClient<AlphaVantageClient>(client =>
 {
     client.BaseAddress = new Uri("https://www.alphavantage.co/");
-    client.Timeout = TimeSpan.FromSeconds(10); // keep calls bounded
+    client.Timeout = TimeSpan.FromSeconds(10);
 })
 .AddPolicyHandler(alphaVantageRateLimit)
 .AddPolicyHandler(alphaVantageRetry);
 
-// FMP client
 builder.Services.AddHttpClient<FmpClient>(client =>
 {
     client.BaseAddress = new Uri("https://financialmodelingprep.com/");
+    client.Timeout = TimeSpan.FromSeconds(15);
     client.DefaultRequestHeaders.Accept.ParseAdd("application/json");
-    client.DefaultRequestHeaders.UserAgent.ParseAdd("Portfolio.Api (+https://github.com/rluetken-dev)");
+    client.DefaultRequestHeaders.UserAgent.ParseAdd(
+        "Portfolio.Api (+https://github.com/rluetken-dev/portfolio-analytics-backend)");
 })
 .AddPolicyHandler(fmpRateLimit)
 .AddPolicyHandler(fmpRetry);
 
-// Swagger / Controllers
+// MVC and Swagger
 builder.Services.AddControllers()
     .AddJsonOptions(options =>
     {
-        options.JsonSerializerOptions.PropertyNameCaseInsensitive = true;        
+        options.JsonSerializerOptions.PropertyNameCaseInsensitive = true;
     });
 
 builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen(c =>
+
+builder.Services.AddSwaggerGen(options =>
 {
-    // Enable [SwaggerOperation]/[SwaggerResponse] attributes
-    c.EnableAnnotations();
+    options.EnableAnnotations();
 
-    // Include XML comments from this assembly
-    var xmlFile = $"{Assembly.GetExecutingAssembly().GetName().Name}.xml";
-    var xmlPath = Path.Combine(AppContext.BaseDirectory, xmlFile);
+    string xmlFile = $"{Assembly.GetExecutingAssembly().GetName().Name}.xml";
+    string xmlPath = Path.Combine(AppContext.BaseDirectory, xmlFile);
+
     if (File.Exists(xmlPath))
-        c.IncludeXmlComments(xmlPath);
+    {
+        options.IncludeXmlComments(xmlPath);
+    }
 
-    // --- JWT Auth config for Swagger ---
-    c.AddSecurityDefinition("Bearer", new Microsoft.OpenApi.Models.OpenApiSecurityScheme
+    options.AddSecurityDefinition("Bearer", new Microsoft.OpenApi.Models.OpenApiSecurityScheme
     {
         Description = "JWT Authorization header using the Bearer scheme. Example: \"Bearer {token}\"",
         Name = "Authorization",
@@ -122,7 +102,7 @@ builder.Services.AddSwaggerGen(c =>
         Scheme = "Bearer"
     });
 
-    c.AddSecurityRequirement(new Microsoft.OpenApi.Models.OpenApiSecurityRequirement
+    options.AddSecurityRequirement(new Microsoft.OpenApi.Models.OpenApiSecurityRequirement
     {
         {
             new Microsoft.OpenApi.Models.OpenApiSecurityScheme
@@ -137,51 +117,51 @@ builder.Services.AddSwaggerGen(c =>
         }
     });
 
-    // --- Grouping logic (fixed & null-safe) ---
-    c.TagActionsBy(api =>
+    options.TagActionsBy(api =>
     {
-        // 1️⃣ Prefer explicit [SwaggerOperation(Tags = ...)] attribute
-        var op = api.ActionDescriptor.EndpointMetadata
+        SwaggerOperationAttribute? operation = api.ActionDescriptor.EndpointMetadata
             .OfType<SwaggerOperationAttribute>()
             .FirstOrDefault();
 
-        if (op?.Tags is { Length: > 0 })
-            return op.Tags;
-
-        // 2️⃣ Fallback: group all Admin endpoints together
-        var controller = api.GroupName ?? api.ActionDescriptor.RouteValues["controller"];
-        if (!string.IsNullOrEmpty(controller) &&
-            controller.Contains("Admin", StringComparison.OrdinalIgnoreCase))
+        if (operation?.Tags is { Length: > 0 })
         {
-            return new[] { "Admin Management" };
+            return operation.Tags;
         }
 
-        // 3️⃣ Default group
-        return new[] { controller ?? "Misc" };
+        string? controller = api.GroupName ?? api.ActionDescriptor.RouteValues["controller"];
+
+        return [controller ?? "Misc"];
     });
 
-    // Include all APIs unless explicitly hidden
-    c.DocInclusionPredicate((name, api) => true);
+    options.DocInclusionPredicate((_, _) => true);
 });
 
-// ----- NEW: CORS for Vite dev server (http://localhost:5173) -----
+// Local frontend development
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowViteDev", policy =>
+    {
         policy
-            .WithOrigins("http://localhost:5173", "http://127.0.0.1:5173")  // Vite dev server origin
-            .AllowAnyMethod()                                               // GET/POST/PUT/DELETE...
-            .AllowAnyHeader()                                               // Content-Type, etc.
-            .AllowCredentials()                                             // keep if you might use cookies/auth later
-    );
+            .WithOrigins(
+                "http://localhost:5173",
+                "http://localhost:5174",
+                "http://127.0.0.1:5173",
+                "http://127.0.0.1:5174")
+            .AllowAnyMethod()
+            .AllowAnyHeader()
+            .AllowCredentials();
+    });
 });
-// ---------------------------------------------------------------
 
-// --- JWT Authentication ---
-var secretKey = builder.Configuration["Jwt:Secret"]
-    ?? throw new InvalidOperationException("JWT secret is not configured.");
+// Authentication
+string secretKey = builder.Configuration["Jwt:Secret"] ?? string.Empty;
 
-var key = Encoding.UTF8.GetBytes(secretKey);
+if (string.IsNullOrWhiteSpace(secretKey))
+{
+    throw new InvalidOperationException("JWT secret is not configured.");
+}
+
+byte[] signingKey = Encoding.UTF8.GetBytes(secretKey);
 
 builder.Services.AddAuthentication(options =>
 {
@@ -196,7 +176,7 @@ builder.Services.AddAuthentication(options =>
         ValidateAudience = false,
         ValidateLifetime = true,
         ValidateIssuerSigningKey = true,
-        IssuerSigningKey = new SymmetricSecurityKey(key),
+        IssuerSigningKey = new SymmetricSecurityKey(signingKey),
         ClockSkew = TimeSpan.Zero
     };
 });
@@ -207,35 +187,29 @@ builder.Services.AddAuthorization(options =>
         policy.RequireClaim("isAdmin", "true"));
 });
 
-// Domain services
+// Application services
 builder.Services.AddScoped<JwtService>();
 builder.Services.AddScoped<IncomeIngestService>();
 builder.Services.AddScoped<BalanceSheetIngestService>();
 builder.Services.AddScoped<CashFlowIngestService>();
-builder.Services.AddScoped<ISeedService, SeedService>();
-
 builder.Services.AddScoped<MaintenanceService>();
-
 builder.Services.AddScoped<PortfolioAnalyticsService>();
-
-// English: lightweight client pointing to this API itself (same dev host/port)
-builder.Services.AddHttpClient("self", c =>
-{
-    c.BaseAddress = new Uri("http://localhost:5046");
-    c.DefaultRequestHeaders.Accept.ParseAdd("application/json");
-});
-
-// English: register loader (stateless → singleton ok)
+builder.Services.AddScoped<ISeedService, SeedService>();
 builder.Services.AddSingleton<ISeedFileService, SeedFileService>();
 
-// English: ensure your DB seeder is available (if not already)
-builder.Services.AddScoped<Portfolio.Api.Services.ISeedService, Portfolio.Api.Services.SeedService>();
+builder.Services.AddHttpClient("self", client =>
+{
+    client.BaseAddress = new Uri("http://localhost:5046");
+    client.DefaultRequestHeaders.Accept.ParseAdd("application/json");
+});
+
 var app = builder.Build();
 
-// Ensure DB ready (migrate or create)
-using (var scope = app.Services.CreateScope())
+// Database startup
+using (IServiceScope scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
     try
     {
         db.Database.Migrate();
@@ -252,25 +226,14 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
-// ----- NEW: enable CORS BEFORE mapping endpoints -----
-app.UseCors("AllowViteDev");
-// -----------------------------------------------------
+app.UseMiddleware<ErrorHandlingMiddleware>();
 
-// (Optional) If you force HTTPS in production, keep this. For local dev over http you can comment out.
-// app.UseHttpsRedirection();
+app.UseCors("AllowViteDev");
 
 app.UseAuthentication();
-
-// --- Global error handling middleware ---
-app.UseMiddleware<Portfolio.Api.Middleware.ErrorHandlingMiddleware>();
-
 app.UseAuthorization();
 
-
-// ----- NEW: Minimal health endpoint for quick checks -----
-// Returns: { "status": "ok" }
 app.MapGet("/health", () => Results.Json(new { status = "ok" }));
-// ---------------------------------------------------------
 
 app.MapControllers();
 

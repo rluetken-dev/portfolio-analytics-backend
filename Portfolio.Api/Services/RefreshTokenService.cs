@@ -1,43 +1,42 @@
-using System;
 using System.Security.Cryptography;
-using System.Threading.Tasks;
-using Portfolio.Api.Models;
 using Portfolio.Api.Data;
+using Portfolio.Api.Models;
 
-namespace Portfolio.Api.Services
+namespace Portfolio.Api.Services;
+
+public static class RefreshTokenService
 {
-    public static class RefreshTokenService
+    private const int TokenSizeBytes = 32;
+    private const int RefreshTokenLifetimeDays = 7;
+
+    public static RefreshToken GenerateRefreshToken(User user)
     {
-        // Generate a new refresh token for a given user
-        public static RefreshToken GenerateRefreshToken(User user)
+        ArgumentNullException.ThrowIfNull(user);
+
+        string token = Convert.ToBase64String(RandomNumberGenerator.GetBytes(TokenSizeBytes));
+
+        return new RefreshToken
         {
-            // Generate a secure random token string
-            var randomNumber = new byte[32];
-            using (var rng = RandomNumberGenerator.Create())
-            {
-                rng.GetBytes(randomNumber);
-            }
-            var tokenString = Convert.ToBase64String(randomNumber);
+            Token = token,
+            ExpiresAt = DateTime.UtcNow.AddDays(RefreshTokenLifetimeDays),
+            UserId = user.Id,
+            User = user
+        };
+    }
 
-            return new RefreshToken
-            {
-                Token = tokenString,                   // random secure string
-                ExpiresAt = DateTime.UtcNow.AddDays(7), // valid for 7 days
-                UserId = user.Id,                      // link to the user
-                User = user
-            };
-        }
+    public static async Task<RefreshToken> GenerateAndSaveAsync(
+        User user,
+        AppDbContext context,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(user);
+        ArgumentNullException.ThrowIfNull(context);
 
-        // Generate + save refresh token to the database
-        public static async Task<RefreshToken> GenerateAndSaveAsync(User user, AppDbContext context)
-        {
-            var refreshToken = GenerateRefreshToken(user);
+        RefreshToken refreshToken = GenerateRefreshToken(user);
 
-            // Save to database
-            context.RefreshTokens.Add(refreshToken);
-            await context.SaveChangesAsync();
+        context.RefreshTokens.Add(refreshToken);
+        await context.SaveChangesAsync(ct);
 
-            return refreshToken;
-        }
+        return refreshToken;
     }
 }

@@ -1,6 +1,33 @@
 @Portfolio.Api_HostAddress = http://localhost:5046
+@access_token = paste-token-here
 
-GET {{Portfolio.Api_HostAddress}}/weatherforecast/
+### Health check
+GET {{Portfolio.Api_HostAddress}}/health
 Accept: application/json
 
-###
+### System status
+GET {{Portfolio.Api_HostAddress}}/api/system/status
+Accept: application/json
+
+### Register user
+POST {{Portfolio.Api_HostAddress}}/api/User/register
+Content-Type: application/json
+
+{
+  "username": "demo-user",
+  "password": "DemoPassword123!"
+}
+
+### Login user
+POST {{Portfolio.Api_HostAddress}}/api/User/login
+Content-Type: application/json
+
+{
+  "username": "demo-user",
+  "password": "DemoPassword123!"
+}
+
+### Current user
+GET {{Portfolio.Api_HostAddress}}/api/User/me
+Accept: application/json
+Authorization: Bearer {{access_token}}

@@ -1,17 +1,16 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Portfolio.Api.Data;
-using Portfolio.Api.Models;
-using Portfolio.Api.DTOs;
 using Microsoft.EntityFrameworkCore;
+using Portfolio.Api.Data;
+using Portfolio.Api.DTOs;
 using Portfolio.Api.Exceptions;
+using Portfolio.Api.Models;
 using Portfolio.Api.Services;
 
 namespace Portfolio.Api.Controllers;
 
 /// <summary>
-/// API controller for managing a user's portfolio (user-company relationships).
-/// Requires authentication via JWT.
+/// API controller for managing the authenticated user's portfolio entries.
 /// </summary>
 [ApiController]
 [Route("api/[controller]")]
@@ -22,57 +21,24 @@ public class UserCompanyController : ControllerBase
     private readonly FmpClient _fmp;
     private readonly ILogger<UserCompanyController> _logger;
 
-
-    public UserCompanyController(AppDbContext context, FmpClient fmp, ILogger<UserCompanyController> logger)
+    public UserCompanyController(
+        AppDbContext context,
+        FmpClient fmp,
+        ILogger<UserCompanyController> logger)
     {
         _context = context;
         _fmp = fmp;
         _logger = logger;
     }
 
-    // /// <summary>
-    // /// Returns all portfolio entries for the currently authenticated user.
-    // /// </summary>
-    // /// <response code="200">Returns a list of portfolio entries for the user.</response>
-    // /// <response code="401">If the user is not authorized.</response>
-    // [HttpGet]
-    // [ProducesResponseType(StatusCodes.Status200OK)]
-    // [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-    // public async Task<ActionResult<IEnumerable<UserCompanyDto>>> GetUserCompanies()
-    // {
-    //     var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
-    //     if (userId == null)
-    //         throw new UnauthorizedException("User is not authorized.");
-
-    //     var uid = int.Parse(userId);
-
-    //     var userCompanies = await _context.UserCompanies
-    //         .Include(uc => uc.Ticker)
-    //         .Where(uc => uc.UserId == uid)
-    //         .Select(uc => new UserCompanyDto
-    //         {
-    //             Id = uc.Id,
-    //             TickerId = uc.TickerId,
-    //             Symbol = uc.Ticker.Symbol,
-    //             Name = uc.Ticker.Name,
-    //             Sector = uc.Ticker.Sector,
-    //             Shares = uc.Shares,
-    //             PurchasePrice = uc.PurchasePrice,
-    //             Notes = uc.Notes
-    //         })
-    //         .ToListAsync();
-
-    //     return Ok(userCompanies);
-    // }
-
     /// <summary>
-    /// Deletes a portfolio entry (UserCompany) belonging to the current user.
+    /// Deletes a portfolio entry belonging to the current user.
     /// </summary>
     /// <param name="id">The ID of the portfolio entry to delete.</param>
     /// <response code="204">Portfolio entry deleted successfully.</response>
-    /// <response code="401">User not authorized.</response>
-    /// <response code="403">Trying to delete an entry that belongs to another user.</response>
-    /// <response code="404">Entry not found.</response>
+    /// <response code="401">User is not authorized.</response>
+    /// <response code="403">Portfolio entry belongs to another user.</response>
+    /// <response code="404">Portfolio entry was not found.</response>
     [HttpDelete("{id:int}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
@@ -81,19 +47,25 @@ public class UserCompanyController : ControllerBase
     public async Task<IActionResult> DeleteUserCompany(int id)
     {
         var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+
         if (userId == null)
+        {
             throw new UnauthorizedException("User is not authorized.");
+        }
 
         var uid = int.Parse(userId);
 
-        // Find portfolio entry
         var userCompany = await _context.UserCompanies.FindAsync(id);
-        if (userCompany == null)
-            throw new NotFoundException("No annual income row found.");
 
-        // Prevent deleting other users' entries
+        if (userCompany == null)
+        {
+            throw new NotFoundException("Portfolio entry not found.");
+        }
+
         if (userCompany.UserId != uid)
+        {
             throw new ForbiddenException("Operation not allowed.");
+        }
 
         _context.UserCompanies.Remove(userCompany);
         await _context.SaveChangesAsync();
@@ -105,82 +77,90 @@ public class UserCompanyController : ControllerBase
     /// Updates an existing portfolio entry for the current user.
     /// </summary>
     /// <param name="id">The ID of the portfolio entry to update.</param>
-    /// <param name="dto">The updated data (shares, price, notes).</param>
+    /// <param name="dto">The updated shares, purchase price, and notes.</param>
     /// <response code="200">Portfolio entry updated successfully.</response>
-    /// <response code="401">If user is not authorized.</response>
-    /// <response code="403">If user tries to update an entry they do not own.</response>
-    /// <response code="404">If entry not found.</response>
+    /// <response code="401">User is not authorized.</response>
+    /// <response code="403">Portfolio entry belongs to another user.</response>
+    /// <response code="404">Portfolio entry was not found.</response>
     [HttpPut("{id:int}")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<ActionResult<UserCompanyDto>> UpdateUserCompany(int id, [FromBody] UpdateUserCompanyDto dto)
+    public async Task<ActionResult<UserCompanyDto>> UpdateUserCompany(
+        int id,
+        [FromBody] UpdateUserCompanyDto dto)
     {
         var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+
         if (userId == null)
+        {
             throw new UnauthorizedException("User is not authorized.");
+        }
 
         var uid = int.Parse(userId);
 
         var userCompany = await _context.UserCompanies
-            .Include(uc => uc.Ticker)
-            .FirstOrDefaultAsync(uc => uc.Id == id);
+            .Include(userCompany => userCompany.Ticker)
+            .FirstOrDefaultAsync(userCompany => userCompany.Id == id);
 
         if (userCompany == null)
-            throw new NotFoundException("No annual income row found.");
+        {
+            throw new NotFoundException("Portfolio entry not found.");
+        }
 
         if (userCompany.UserId != uid)
+        {
             throw new ForbiddenException("Operation not allowed.");
+        }
 
-        // Apply updates (only provided values)
-        if (dto.Shares.HasValue) userCompany.Shares = dto.Shares;
-        if (dto.PurchasePrice.HasValue) userCompany.PurchasePrice = dto.PurchasePrice;
-        if (dto.Notes != null) userCompany.Notes = dto.Notes;
+        if (dto.Shares.HasValue)
+        {
+            userCompany.Shares = dto.Shares.Value;
+        }
+
+        if (dto.PurchasePrice.HasValue)
+        {
+            userCompany.PurchasePrice = dto.PurchasePrice;
+        }
+
+        if (dto.Notes != null)
+        {
+            userCompany.Notes = dto.Notes;
+        }
 
         await _context.SaveChangesAsync();
 
-        var response = new UserCompanyDto
-        {
-            Id = userCompany.Id,
-            TickerId = userCompany.TickerId,
-            Symbol = userCompany.Ticker.Symbol,
-            Name = userCompany.Ticker.Name,
-            Shares = userCompany.Shares,
-            PurchasePrice = userCompany.PurchasePrice,
-            Notes = userCompany.Notes
-        };
-
-        return Ok(response);
+        return Ok(ToDto(userCompany));
     }
 
     /// <summary>
-    /// Returns all UserCompany entries for all users (Admin only).
+    /// Returns all portfolio entries for all users. Admin access required.
     /// </summary>
-    /// <response code="200">List of all user-company mappings with user info.</response>
-    /// <response code="403">If the current user is not an admin.</response>
-    [Authorize(Roles = "Admin")]
+    /// <response code="200">Returns all user-company mappings with user info.</response>
+    /// <response code="403">Current user is not an admin.</response>
+    [Authorize(Policy = "AdminOnly")]
     [HttpGet("/api/admin/usercompanies")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<ActionResult<IEnumerable<object>>> GetAllUserCompaniesForAdmin()
     {
         var entries = await _context.UserCompanies
-            .Include(uc => uc.Ticker)
-            .Include(uc => uc.User)
-            .Select(uc => new
+            .Include(userCompany => userCompany.Ticker)
+            .Include(userCompany => userCompany.User)
+            .Select(userCompany => new
             {
-                uc.Id,
-                Username = uc.User.Username,
+                userCompany.Id,
+                Username = userCompany.User.Username,
                 Ticker = new
                 {
-                    uc.Ticker.Symbol,
-                    uc.Ticker.Name,
-                    uc.Ticker.Sector
+                    userCompany.Ticker.Symbol,
+                    userCompany.Ticker.Name,
+                    userCompany.Ticker.Sector
                 },
-                uc.Shares,
-                uc.PurchasePrice,
-                uc.Notes
+                userCompany.Shares,
+                userCompany.PurchasePrice,
+                userCompany.Notes
             })
             .ToListAsync();
 
@@ -188,39 +168,42 @@ public class UserCompanyController : ControllerBase
     }
 
     /// <summary>
-    /// Deletes a company from the currently authenticated user's portfolio.
+    /// Removes a company from the current user's portfolio.
     /// </summary>
-    /// <param name="id">The ID of the UserCompany entry to delete.</param>
+    /// <param name="id">The ID of the portfolio entry to remove.</param>
     /// <param name="ct">Cancellation token for the request.</param>
-    /// <response code="200">The company was successfully removed from the user's portfolio.</response>
-    /// <response code="401">If the user is not authenticated.</response>
-    /// <response code="404">If the portfolio entry does not exist or does not belong to the user.</response>
+    /// <response code="200">Company was removed from the user's portfolio.</response>
+    /// <response code="401">User is not authenticated.</response>
+    /// <response code="404">Portfolio entry was not found for the current user.</response>
     [HttpDelete("remove/{id:int}")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<IActionResult> DeleteUserCompany(int id, CancellationToken ct)
+    public async Task<IActionResult> RemoveUserCompany(int id, CancellationToken ct)
     {
-        // ✅ Ensure the user is authenticated
         var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+
         if (userId == null)
+        {
             return Unauthorized(new { error = "User is not authenticated." });
+        }
 
         var uid = int.Parse(userId);
 
-        // 🔍 Find the user-company entry that belongs to the current user
         var entry = await _context.UserCompanies
-            .Include(uc => uc.Ticker)
-            .FirstOrDefaultAsync(uc => uc.Id == id && uc.UserId == uid, ct);
+            .Include(userCompany => userCompany.Ticker)
+            .FirstOrDefaultAsync(
+                userCompany => userCompany.Id == id && userCompany.UserId == uid,
+                ct);
 
         if (entry == null)
+        {
             return NotFound(new { error = "Company not found in your portfolio." });
+        }
 
-        // 🗑️ Remove the user-company link, but keep the company in the global list
         _context.UserCompanies.Remove(entry);
         await _context.SaveChangesAsync(ct);
 
-        // ✅ Return a success message
         return Ok(new
         {
             message = $"Company '{entry.Ticker?.Symbol}' removed from your portfolio.",
@@ -229,47 +212,50 @@ public class UserCompanyController : ControllerBase
     }
 
     /// <summary>
-    /// Adds a new company (ticker) to the current user's portfolio.
-    /// If the ticker does not exist globally, it will be created automatically.
+    /// Adds a new company to the current user's portfolio.
     /// </summary>
     /// <param name="dto">The company and investment details.</param>
-    /// <param name="ct">Cancellation token to cancel the request.</param>
+    /// <param name="ct">Cancellation token for the request.</param>
     /// <response code="201">Portfolio entry created successfully.</response>
-    /// <response code="400">Invalid input or ticker not found.</response>
-    /// <response code="409">The ticker is already in the user's portfolio.</response>
-    /// <response code="401">User not authorized.</response>
+    /// <response code="400">Invalid input or ticker was not found.</response>
+    /// <response code="401">User is not authorized.</response>
+    /// <response code="409">Ticker is already in the user's portfolio.</response>
     [HttpPost]
     [ProducesResponseType(StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(StatusCodes.Status409Conflict)]
-    public async Task<ActionResult<UserCompanyDto>> AddUserCompany([FromBody] CreateUserCompanyDto dto, CancellationToken ct)
+    public async Task<ActionResult<UserCompanyDto>> AddUserCompany(
+        [FromBody] CreateUserCompanyDto dto,
+        CancellationToken ct)
     {
         _logger.LogInformation("AddUserCompany invoked for Symbol={Symbol}", dto.Symbol);
 
         var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+
         if (userId == null)
+        {
             throw new UnauthorizedException("User is not authorized.");
+        }
 
         var uid = int.Parse(userId);
 
-        // 1️⃣ Check if ticker already exists in the global database
         var ticker = await _context.Tickers
-            .FirstOrDefaultAsync(t => t.Id == dto.TickerId || t.Symbol.ToUpper() == dto.Symbol!.ToUpper(), ct);
+            .FirstOrDefaultAsync(
+                ticker => ticker.Id == dto.TickerId ||
+                    ticker.Symbol.ToUpper() == dto.Symbol!.ToUpper(),
+                ct);
 
-        _logger.LogInformation("AddUserCompany: Searching for TickerId={TickerId}, Symbol={Symbol}", dto.TickerId, dto.Symbol);
-        _logger.LogInformation("AddUserCompany: Found ticker? {Found}", ticker != null);
-
-
-        // 2️⃣ If not found -> fetch from external API and create it
         if (ticker == null)
         {
             _logger.LogInformation("Attempting to fetch company profile for symbol {Symbol}", dto.Symbol);
+
             var profile = await _fmp.GetCompanyProfileAsync(dto.Symbol!, ct);
-            _logger.LogInformation("Profile fetch completed for {Symbol}. Result is null? {IsNull}", dto.Symbol, profile == null);
 
             if (profile == null)
+            {
                 throw new BadRequestException($"Ticker '{dto.Symbol}' not found in external API.");
+            }
 
             ticker = new Ticker
             {
@@ -282,36 +268,44 @@ public class UserCompanyController : ControllerBase
             await _context.SaveChangesAsync(ct);
         }
 
-        // 3️⃣ Check if user already owns this ticker
         var existing = await _context.UserCompanies
-            .FirstOrDefaultAsync(uc => uc.UserId == uid && uc.TickerId == ticker.Id, ct);
+            .FirstOrDefaultAsync(
+                userCompany => userCompany.UserId == uid && userCompany.TickerId == ticker.Id,
+                ct);
 
         if (existing != null)
         {
-            _logger.LogInformation("User {UserId} already owns {Symbol}. Updating position instead.", uid, ticker.Symbol);
+            _logger.LogInformation(
+                "User {UserId} already owns {Symbol}. Updating position instead.",
+                uid,
+                ticker.Symbol);
 
-            // Weighted average price calculation
             var totalSharesBefore = existing.Shares;
             var totalCostBefore = existing.Shares * existing.PurchasePrice;
-
             var totalSharesAfter = totalSharesBefore + dto.Shares;
-            var totalCostAfter = totalCostBefore + (dto.Shares * dto.PurchasePrice);
-
-            // Avoid division by zero
-            var newAveragePrice = totalSharesAfter > 0 ? totalCostAfter / totalSharesAfter : existing.PurchasePrice;
+            var totalCostAfter = totalCostBefore + dto.Shares * dto.PurchasePrice;
+            var newAveragePrice = totalSharesAfter > 0
+                ? totalCostAfter / totalSharesAfter
+                : existing.PurchasePrice;
 
             existing.Shares = totalSharesAfter;
             existing.PurchasePrice = newAveragePrice;
 
-            // Append new note if provided
             if (!string.IsNullOrWhiteSpace(dto.Notes))
             {
-                existing.Notes = string.Join(" | ", new[] { existing.Notes, dto.Notes }.Where(n => !string.IsNullOrWhiteSpace(n)));
+                existing.Notes = string.Join(
+                    " | ",
+                    new[] { existing.Notes, dto.Notes }
+                        .Where(note => !string.IsNullOrWhiteSpace(note)));
             }
 
             await _context.SaveChangesAsync(ct);
 
-            _logger.LogInformation("Updated position for {Symbol}: {Shares} shares @ {Price}", ticker.Symbol, existing.Shares, existing.PurchasePrice);
+            _logger.LogInformation(
+                "Updated position for {Symbol}: {Shares} shares at {Price}",
+                ticker.Symbol,
+                existing.Shares,
+                existing.PurchasePrice);
 
             return Ok(new
             {
@@ -321,14 +315,14 @@ public class UserCompanyController : ControllerBase
             });
         }
 
-        // Handle missing purchase price (use current market price)
         if (dto.PurchasePrice == null)
         {
-            _logger.LogInformation("User {UserId} added {Symbol} without specifying a purchase price — will use current market price.", uid, dto.Symbol);
+            _logger.LogInformation(
+                "User {UserId} added {Symbol} without specifying a purchase price. Using zero as transaction price.",
+                uid,
+                dto.Symbol);
         }
 
-
-        // 4️⃣ Create new user-company entry
         var userCompany = new UserCompany
         {
             UserId = uid,
@@ -341,13 +335,12 @@ public class UserCompanyController : ControllerBase
         _context.UserCompanies.Add(userCompany);
         await _context.SaveChangesAsync(ct);
 
-        // 5️⃣ Record corresponding transaction for this buy operation
         var transaction = new UserCompanyTransaction
         {
             UserId = uid,
             TickerId = ticker.Id,
             Shares = dto.Shares,
-            Price = dto.PurchasePrice.HasValue ? dto.PurchasePrice.Value : 0m,
+            Price = dto.PurchasePrice ?? 0m,
             Notes = dto.Notes,
             CreatedAt = DateTime.UtcNow
         };
@@ -356,94 +349,100 @@ public class UserCompanyController : ControllerBase
         await _context.SaveChangesAsync(ct);
 
         _logger.LogInformation(
-            "Recorded transaction for user {UserId}: {Shares} shares of {Symbol} @ {Price}",
-            uid, dto.Shares, ticker.Symbol, dto.PurchasePrice);
+            "Recorded transaction for user {UserId}: {Shares} shares of {Symbol} at {Price}",
+            uid,
+            dto.Shares,
+            ticker.Symbol,
+            dto.PurchasePrice);
 
-        // 6️⃣ Return the created DTO
-        var response = new UserCompanyDto
-        {
-            Id = userCompany.Id,
-            TickerId = ticker.Id,
-            Symbol = ticker.Symbol,
-            Name = ticker.Name,
-            Shares = userCompany.Shares,
-            PurchasePrice = userCompany.PurchasePrice,
-            Notes = userCompany.Notes
-        };
+        var response = ToDto(userCompany, ticker);
 
         return CreatedAtAction(nameof(GetUserCompanies), new { id = userCompany.Id }, response);
-
     }
-    
+
     /// <summary>
     /// Returns all portfolio entries for the currently authenticated user.
-    /// Supports optional text search via ?q= (symbol or name, case-insensitive)
-    /// and optional ?limit= for pagination.
     /// </summary>
-    /// <param name="q">Optional search term (symbol or name).</param>
-    /// <param name="limit">Optional limit for number of results.</param>
+    /// <param name="q">Optional search term for symbol or company name.</param>
+    /// <param name="limit">Optional maximum number of results.</param>
     /// <response code="200">Returns a filtered list of portfolio entries.</response>
-    /// <response code="401">If the user is not authorized.</response>
+    /// <response code="401">User is not authorized.</response>
     [HttpGet]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     public async Task<ActionResult<IEnumerable<UserCompanyDto>>> GetUserCompanies(
         [FromQuery] string? q,
-        [FromQuery] int? limit = null)
+        [FromQuery] int? limit,
+        CancellationToken ct)
     {
-        // 🧠 Identify the current user
         var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+
         if (userId == null)
+        {
             throw new UnauthorizedException("User is not authorized.");
+        }
 
         var uid = int.Parse(userId);
 
-        // 🧱 Base query: only this user's portfolio
         var query = _context.UserCompanies
-            .Include(uc => uc.Ticker)
-            .Where(uc => uc.UserId == uid)
+            .Include(userCompany => userCompany.Ticker)
+            .Where(userCompany => userCompany.UserId == uid)
             .AsNoTracking();
 
-        // 🔍 Optional text search (case-insensitive, symbol OR name)
         if (!string.IsNullOrWhiteSpace(q))
         {
-            var term = q.Trim().ToLower();
-            query = query.Where(uc =>
-                (uc.Ticker.Symbol != null && uc.Ticker.Symbol.ToLower().Contains(term)) ||
-                (uc.Ticker.Name != null && uc.Ticker.Name.ToLower().Contains(term)));
+            var term = q.Trim().ToLowerInvariant();
+
+            query = query.Where(userCompany =>
+                userCompany.Ticker.Symbol.ToLower().Contains(term) ||
+                (userCompany.Ticker.Name != null &&
+                    userCompany.Ticker.Name.ToLower().Contains(term)));
         }
 
-        // 🔢 Optional limit
         if (limit.HasValue && limit.Value > 0)
         {
             query = query.Take(limit.Value);
         }
 
-        // 📦 Execute + map to DTOs
         var userCompanies = await query
-            .OrderBy(uc => uc.Ticker.Symbol)
-            .Select(uc => new UserCompanyDto
+            .OrderBy(userCompany => userCompany.Ticker.Symbol)
+            .Select(userCompany => new UserCompanyDto
             {
-                Id = uc.Id,
-                TickerId = uc.TickerId,
-                Symbol = uc.Ticker.Symbol,
-                Name = uc.Ticker.Name,
-                Sector = uc.Ticker.Sector,
-                Shares = uc.Shares,
-                PurchasePrice = uc.PurchasePrice,
-                Notes = uc.Notes,
-                LastPriceUpdate = uc.Ticker.Prices
-                    .OrderByDescending(p => p.TradingDate)
-                    .Select(p => p.TradingDate.ToDateTime(TimeOnly.MinValue))
+                Id = userCompany.Id,
+                TickerId = userCompany.TickerId,
+                Symbol = userCompany.Ticker.Symbol,
+                Name = userCompany.Ticker.Name,
+                Sector = userCompany.Ticker.Sector,
+                Shares = userCompany.Shares,
+                PurchasePrice = userCompany.PurchasePrice,
+                Notes = userCompany.Notes,
+                LastPriceUpdate = userCompany.Ticker.Prices
+                    .OrderByDescending(price => price.TradingDate)
+                    .Select(price => price.TradingDate.ToDateTime(TimeOnly.MinValue))
                     .FirstOrDefault()
             })
-            .ToListAsync();
+            .ToListAsync(ct);
 
         return Ok(userCompanies);
     }
 
-    
+    private static UserCompanyDto ToDto(UserCompany userCompany)
+    {
+        return ToDto(userCompany, userCompany.Ticker);
+    }
+
+    private static UserCompanyDto ToDto(UserCompany userCompany, Ticker ticker)
+    {
+        return new UserCompanyDto
+        {
+            Id = userCompany.Id,
+            TickerId = userCompany.TickerId,
+            Symbol = ticker.Symbol,
+            Name = ticker.Name,
+            Sector = ticker.Sector,
+            Shares = userCompany.Shares,
+            PurchasePrice = userCompany.PurchasePrice,
+            Notes = userCompany.Notes
+        };
+    }
 }
-
-
-

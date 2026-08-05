@@ -1,8 +1,16 @@
-namespace Portfolio.Api.DTOs
+using System.ComponentModel.DataAnnotations;
+
+namespace Portfolio.Api.DTOs;
+
+public sealed class LoginRequest
 {
-    public class LoginRequest
-    {
-        public string Username { get; set; } = string.Empty; // Username of the account
-        public string Password { get; set; } = string.Empty; // Plain text password (to verify against stored hash)
-    }
+    [Required]
+    [MinLength(3)]
+    [MaxLength(64)]
+    public string Username { get; set; } = string.Empty;
+
+    [Required]
+    [MinLength(8)]
+    [MaxLength(128)]
+    public string Password { get; set; } = string.Empty;
 }

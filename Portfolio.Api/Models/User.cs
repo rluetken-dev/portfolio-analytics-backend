@@ -2,25 +2,25 @@ namespace Portfolio.Api.Models
 {
     public class User
     {
-        public int Id { get; set; } // Primary key (auto-increment)
-        
-        public string Username { get; set; } = string.Empty; // Username of the account
+        public int Id { get; set; }
+
+        public string Username { get; set; } = string.Empty;
 
         /// <summary>
         /// Indicates whether this user has administrative privileges.
         /// </summary>
         public bool IsAdmin { get; set; } = false;
-        
-        public string PasswordHash { get; set; } = string.Empty; // Hashed password
+
+        public string PasswordHash { get; set; } = string.Empty;
 
         /// <summary>
-        /// All user-company (portfolio) relationships linked to this user.
+        /// All user-company portfolio relationships linked to this user.
         /// </summary>
         public ICollection<UserCompany> UserCompanies { get; set; } = new List<UserCompany>();
 
         /// <summary>
-        /// Current available cash balance for this user (default: 10,000 USD)
+        /// Current available cash balance for this user.
         /// </summary>
-        public decimal CashBalance { get; set; } = 0m; // 💰 Initial balance for new users
+        public decimal CashBalance { get; set; } = 0m;
     }
 }

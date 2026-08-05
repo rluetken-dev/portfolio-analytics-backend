@@ -1,125 +1,184 @@
-using Microsoft.EntityFrameworkCore;                  // EF Core (queries, SaveChangesAsync)
-using Portfolio.Api.Data;                             // AppDbContext
-using Portfolio.Api.Data.Entities;                    // BalanceSheetEntity
 using System.Globalization;
+using Microsoft.EntityFrameworkCore;
+using Portfolio.Api.Data;
+using Portfolio.Api.Data.Entities;
 using Portfolio.Api.Models;
 
-namespace Portfolio.Api.Services
+namespace Portfolio.Api.Services;
+
+public sealed class BalanceSheetIngestService
 {
-    /// <summary>
-    /// Upserts balance-sheet rows from FMP /stable into SQL.
-    /// </summary>
-    public class BalanceSheetIngestService
+    private const int MaxAnnualLimit = 40;
+    private const int MaxQuarterlyLimit = 5;
+    private const string AnnualPeriod = "annual";
+    private const string QuarterPeriod = "quarter";
+
+    private readonly AppDbContext _db;
+    private readonly FmpClient _fmp;
+    private readonly ILogger<BalanceSheetIngestService> _logger;
+
+    public BalanceSheetIngestService(
+        AppDbContext db,
+        FmpClient fmp,
+        ILogger<BalanceSheetIngestService> logger)
     {
-        private readonly AppDbContext _db;
-        private readonly FmpClient _fmp;
-        private readonly ILogger<BalanceSheetIngestService> _log;
+        _db = db;
+        _fmp = fmp;
+        _logger = logger;
+    }
 
-        public BalanceSheetIngestService(AppDbContext db, FmpClient fmp, ILogger<BalanceSheetIngestService> log)
+    public async Task<int> IngestAsync(
+        string symbol,
+        string period = AnnualPeriod,
+        int limit = 10,
+        CancellationToken ct = default)
+    {
+        string normalizedSymbol = NormalizeSymbol(symbol);
+        if (string.IsNullOrWhiteSpace(normalizedSymbol))
         {
-            _db = db;
-            _fmp = fmp;
-            _log = log;
+            throw new ArgumentException("Symbol is required.", nameof(symbol));
         }
 
-        /// <summary>
-        /// Ensures the given symbol exists in the Tickers table (idempotent).
-        /// Uppercases the symbol and inserts a minimal row if none exists.
-        /// </summary>
-        /// <param name="symbol">Ticker symbol (e.g., "AAPL"). Case-insensitive.</param>
-        /// <param name="ct">Cancellation token.</param>
-        /// <returns>A task that completes when the check/insert has finished.</returns>
-        private async Task EnsureTickerAsync(string symbol, CancellationToken ct)
+        string normalizedPeriod = NormalizePeriod(period);
+        int normalizedLimit = NormalizeLimit(normalizedPeriod, limit);
+
+        await EnsureTickerAsync(normalizedSymbol, ct);
+
+        var rows = await _fmp.GetBalanceSheetStableAsync(
+            normalizedSymbol,
+            normalizedLimit,
+            normalizedPeriod,
+            ct);
+
+        if (rows.Count == 0)
         {
-            var s = symbol.ToUpperInvariant();
-            var exists = await _db.Tickers.AnyAsync(t => t.Symbol == s, ct);
-            if (!exists)
-            {
-                _db.Tickers.Add(new Ticker { Symbol = s, Name = s });
-                await _db.SaveChangesAsync(ct);
-            }
+            _logger.LogInformation(
+                "No balance-sheet rows returned for {Symbol} ({Period}).",
+                normalizedSymbol,
+                normalizedPeriod);
+
+            return 0;
         }
 
-        /// <summary>
-        /// Fetches balance-sheet rows and UPSERTs them into SQL.
-        /// </summary>
-        /// <param name="symbol">Ticker, e.g., "AAPL".</param>
-        /// <param name="period">"annual" or "quarter".</param>
-        /// <param name="limit">Max rows to fetch (plan-dependent for quarter).</param>
-        /// <param name="ct">Cancellation token.</param>
-        /// <returns>Number of rows inserted or updated.</returns>
-        public async Task<int> IngestAsync(string symbol, string period = "annual", int limit = 10, CancellationToken ct = default)
+        int changed = 0;
+
+        foreach (var row in rows)
         {
-            await EnsureTickerAsync(symbol, ct);
-
-            if (string.IsNullOrWhiteSpace(symbol))
-                throw new ArgumentException("symbol is required", nameof(symbol));
-
-            var sym = symbol.ToUpperInvariant();
-
-            // NOTE: Keep limits sane; FMP usually allows up to ~40
-            limit = Math.Clamp(limit, 1, 40);
-
-            // NOTE: On your plan, quarterly endpoints may allow only up to 5 → avoid 402 errors.
-            if (string.Equals(period, "quarter", StringComparison.OrdinalIgnoreCase) && limit > 5)
+            if (!TryParseDate(row.Date, out DateOnly date))
             {
-                _log.LogInformation("Capping quarterly limit from {Limit} to 5 due to FMP plan.", limit);
-                limit = 5;
+                _logger.LogWarning(
+                    "Skipping balance-sheet row for {Symbol} because date '{Date}' is invalid.",
+                    normalizedSymbol,
+                    row.Date);
+
+                continue;
             }
 
-            // Pull from FMP stable API
-            var rows = await _fmp.GetBalanceSheetStableAsync(sym, limit, period, ct);
-            if (rows is null || rows.Count == 0)
+            BalanceSheetEntity? existing = await _db.BalanceSheets
+                .FirstOrDefaultAsync(
+                    entity =>
+                        entity.Symbol == normalizedSymbol &&
+                        entity.Date == date &&
+                        entity.Frequency == normalizedPeriod,
+                    ct);
+
+            if (existing is null)
             {
-                _log.LogInformation("No balance-sheet rows from FMP for {Symbol} ({Period})", sym, period);
-                return 0;
-            }
-
-            var changed = 0;
-            foreach (var r in rows)
-            {
-                // Defensive parsing
-                if (r is null || string.IsNullOrWhiteSpace(r.Date))
-                    continue;
-                if (!DateOnly.TryParse(r.Date, CultureInfo.InvariantCulture, DateTimeStyles.None, out var asOf))
-                    continue;
-
-                // Find existing unique row (Symbol, Date, Frequency)
-                var existing = await _db.BalanceSheets
-                    .FirstOrDefaultAsync(x => x.Symbol == sym && x.Date == asOf && x.Frequency == period, ct);
-
-                if (existing is null)
+                _db.BalanceSheets.Add(new BalanceSheetEntity
                 {
-                    // Insert
-                    var entity = new BalanceSheetEntity
-                    {
-                        Symbol = sym,
-                        Date = asOf,
-                        Frequency = period,
-                        ReportedCurrency = r.ReportedCurrency,
-                        TotalAssets = r.TotalAssets,
-                        TotalLiabilities = r.TotalLiabilities,
-                        TotalStockholdersEquity = r.TotalStockholdersEquity,
-                        CashAndCashEquivalents = r.CashAndCashEquivalents
-                    };
-                    _db.BalanceSheets.Add(entity);
-                    changed++;
-                }
-                else
-                {
-                    // Update existing
-                    existing.ReportedCurrency = r.ReportedCurrency;
-                    existing.TotalAssets = r.TotalAssets;
-                    existing.TotalLiabilities = r.TotalLiabilities;
-                    existing.TotalStockholdersEquity = r.TotalStockholdersEquity;
-                    existing.CashAndCashEquivalents = r.CashAndCashEquivalents;
-                    changed++;
-                }
+                    Symbol = normalizedSymbol,
+                    Date = date,
+                    Frequency = normalizedPeriod,
+                    ReportedCurrency = row.ReportedCurrency,
+                    TotalAssets = row.TotalAssets,
+                    TotalLiabilities = row.TotalLiabilities,
+                    TotalStockholdersEquity = row.TotalStockholdersEquity,
+                    CashAndCashEquivalents = row.CashAndCashEquivalents
+                });
+            }
+            else
+            {
+                existing.ReportedCurrency = row.ReportedCurrency;
+                existing.TotalAssets = row.TotalAssets;
+                existing.TotalLiabilities = row.TotalLiabilities;
+                existing.TotalStockholdersEquity = row.TotalStockholdersEquity;
+                existing.CashAndCashEquivalents = row.CashAndCashEquivalents;
             }
 
-            await _db.SaveChangesAsync(ct);
-            _log.LogInformation("Balance-sheet ingest complete: {Count} row(s) upserted for {Symbol} ({Period})", changed, sym, period);
-            return changed;
+            changed++;
         }
+
+        await _db.SaveChangesAsync(ct);
+
+        _logger.LogInformation(
+            "Balance-sheet ingest completed for {Symbol} ({Period}): {Count} row(s) inserted or updated.",
+            normalizedSymbol,
+            normalizedPeriod,
+            changed);
+
+        return changed;
+    }
+
+    private async Task EnsureTickerAsync(string symbol, CancellationToken ct)
+    {
+        bool exists = await _db.Tickers.AnyAsync(ticker => ticker.Symbol == symbol, ct);
+        if (exists)
+        {
+            return;
+        }
+
+        _db.Tickers.Add(new Ticker
+        {
+            Symbol = symbol,
+            Name = symbol
+        });
+
+        await _db.SaveChangesAsync(ct);
+    }
+
+    private static string NormalizeSymbol(string symbol)
+    {
+        return string.IsNullOrWhiteSpace(symbol)
+            ? string.Empty
+            : symbol.Trim().ToUpperInvariant();
+    }
+
+    private static string NormalizePeriod(string period)
+    {
+        if (string.Equals(period, QuarterPeriod, StringComparison.OrdinalIgnoreCase))
+        {
+            return QuarterPeriod;
+        }
+
+        return AnnualPeriod;
+    }
+
+    private int NormalizeLimit(string period, int limit)
+    {
+        int maxLimit = period == QuarterPeriod
+            ? MaxQuarterlyLimit
+            : MaxAnnualLimit;
+
+        int normalizedLimit = Math.Clamp(limit, 1, maxLimit);
+
+        if (period == QuarterPeriod && limit > MaxQuarterlyLimit)
+        {
+            _logger.LogInformation(
+                "Capping quarterly balance-sheet limit from {RequestedLimit} to {AppliedLimit}.",
+                limit,
+                MaxQuarterlyLimit);
+        }
+
+        return normalizedLimit;
+    }
+
+    private static bool TryParseDate(string? value, out DateOnly date)
+    {
+        return DateOnly.TryParseExact(
+            value,
+            "yyyy-MM-dd",
+            CultureInfo.InvariantCulture,
+            DateTimeStyles.None,
+            out date);
     }
 }

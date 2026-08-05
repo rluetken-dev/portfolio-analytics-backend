@@ -3,24 +3,24 @@ using System.ComponentModel.DataAnnotations;
 namespace Portfolio.Api.DTOs;
 
 /// <summary>
-/// Request DTO for updating an existing user-company (portfolio) entry.
+/// Request DTO for updating an existing portfolio entry.
 /// </summary>
-public class UpdateUserCompanyDto
+public sealed class UpdateUserCompanyDto
 {
     /// <summary>
-    /// Number of shares owned by the user.
+    /// Number of shares currently owned.
     /// </summary>
-    [Range(0, double.MaxValue, ErrorMessage = "Shares must be a non-negative number.")]
+    [Range(typeof(decimal), "0", "79228162514264337593543950335", ErrorMessage = "Shares must be non-negative.")]
     public decimal? Shares { get; set; }
 
     /// <summary>
     /// Average purchase price per share.
     /// </summary>
-    [Range(0, double.MaxValue, ErrorMessage = "Purchase price must be a non-negative number.")]
+    [Range(typeof(decimal), "0", "79228162514264337593543950335", ErrorMessage = "Purchase price must be non-negative.")]
     public decimal? PurchasePrice { get; set; }
 
     /// <summary>
-    /// Optional note or comment for this investment.
+    /// Optional user note.
     /// </summary>
     [MaxLength(500)]
     public string? Notes { get; set; }

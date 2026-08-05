@@ -1,29 +1,69 @@
-namespace Portfolio.Api.DTOs
+namespace Portfolio.Api.DTOs;
+
+/// <summary>
+/// Represents one open portfolio holding returned to the client.
+/// </summary>
+public sealed class HoldingDto
 {
     /// <summary>
-    /// Represents a single holding (stock position) in the user's portfolio.
+    /// Internal ticker ID.
     /// </summary>
-    public class HoldingDto
-    {
-        public int TickerId { get; set; }                // Internal ID from database
-        public string Symbol { get; set; } = string.Empty; // Stock ticker (e.g., AAPL)
-        public string CompanyName { get; set; } = string.Empty; // Company name
-        public decimal? Shares { get; set; }              // Shares owned
-        public decimal? PurchasePriceUSD { get; set; }    // Average purchase price (USD)
-        public decimal? CurrentPriceUSD { get; set; }     // Latest market price (USD)
+    public int TickerId { get; set; }
 
-        // Derived computed properties
-        public decimal? CurrentValueUSD => Shares.HasValue && CurrentPriceUSD.HasValue
-            ? Shares.Value * CurrentPriceUSD.Value
-            : null;
+    /// <summary>
+    /// Ticker symbol, for example AAPL.
+    /// </summary>
+    public string Symbol { get; set; } = string.Empty;
 
-        // Optional analytics metrics (Step 6a)
-        public decimal? AvgBuyPriceUSD { get; set; }      // Average buy price (USD)
-        public decimal? UnrealizedPLUSD { get; set; }     // Unrealized profit/loss (USD)
-        public decimal? UnrealizedPLPercent { get; set; } // Unrealized profit/loss (%)
-        public decimal? RealizedPLUSD { get; set; }  // Realized profit/loss (USD)
-        public decimal? RealizedPLPercent { get; set; }  // Realized profit/loss (%)
+    /// <summary>
+    /// Company display name.
+    /// </summary>
+    public string CompanyName { get; set; } = string.Empty;
 
+    /// <summary>
+    /// Number of shares currently held.
+    /// </summary>
+    public decimal Shares { get; set; }
 
-    }
+    /// <summary>
+    /// Average purchase price in USD.
+    /// </summary>
+    public decimal? PurchasePriceUSD { get; set; }
+
+    /// <summary>
+    /// Latest known market price in USD.
+    /// </summary>
+    public decimal? CurrentPriceUSD { get; set; }
+
+    /// <summary>
+    /// Current market value in USD.
+    /// </summary>
+    public decimal? CurrentValueUSD => CurrentPriceUSD.HasValue
+        ? Shares * CurrentPriceUSD.Value
+        : null;
+
+    /// <summary>
+    /// Average buy price in USD.
+    /// </summary>
+    public decimal? AvgBuyPriceUSD { get; set; }
+
+    /// <summary>
+    /// Unrealized profit or loss in USD.
+    /// </summary>
+    public decimal? UnrealizedPLUSD { get; set; }
+
+    /// <summary>
+    /// Unrealized profit or loss as a percentage.
+    /// </summary>
+    public decimal? UnrealizedPLPercent { get; set; }
+
+    /// <summary>
+    /// Realized profit or loss in USD.
+    /// </summary>
+    public decimal? RealizedPLUSD { get; set; }
+
+    /// <summary>
+    /// Realized profit or loss as a percentage.
+    /// </summary>
+    public decimal? RealizedPLPercent { get; set; }
 }

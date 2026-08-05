@@ -1,24 +1,17 @@
-using System;
-using System.Net;
+namespace Portfolio.Api.Exceptions;
 
-namespace Portfolio.Api.Exceptions
+/// <summary>
+/// Base type for application exceptions that map to HTTP error responses.
+/// </summary>
+public abstract class AppException : Exception
 {
-    /// <summary>
-    /// Base class for all custom application exceptions.
-    /// Includes an HTTP status code and a clean message for client responses.
-    /// </summary>
-    public abstract class AppException : Exception
+    protected AppException(string message, int statusCode)
+        : base(message)
     {
-        /// <summary>
-        /// The HTTP status code associated with this exception.
-        /// </summary>
-        public int StatusCode { get; }
-
-        public AppException(string message, int statusCode) : base(message)
-        {
-            StatusCode = statusCode;
-        }
-
-        public virtual string Title => GetType().Name.Replace("Exception", "");
+        StatusCode = statusCode;
     }
+
+    public int StatusCode { get; }
+
+    public virtual string Title => GetType().Name.Replace("Exception", string.Empty);
 }

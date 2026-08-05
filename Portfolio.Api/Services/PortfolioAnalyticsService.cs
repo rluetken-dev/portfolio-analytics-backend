@@ -70,7 +70,7 @@ public class PortfolioAnalyticsService
                 TickerId = uc.TickerId,
                 Symbol = uc.Ticker.Symbol,
                 CompanyName = uc.Ticker.Name ?? string.Empty,
-                Shares = uc.Shares ?? 0,
+                Shares = uc.Shares,
                 PurchasePriceUSD = uc.PurchasePrice,
                 CurrentPriceUSD = latestPrice,
             };

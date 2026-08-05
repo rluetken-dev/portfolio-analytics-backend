@@ -1,18 +1,47 @@
-namespace Portfolio.Api.DTOs
+namespace Portfolio.Api.DTOs;
+
+/// <summary>
+/// Represents one portfolio transaction returned to the client.
+/// </summary>
+public sealed class TransactionDto
 {
     /// <summary>
-    /// Lightweight transaction data returned to the frontend.
-    /// Used for displaying a user's buy/sell history per company.
+    /// UTC timestamp when the transaction was recorded.
     /// </summary>
-    public class TransactionDto
-    {
-        public DateTime CreatedAt { get; set; }   // Date/time when transaction was recorded
-        public int Shares { get; set; }           // Positive = buy, negative = sell
-        public decimal? Price { get; set; }        // Price per share at transaction
-        public string? Notes { get; set; }        // Optional note entered by user
-        public string? Symbol { get; set; }       // Company ticker symbol (e.g. "AAPL")
-        public string? CompanyName { get; set; }  // Company full name (for display)
-        public string Type => Shares >= 0 ? "Buy" : "Sell";  // Derived for frontend clarity
-        public decimal? TotalUSD => Price.HasValue ? Price * Math.Abs(Shares) : null; // convenience field
-    }
+    public DateTime CreatedAt { get; set; }
+
+    /// <summary>
+    /// Number of shares. Positive values represent buys, negative values represent sells.
+    /// </summary>
+    public int Shares { get; set; }
+
+    /// <summary>
+    /// Transaction price per share.
+    /// </summary>
+    public decimal? Price { get; set; }
+
+    /// <summary>
+    /// Optional user note.
+    /// </summary>
+    public string? Notes { get; set; }
+
+    /// <summary>
+    /// Ticker symbol.
+    /// </summary>
+    public string? Symbol { get; set; }
+
+    /// <summary>
+    /// Company display name.
+    /// </summary>
+    public string? CompanyName { get; set; }
+
+    /// <summary>
+    /// Derived transaction type for client display.
+    /// </summary>
+    public string Type => Shares > 0 ? "Buy" : "Sell";
+
+    /// <summary>
+    /// Absolute transaction value in USD.
+    /// </summary>
+    public decimal? TotalUSD => Price.HasValue ? Price * Math.Abs(Shares) : null;
 }

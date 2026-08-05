@@ -1,7 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Portfolio.Api.Data;
-using Portfolio.Api.Services.Analytics; // FinanceMath helper
+using Portfolio.Api.Services.Analytics;
 using Swashbuckle.AspNetCore.Annotations;
 using Portfolio.Api.Exceptions;
 using Portfolio.Api.Utils;
@@ -63,7 +63,7 @@ namespace Portfolio.Api.Controllers
                     CancellationToken ct = default)
         {
             if (string.IsNullOrWhiteSpace(symbol))
-               Guard.BadRequestIf(string.IsNullOrWhiteSpace(symbol), "Missing ?symbol=...");
+                Guard.BadRequestIf(string.IsNullOrWhiteSpace(symbol), "Missing ?symbol=...");
 
             var ticker = symbol.Trim().ToUpperInvariant();
 
@@ -86,7 +86,7 @@ namespace Portfolio.Api.Controllers
             if (!eqT.HasValue || eqT.Value == 0)
                 throw new NotFoundException($"No equity for {ticker} at {inc.Date}.");
 
-            // English: prior equity = most recent annual balance sheet strictly BEFORE the current income period end.
+            // prior equity = most recent annual balance sheet strictly BEFORE the current income period end.
             // More robust than "same month/day one year earlier" because fiscal-year dates can shift slightly.
             var priorBal = await db.BalanceSheets.AsNoTracking()
                 .Where(b => b.Symbol == ticker && b.Frequency == "annual" && b.Date < inc.Date)
@@ -158,11 +158,11 @@ namespace Portfolio.Api.Controllers
                     CancellationToken ct = default)
         {
             if (string.IsNullOrWhiteSpace(symbol))
-               Guard.BadRequestIf(string.IsNullOrWhiteSpace(symbol), "Missing ?symbol=...");
+                Guard.BadRequestIf(string.IsNullOrWhiteSpace(symbol), "Missing ?symbol=...");
 
             var ticker = symbol.Trim().ToUpperInvariant();
 
-            // 1) Nimm die JÜNGSTE 'annual' Bilanzzeile
+            // 1) Read the latest 'annual' Bilanzzeile
             var bal = await db.BalanceSheets.AsNoTracking()
                 .Where(b => b.Symbol == ticker && b.Frequency == "annual")
                 .OrderByDescending(b => b.Date)
@@ -236,7 +236,7 @@ namespace Portfolio.Api.Controllers
                     CancellationToken ct = default)
         {
             if (string.IsNullOrWhiteSpace(symbol))
-               Guard.BadRequestIf(string.IsNullOrWhiteSpace(symbol), "Missing ?symbol=...");
+                Guard.BadRequestIf(string.IsNullOrWhiteSpace(symbol), "Missing ?symbol=...");
 
             var ticker = symbol.Trim().ToUpperInvariant();
 
@@ -271,10 +271,10 @@ namespace Portfolio.Api.Controllers
         /// Returns the latest annual Return on Assets (ROA).
         /// </summary>
         /// <remarks>
-        /// **Formula**  
+        /// **Formula**
         /// <c>ROA = NetIncome / TotalAssets</c>.
         ///
-        /// **Example**  
+        /// **Example**
         /// <code>
         /// GET /api/analytics/roa?symbol=AAPL
         /// </code>
@@ -306,7 +306,7 @@ namespace Portfolio.Api.Controllers
                     CancellationToken ct = default)
         {
             if (string.IsNullOrWhiteSpace(symbol))
-               Guard.BadRequestIf(string.IsNullOrWhiteSpace(symbol), "Missing ?symbol=...");
+                Guard.BadRequestIf(string.IsNullOrWhiteSpace(symbol), "Missing ?symbol=...");
 
             var ticker = symbol.Trim().ToUpperInvariant();
 
@@ -347,10 +347,10 @@ namespace Portfolio.Api.Controllers
         /// Returns the latest annual Equity Ratio.
         /// </summary>
         /// <remarks>
-        /// **Formula**  
+        /// **Formula**
         /// <c>Equity Ratio = TotalStockholdersEquity / TotalAssets</c>.
         ///
-        /// **Example**  
+        /// **Example**
         /// <code>
         /// GET /api/analytics/equity-ratio?symbol=AAPL
         /// </code>
@@ -384,7 +384,7 @@ namespace Portfolio.Api.Controllers
                     CancellationToken ct = default)
         {
             if (string.IsNullOrWhiteSpace(symbol))
-               Guard.BadRequestIf(string.IsNullOrWhiteSpace(symbol), "Missing ?symbol=...");
+                Guard.BadRequestIf(string.IsNullOrWhiteSpace(symbol), "Missing ?symbol=...");
 
             var ticker = symbol.Trim().ToUpperInvariant();
 
@@ -425,10 +425,10 @@ namespace Portfolio.Api.Controllers
         /// Returns the latest annual Debt-to-Assets ratio.
         /// </summary>
         /// <remarks>
-        /// **Formula**  
+        /// **Formula**
         /// <c>Debt-to-Assets = TotalLiabilities / TotalAssets</c>.
         ///
-        /// **Example**  
+        /// **Example**
         /// <code>
         /// GET /api/analytics/debt-to-assets?symbol=AAPL
         /// </code>
@@ -462,7 +462,7 @@ namespace Portfolio.Api.Controllers
                     CancellationToken ct = default)
         {
             if (string.IsNullOrWhiteSpace(symbol))
-               Guard.BadRequestIf(string.IsNullOrWhiteSpace(symbol), "Missing ?symbol=...");
+                Guard.BadRequestIf(string.IsNullOrWhiteSpace(symbol), "Missing ?symbol=...");
 
             var ticker = symbol.Trim().ToUpperInvariant();
 
@@ -503,7 +503,7 @@ namespace Portfolio.Api.Controllers
         /// Returns the latest available close price for a ticker.
         /// </summary>
         /// <remarks>
-        /// **Example**  
+        /// **Example**
         /// <code>
         /// GET /api/analytics/price?symbol=AAPL
         /// </code>
@@ -533,7 +533,7 @@ namespace Portfolio.Api.Controllers
                     CancellationToken ct = default)
         {
             if (string.IsNullOrWhiteSpace(symbol))
-               Guard.BadRequestIf(string.IsNullOrWhiteSpace(symbol), "Missing ?symbol=...");
+                Guard.BadRequestIf(string.IsNullOrWhiteSpace(symbol), "Missing ?symbol=...");
 
             var ticker = symbol.Trim().ToUpperInvariant();
 
@@ -558,10 +558,10 @@ namespace Portfolio.Api.Controllers
         /// Returns the latest annual Earnings Per Share (EPS).
         /// </summary>
         /// <remarks>
-        /// **Formula**  
+        /// **Formula**
         /// <c>EPS = NetIncome / WeightedAverageShsOut</c>
         ///
-        /// **Example**  
+        /// **Example**
         /// <code>
         /// GET /api/analytics/eps?symbol=AAPL
         /// </code>
@@ -593,7 +593,7 @@ namespace Portfolio.Api.Controllers
                     CancellationToken ct = default)
         {
             if (string.IsNullOrWhiteSpace(symbol))
-               Guard.BadRequestIf(string.IsNullOrWhiteSpace(symbol), "Missing ?symbol=...");
+                Guard.BadRequestIf(string.IsNullOrWhiteSpace(symbol), "Missing ?symbol=...");
 
             var ticker = symbol.Trim().ToUpperInvariant();
 
@@ -626,11 +626,11 @@ namespace Portfolio.Api.Controllers
         /// Returns the latest annual Price-to-Earnings ratio (P/E).
         /// </summary>
         /// <remarks>
-        /// **Formula**  
-        /// <c>P/E = Price per Share / EPS</c>  
+        /// **Formula**
+        /// <c>P/E = Price per Share / EPS</c>
         /// where <c>EPS = NetIncome / WeightedAverageShsOut</c>.
         ///
-        /// **Example**  
+        /// **Example**
         /// <code>
         /// GET /api/analytics/pe?symbol=AAPL
         /// </code>
@@ -663,7 +663,7 @@ namespace Portfolio.Api.Controllers
                 CancellationToken ct = default)
         {
             if (string.IsNullOrWhiteSpace(symbol))
-               Guard.BadRequestIf(string.IsNullOrWhiteSpace(symbol), "Missing ?symbol=...");
+                Guard.BadRequestIf(string.IsNullOrWhiteSpace(symbol), "Missing ?symbol=...");
 
             var ticker = symbol.Trim().ToUpperInvariant();
 
@@ -692,7 +692,7 @@ namespace Portfolio.Api.Controllers
             double eps = epsOpt.Value;
 
             // 3) Price near EPS date (first try ON/AFTER; fallback to ON/BEFORE)
-            // English: prefer the first close on/after EPS date; if none, take the latest before.
+            // prefer the first close on/after EPS date; if none, take the latest before.
             var priceOnOrAfter = await db.Prices.AsNoTracking()
                 .Where(p => p.TickerId == t.Id && p.TradingDate >= inc.Date)
                 .OrderBy(p => p.TradingDate) // earliest after EPS date
@@ -734,10 +734,10 @@ namespace Portfolio.Api.Controllers
         /// Returns the latest annual Book Value per Share (BVPS).
         /// </summary>
         /// <remarks>
-        /// **Formula**  
-        /// <c>BVPS = Equity / WeightedAverageShsOut</c>  
+        /// **Formula**
+        /// <c>BVPS = Equity / WeightedAverageShsOut</c>
         ///
-        /// **Example**  
+        /// **Example**
         /// <code>
         /// GET /api/analytics/bvps?symbol=AAPL
         /// </code>
@@ -769,7 +769,7 @@ namespace Portfolio.Api.Controllers
                     CancellationToken ct = default)
         {
             if (string.IsNullOrWhiteSpace(symbol))
-               Guard.BadRequestIf(string.IsNullOrWhiteSpace(symbol), "Missing ?symbol=...");
+                Guard.BadRequestIf(string.IsNullOrWhiteSpace(symbol), "Missing ?symbol=...");
 
             var ticker = symbol.Trim().ToUpperInvariant();
 
@@ -807,10 +807,10 @@ namespace Portfolio.Api.Controllers
         /// Returns the latest Price-to-Book ratio (P/B).
         /// </summary>
         /// <remarks>
-        /// **Formula**  
-        /// <c>P/B = Price per Share / Book Value per Share</c>  
+        /// **Formula**
+        /// <c>P/B = Price per Share / Book Value per Share</c>
         ///
-        /// **Example**  
+        /// **Example**
         /// <code>
         /// GET /api/analytics/pb?symbol=AAPL
         /// </code>
@@ -847,7 +847,7 @@ namespace Portfolio.Api.Controllers
                     CancellationToken ct = default)
         {
             if (string.IsNullOrWhiteSpace(symbol))
-               Guard.BadRequestIf(string.IsNullOrWhiteSpace(symbol), "Missing ?symbol=...");
+                Guard.BadRequestIf(string.IsNullOrWhiteSpace(symbol), "Missing ?symbol=...");
 
             var ticker = symbol.Trim().ToUpperInvariant();
 
@@ -886,7 +886,7 @@ namespace Portfolio.Api.Controllers
             if (t is null)
                 throw new NotFoundException($"Ticker {ticker} not found.");
 
-            // English: prefer the first close ON/AFTER the equity date; if none, take the latest BEFORE it.
+            // prefer the first close ON/AFTER the equity date; if none, take the latest BEFORE it.
             var priceOnOrAfter = await db.Prices.AsNoTracking()
                 .Where(p => p.TickerId == t.Id && p.TradingDate >= bal.Date)
                 .OrderBy(p => p.TradingDate) // earliest after equity date
@@ -929,10 +929,10 @@ namespace Portfolio.Api.Controllers
         /// Returns the latest annual Asset Turnover.
         /// </summary>
         /// <remarks>
-        /// **Formula**  
+        /// **Formula**
         /// <c>Asset Turnover = Revenue / TotalAssets</c>.
         ///
-        /// **Example**  
+        /// **Example**
         /// <code>
         /// GET /api/analytics/asset-turnover?symbol=AAPL
         /// </code>
@@ -965,7 +965,7 @@ namespace Portfolio.Api.Controllers
                     CancellationToken ct = default)
         {
             if (string.IsNullOrWhiteSpace(symbol))
-               Guard.BadRequestIf(string.IsNullOrWhiteSpace(symbol), "Missing ?symbol=...");
+                Guard.BadRequestIf(string.IsNullOrWhiteSpace(symbol), "Missing ?symbol=...");
 
             var ticker = symbol.Trim().ToUpperInvariant();
 
@@ -1009,10 +1009,10 @@ namespace Portfolio.Api.Controllers
         /// Returns Equity CAGR (Compound Annual Growth Rate) using earliest and latest annual balance rows.
         /// </summary>
         /// <remarks>
-        /// **Formula**  
+        /// **Formula**
         /// <c>CAGR = (EndingEquity / BeginningEquity)^(1/Years) - 1</c>
         ///
-        /// **Example**  
+        /// **Example**
         /// <code>
         /// GET /api/analytics/equity-cagr?symbol=AAPL
         /// </code>
@@ -1046,7 +1046,7 @@ namespace Portfolio.Api.Controllers
                     CancellationToken ct = default)
         {
             if (string.IsNullOrWhiteSpace(symbol))
-               Guard.BadRequestIf(string.IsNullOrWhiteSpace(symbol), "Missing ?symbol=...");
+                Guard.BadRequestIf(string.IsNullOrWhiteSpace(symbol), "Missing ?symbol=...");
             var ticker = symbol.Trim().ToUpperInvariant();
 
             // Load ALL annual balance rows for this ticker (only the fields we need)
@@ -1087,11 +1087,11 @@ namespace Portfolio.Api.Controllers
         /// Returns latest annual Free Cash Flow (FCF).
         /// </summary>
         /// <remarks>
-        /// **Formula**  
-        /// <c>FCF = OperatingCashFlow - CapitalExpenditure</c>  
+        /// **Formula**
+        /// <c>FCF = OperatingCashFlow - CapitalExpenditure</c>
         /// (using the latest available annual cash flow row)
         ///
-        /// **Example**  
+        /// **Example**
         /// <code>
         /// GET /api/analytics/fcf?symbol=AAPL
         /// </code>
@@ -1120,13 +1120,13 @@ namespace Portfolio.Api.Controllers
         [Produces("application/json")]
         public async Task<IActionResult> GetFcf([FromQuery] string symbol, CancellationToken ct = default)
         {
-            // English: normalize input
+            // normalize input
             var sym = (symbol ?? string.Empty).Trim().ToUpperInvariant();
             Guard.BadRequestIf(string.IsNullOrWhiteSpace(sym), "Symbol required.");
 
             const string freq = "annual";
 
-            // English: pick latest year where CFO/CapEx exist
+            // pick latest year where CFO/CapEx exist
             var year = await _db.CashFlows
                 .Where(x => x.Symbol == sym && x.Frequency == freq)
                 .MaxAsync(x => (int?)x.Date.Year, ct);
@@ -1134,7 +1134,7 @@ namespace Portfolio.Api.Controllers
             if (year is null)
                 return Ok(new { ticker = sym, date = (string?)null, operatingCashFlow = (long?)null, capitalExpenditure = (long?)null, fcf = (double?)null });
 
-            // English: load CFO/CapEx for that year
+            // load CFO/CapEx for that year
             var cf = await _db.CashFlows
                 .Where(x => x.Symbol == sym && x.Frequency == freq && x.Date.Year == year.Value)
                 .Select(x => new { x.Date, x.OperatingCashFlow, x.CapitalExpenditure })
@@ -1143,7 +1143,7 @@ namespace Portfolio.Api.Controllers
             if (cf is null)
                 return Ok(new { ticker = sym, date = (string?)null, operatingCashFlow = (long?)null, capitalExpenditure = (long?)null, fcf = (double?)null });
 
-            // English: FCF = CFO - |CapEx| (CapEx as positive outflow magnitude)
+            // FCF = CFO - |CapEx| (CapEx as positive outflow magnitude)
             double? fcf = null;
             if (cf.OperatingCashFlow.HasValue || cf.CapitalExpenditure.HasValue)
             {
@@ -1166,17 +1166,17 @@ namespace Portfolio.Api.Controllers
         /// Returns latest annual Free Cash Flow (FCF) Yield = FCF / MarketCap.
         /// </summary>
         /// <remarks>
-        /// **Formula**  
-        /// <c>FCF = OperatingCashFlow - CapitalExpenditure</c>  
-        /// <c>MarketCap = Price × Shares</c>  
-        /// <c>FCF Yield = FCF / MarketCap</c>  
+        /// **Formula**
+        /// <c>FCF = OperatingCashFlow - CapitalExpenditure</c>
+        /// <c>MarketCap = Price x Shares</c>
+        /// <c>FCF Yield = FCF / MarketCap</c>
         ///
-        /// **Data sources**  
-        /// - **FCF**: Latest annual cash flow row (OCF − CapEx)  
-        /// - **Shares**: Latest annual income row with WeightedAverageShsOut on/before CF date (fallback: latest annual)  
-        /// - **Price**: First price on/after CF date (fallback: latest available price)  
+        /// **Data sources**
+        /// - **FCF**: Latest annual cash flow row (OCF  CapEx)
+        /// - **Shares**: Latest annual income row with WeightedAverageShsOut on/before CF date (fallback: latest annual)
+        /// - **Price**: First price on/after CF date (fallback: latest available price)
         ///
-        /// **Example**  
+        /// **Example**
         /// <code>
         /// GET /api/analytics/fcf-yield?symbol=AAPL
         /// </code>
@@ -1307,15 +1307,15 @@ namespace Portfolio.Api.Controllers
         /// Returns latest annual Free Cash Flow (FCF) Margin = FCF / Revenue.
         /// </summary>
         /// <remarks>
-        /// **Formula**  
-        /// <c>FCF = OperatingCashFlow - CapitalExpenditure</c>  
-        /// <c>FCF Margin = FCF / Revenue</c>  
+        /// **Formula**
+        /// <c>FCF = OperatingCashFlow - CapitalExpenditure</c>
+        /// <c>FCF Margin = FCF / Revenue</c>
         ///
-        /// **Data sources**  
-        /// - **FCF**: Latest annual cash flow row (OCF − CapEx)  
-        /// - **Revenue**: Latest annual income row on/before the same CF date (fallback: latest annual)  
+        /// **Data sources**
+        /// - **FCF**: Latest annual cash flow row (OCF  CapEx)
+        /// - **Revenue**: Latest annual income row on/before the same CF date (fallback: latest annual)
         ///
-        /// **Example**  
+        /// **Example**
         /// <code>
         /// GET /api/analytics/fcf-margin?symbol=AAPL
         /// </code>
@@ -1349,7 +1349,7 @@ namespace Portfolio.Api.Controllers
                     CancellationToken ct = default)
         {
             if (string.IsNullOrWhiteSpace(symbol))
-               Guard.BadRequestIf(string.IsNullOrWhiteSpace(symbol), "Missing ?symbol=...");
+                Guard.BadRequestIf(string.IsNullOrWhiteSpace(symbol), "Missing ?symbol=...");
             var ticker = symbol.Trim().ToUpperInvariant();
 
             // 1) Latest annual CF row (for FCF)
@@ -1397,15 +1397,15 @@ namespace Portfolio.Api.Controllers
         /// Returns latest annual Owner Earnings (Buffett-style).
         /// </summary>
         /// <remarks>
-        /// **Formula**  
-        /// <c>OwnerEarnings = OperatingCashFlow - CapitalExpenditure ± ChangeInWorkingCapital</c>  
-        /// Falls back to Free Cash Flow (OCF − CapEx) if ΔWC is missing.  
+        /// **Formula**
+        /// <c>OwnerEarnings = OperatingCashFlow - CapitalExpenditure  ChangeInWorkingCapital</c>
+        /// Falls back to Free Cash Flow (OCF  CapEx) if WC is missing.
         ///
-        /// **Data sources**  
-        /// - **OperatingCashFlow** and **CapEx**: Latest annual cash flow row  
-        /// - **Δ Working Capital**: Same row if available (else ignored)  
+        /// **Data sources**
+        /// - **OperatingCashFlow** and **CapEx**: Latest annual cash flow row
+        /// - ** Working Capital**: Same row if available (else ignored)
         ///
-        /// **Example**  
+        /// **Example**
         /// <code>
         /// GET /api/analytics/owner-earnings?symbol=AAPL
         /// </code>
@@ -1425,7 +1425,7 @@ namespace Portfolio.Api.Controllers
         /// </remarks>
         [SwaggerOperation(
             Summary = "Owner Earnings (Buffett-style)",
-            Description = "Computes Owner Earnings = OCF − CapEx ± ΔWC, fallback to FCF if ΔWC missing.",
+            Description = "Computes Owner Earnings = OCF - CapEx +/- DeltaWC, fallback to FCF if WC missing.",
             OperationId = "Analytics_GetOwnerEarnings",
             Tags = new[] { "Analytics" }
         )]
@@ -1439,7 +1439,7 @@ namespace Portfolio.Api.Controllers
                     CancellationToken ct = default)
         {
             if (string.IsNullOrWhiteSpace(symbol))
-               Guard.BadRequestIf(string.IsNullOrWhiteSpace(symbol), "Missing ?symbol=...");
+                Guard.BadRequestIf(string.IsNullOrWhiteSpace(symbol), "Missing ?symbol=...");
             var ticker = symbol.Trim().ToUpperInvariant();
 
             // Latest annual CF row
@@ -1463,7 +1463,7 @@ namespace Portfolio.Api.Controllers
             double capexAbs = Math.Abs((double)cf.CapitalExpenditure!.Value); // CapEx as positive outflow
             double deltaWc = cf.ChangeInWorkingCapital.HasValue ? (double)cf.ChangeInWorkingCapital.Value : 0.0;
 
-            // English: assume +ΔWC = cash outflow → subtract it
+            // Assume positive working capital change is a cash outflow.
             double? ownerEarnings = FinanceMath.OwnerEarningsFromCashFlow(ocf, capexAbs, -deltaWc);
 
             // Reference: FCF = OCF - CapEx (already using capexAbs)
@@ -1485,16 +1485,16 @@ namespace Portfolio.Api.Controllers
         /// Returns latest annual Owner Earnings Yield = OwnerEarnings / MarketCap.
         /// </summary>
         /// <remarks>
-        /// **Formula**  
-        /// <c>OwnerEarnings = OCF − CapEx ± ΔWC</c>  
-        /// <c>OwnerEarningsYield = OwnerEarnings / (Price × Shares)</c>  
+        /// **Formula**
+        /// <c>OwnerEarnings = OCF  CapEx  WC</c>
+        /// <c>OwnerEarningsYield = OwnerEarnings / (Price x Shares)</c>
         ///
-        /// **Data sources**  
-        /// - **OwnerEarnings**: From latest annual cash flow (OCF − CapEx ± ΔWC)  
-        /// - **Shares**: Latest annual income row on/before CF date (fallback: latest annual)  
-        /// - **Price**: First close price on/after CF date (fallback: latest available)  
+        /// **Data sources**
+        /// - **OwnerEarnings**: From latest annual cash flow (OCF  CapEx  WC)
+        /// - **Shares**: Latest annual income row on/before CF date (fallback: latest annual)
+        /// - **Price**: First close price on/after CF date (fallback: latest available)
         ///
-        /// **Example**  
+        /// **Example**
         /// <code>
         /// GET /api/analytics/owner-earnings-yield?symbol=AAPL
         /// </code>
@@ -1516,7 +1516,7 @@ namespace Portfolio.Api.Controllers
         /// </remarks>
         [SwaggerOperation(
             Summary = "Owner Earnings Yield",
-            Description = "Computes Owner Earnings Yield = OwnerEarnings / (Price × Shares), based on latest annual data.",
+            Description = "Computes Owner Earnings Yield = OwnerEarnings / (Price x Shares), based on latest annual data.",
             OperationId = "Analytics_GetOwnerEarningsYield",
             Tags = new[] { "Analytics" }
         )]
@@ -1530,7 +1530,7 @@ namespace Portfolio.Api.Controllers
                     CancellationToken ct = default)
         {
             if (string.IsNullOrWhiteSpace(symbol))
-               Guard.BadRequestIf(string.IsNullOrWhiteSpace(symbol), "Missing ?symbol=...");
+                Guard.BadRequestIf(string.IsNullOrWhiteSpace(symbol), "Missing ?symbol=...");
             var ticker = symbol.Trim().ToUpperInvariant();
 
             // 1) Latest annual Cash Flow row
@@ -1548,7 +1548,7 @@ namespace Portfolio.Api.Controllers
             double capexAbs = Math.Abs((double)cf.CapitalExpenditure!.Value); // treat CapEx as positive outflow
             double deltaWc = cf.ChangeInWorkingCapital ?? 0.0;
 
-            // English: +ΔWC consumes cash → subtract it
+            // Positive working capital change consumes cash, so subtract it
             double? ownerEarningsOpt = FinanceMath.OwnerEarningsFromCashFlow(ocf, capexAbs, -deltaWc);
 
             if (ownerEarningsOpt is null)
@@ -1622,14 +1622,14 @@ namespace Portfolio.Api.Controllers
         /// Returns latest annual Owner Earnings per Share (OEPS).
         /// </summary>
         /// <remarks>
-        /// **Formula**  
-        /// <c>OEPS = OwnerEarnings / Shares</c>  
+        /// **Formula**
+        /// <c>OEPS = OwnerEarnings / Shares</c>
         ///
-        /// **Where**  
-        /// - **OwnerEarnings** = (OperatingCashFlow − CapEx) ± ΔWorkingCapital  
-        /// - **Shares** = WeightedAverageShsOut from the latest annual income row on/before CF date (fallback: latest annual)  
+        /// **Where**
+        /// - **OwnerEarnings** = (OperatingCashFlow  CapEx)  WorkingCapital
+        /// - **Shares** = WeightedAverageShsOut from the latest annual income row on/before CF date (fallback: latest annual)
         ///
-        /// **Example**  
+        /// **Example**
         /// <code>
         /// GET /api/analytics/oeps?symbol=AAPL
         /// </code>
@@ -1661,7 +1661,7 @@ namespace Portfolio.Api.Controllers
                     CancellationToken ct = default)
         {
             if (string.IsNullOrWhiteSpace(symbol))
-               Guard.BadRequestIf(string.IsNullOrWhiteSpace(symbol), "Missing ?symbol=...");
+                Guard.BadRequestIf(string.IsNullOrWhiteSpace(symbol), "Missing ?symbol=...");
             var ticker = symbol.Trim().ToUpperInvariant();
 
             // Owner Earnings basis (latest annual CF)
@@ -1674,7 +1674,7 @@ namespace Portfolio.Api.Controllers
                 throw new NotFoundException($"No annual CF row with OCF+CapEx for {ticker}.");
 
             long capexAbs = Math.Abs(cf.CapitalExpenditure.Value); // CapEx as positive outflow
-            long deltaWc = cf.ChangeInWorkingCapital ?? 0;         // +ΔWC = outflow → subtract
+            long deltaWc = cf.ChangeInWorkingCapital ?? 0;         // +WC = outflow  subtract
             long owner = cf.OperatingCashFlow.Value - capexAbs - deltaWc;
 
             // Shares: latest annual income on/before OE date; fallback to latest annual
@@ -1704,16 +1704,16 @@ namespace Portfolio.Api.Controllers
         /// Returns latest annual Price-to-Owner-Earnings ratio (P/OE).
         /// </summary>
         /// <remarks>
-        /// **Formula**  
-        /// <c>P/OE = Price / OEPS</c>  
+        /// **Formula**
+        /// <c>P/OE = Price / OEPS</c>
         ///
-        /// **Where**  
-        /// - **OEPS** = OwnerEarnings / Shares  
-        ///   - OwnerEarnings = (OperatingCashFlow − CapEx) ± ΔWorkingCapital (latest annual CF row)  
-        ///   - Shares = WeightedAverageShsOut from latest annual income row on/before OE date (fallback: latest annual)  
-        /// - **Price** = First available close price on/after OE date (fallback: latest available price)  
+        /// **Where**
+        /// - **OEPS** = OwnerEarnings / Shares
+        ///   - OwnerEarnings = (OperatingCashFlow  CapEx)  WorkingCapital (latest annual CF row)
+        ///   - Shares = WeightedAverageShsOut from latest annual income row on/before OE date (fallback: latest annual)
+        /// - **Price** = First available close price on/after OE date (fallback: latest available price)
         ///
-        /// **Example**  
+        /// **Example**
         /// <code>
         /// GET /api/analytics/p-to-oe?symbol=AAPL
         /// </code>
@@ -1748,7 +1748,7 @@ namespace Portfolio.Api.Controllers
                     CancellationToken ct = default)
         {
             if (string.IsNullOrWhiteSpace(symbol))
-               Guard.BadRequestIf(string.IsNullOrWhiteSpace(symbol), "Missing ?symbol=...");
+                Guard.BadRequestIf(string.IsNullOrWhiteSpace(symbol), "Missing ?symbol=...");
             var ticker = symbol.Trim().ToUpperInvariant();
 
             // Re-use OEPS calculation (inline to keep it self-contained)
@@ -1794,7 +1794,7 @@ namespace Portfolio.Api.Controllers
             double capexAbs = Math.Abs((double)cf.CapitalExpenditure!.Value);
             double deltaWc = cf.ChangeInWorkingCapital ?? 0.0;
 
-            // English: assume +ΔWC = cash outflow → subtract it
+            // Assume positive working capital change is a cash outflow.
             double? owner = FinanceMath.OwnerEarningsFromCashFlow(ocf, capexAbs, -deltaWc);
 
             if (owner is null) throw new BadRequestException("Cannot compute Owner Earnings.");
@@ -1805,7 +1805,7 @@ namespace Portfolio.Api.Controllers
             // OEPS + P/OE via helpers
             double? oeps = FinanceMath.OwnerEarningsPerShare(owner.Value, sh);
 
-            // Close ist i. d. R. decimal (non-null) → in double wandeln
+            // Convert close price to double for ratio calculation
             double priceVal = (double)px.Close;
 
             double? pToOe = (oeps is null) ? (double?)null
@@ -1814,7 +1814,7 @@ namespace Portfolio.Api.Controllers
             {
                 ticker,
                 date = cf.Date,
-                ownerEarnings = owner,     // jetzt double?
+                ownerEarnings = owner,
                 shares = sh,
                 oeps,
                 priceDateUsed = px.TradingDate,
@@ -1825,3 +1825,4 @@ namespace Portfolio.Api.Controllers
         }
     }
 }
+

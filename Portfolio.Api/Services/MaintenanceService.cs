@@ -4,257 +4,258 @@ using Portfolio.Api.Models;
 
 namespace Portfolio.Api.Services;
 
-/// <summary>
-/// Provides database housekeeping functionality:
-/// - Delete outdated rows
-/// - Cap per-symbol history length
-/// - Run VACUUM / ANALYZE to reclaim space and refresh stats
-/// </summary>
-public class MaintenanceService
+public sealed class MaintenanceService
 {
     private readonly AppDbContext _db;
-    private readonly ILogger<MaintenanceService> _log;
+    private readonly ILogger<MaintenanceService> _logger;
 
-    public MaintenanceService(AppDbContext db, ILogger<MaintenanceService> log)
+    public MaintenanceService(AppDbContext db, ILogger<MaintenanceService> logger)
     {
         _db = db;
-        _log = log;
+        _logger = logger;
     }
 
-    /// <summary>
-    /// Deletes old price rows from the database.
-    /// 
-    /// Two optional constraints:
-    /// - <paramref name="maxAgeDays"/>: delete everything older than today - N days.
-    /// - <paramref name="keepPerSymbol"/>: keep only the most recent N rows per symbol.
-    /// 
-    /// If both are set, both constraints apply (union of deletions).
-    /// </summary>
-    /// <returns>Total number of rows deleted.</returns>
     public async Task<int> PruneAsync(
         int? maxAgeDays = 3 * 365,
         int? keepPerSymbol = null,
         CancellationToken ct = default)
     {
-        var totalDeleted = 0;
+        int totalDeleted = 0;
 
-        // --- 1) Age-based delete ---
         if (maxAgeDays is > 0)
         {
-            var cutoff = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(-maxAgeDays.Value));
-            totalDeleted += await _db.Database.ExecuteSqlInterpolatedAsync(
-                $@"DELETE FROM Prices WHERE AsOfDate < {cutoff}", ct);
+            DateOnly cutoff = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(-maxAgeDays.Value));
+
+            totalDeleted += await _db.Prices
+                .Where(price => price.TradingDate < cutoff)
+                .ExecuteDeleteAsync(ct);
         }
 
-        // --- 2) Cap rows per symbol ---
         if (keepPerSymbol is > 0)
         {
-            // Use ROW_NUMBER window function to rank rows per symbol by date (newest first).
-            // Delete rows whose rank > keepPerSymbol.
-            var cap = keepPerSymbol.Value;
-            totalDeleted += await _db.Database.ExecuteSqlInterpolatedAsync($@"
-                WITH ranked AS (
-                    SELECT Id,
-                        ROW_NUMBER() OVER (PARTITION BY Symbol ORDER BY AsOfDate DESC) AS rn
-                    FROM Prices
-                )
-                DELETE FROM Prices
-                WHERE Id IN (SELECT Id FROM ranked WHERE rn > {cap});
-            ", ct);
+            int keep = keepPerSymbol.Value;
+
+            List<int> idsToDelete = await _db.Prices
+                .GroupBy(price => price.TickerId)
+                .SelectMany(group => group
+                    .OrderByDescending(price => price.TradingDate)
+                    .Skip(keep)
+                    .Select(price => price.Id))
+                .ToListAsync(ct);
+
+            if (idsToDelete.Count > 0)
+            {
+                totalDeleted += await _db.Prices
+                    .Where(price => idsToDelete.Contains(price.Id))
+                    .ExecuteDeleteAsync(ct);
+            }
         }
 
         return totalDeleted;
     }
 
-    /// <summary>
-    /// Executes SQLite VACUUM and ANALYZE:
-    /// - VACUUM: compacts the file and reclaims free space
-    /// - ANALYZE: refreshes query planner statistics
-    /// 
-    /// Note: VACUUM cannot run inside an active transaction.
-    /// </summary>
     public async Task VacuumAnalyzeAsync(CancellationToken ct = default)
     {
-        // Ensure no active transaction before running VACUUM.
         await _db.Database.CloseConnectionAsync();
         await _db.Database.GetDbConnection().OpenAsync(ct);
 
-        using var cmd = _db.Database.GetDbConnection().CreateCommand();
-        cmd.CommandText = "VACUUM; ANALYZE;";
-        await cmd.ExecuteNonQueryAsync(ct);
+        using var command = _db.Database.GetDbConnection().CreateCommand();
+        command.CommandText = "VACUUM; ANALYZE;";
+
+        await command.ExecuteNonQueryAsync(ct);
     }
 
-    /// <summary>
-    /// Deletes all rows from the Prices table (hard reset).
-    /// Use with caution – this wipes the database contents.
-    /// </summary>
     public async Task<int> TruncateAllAsync(CancellationToken ct = default)
     {
-        var deleted = await _db.Database.ExecuteSqlRawAsync("DELETE FROM Prices;", ct);
-        return deleted;
+        return await _db.Prices.ExecuteDeleteAsync(ct);
     }
 
-    /// <summary>
-    /// Upserts tickers. English: Optionally skip inserts to avoid creating new/invalid symbols.
-    /// </summary>
     public async Task<int> UpsertTickersAsync(
         IEnumerable<(string Symbol, string? Name)> rows,
         bool overwriteExistingName = false,
-        bool createIfMissing = true, // English: Safety switch to prevent accidental inserts
+        bool createIfMissing = true,
         CancellationToken ct = default)
     {
-        if (rows is null) return 0;
+        if (rows is null)
+        {
+            return 0;
+        }
 
-        // Normalize & de-duplicate by symbol
         var input = rows
-            .Select(r => (Symbol: (r.Symbol ?? "").Trim().ToUpperInvariant(),
-                          Name: r.Name?.Trim()))
-            .Where(r => !string.IsNullOrWhiteSpace(r.Symbol))
-            .GroupBy(r => r.Symbol)
-            .Select(g => (Symbol: g.Key, Name: g.Select(x => x.Name).FirstOrDefault(n => !string.IsNullOrEmpty(n))))
+            .Select(row => new
+            {
+                Symbol = NormalizeSymbol(row.Symbol),
+                Name = NormalizeNullableText(row.Name)
+            })
+            .Where(row => !string.IsNullOrWhiteSpace(row.Symbol))
+            .GroupBy(row => row.Symbol)
+            .Select(group => new
+            {
+                Symbol = group.Key,
+                Name = group.Select(row => row.Name).FirstOrDefault(name => name is not null)
+            })
             .ToList();
 
-        if (input.Count == 0) return 0;
+        if (input.Count == 0)
+        {
+            return 0;
+        }
 
-        var symbols = input.Select(r => r.Symbol).ToList();
+        List<string> symbols = input
+            .Select(row => row.Symbol)
+            .ToList();
 
-        var existing = await _db.Set<Ticker>()
-            .Where(t => symbols.Contains(t.Symbol))
-            .ToDictionaryAsync(t => t.Symbol, ct);
+        Dictionary<string, Ticker> existingTickers = await _db.Tickers
+            .Where(ticker => symbols.Contains(ticker.Symbol))
+            .ToDictionaryAsync(ticker => ticker.Symbol, ct);
 
-        // English: Collect inserts only if allowed; always track how many would be new
-        var toInsert = new List<Ticker>();
-        var wouldInsert = 0;
-        var updated = 0;
+        var tickersToInsert = new List<Ticker>();
+        int updated = 0;
+        int skippedInserts = 0;
 
         foreach (var row in input)
         {
-            if (existing.TryGetValue(row.Symbol, out var t))
+            if (existingTickers.TryGetValue(row.Symbol, out Ticker? ticker))
             {
-                // English: Update name if applicable
-                if (!string.IsNullOrWhiteSpace(row.Name) &&
-                    (overwriteExistingName || string.IsNullOrWhiteSpace(t.Name)))
+                if (row.Name is not null &&
+                    (overwriteExistingName || string.IsNullOrWhiteSpace(ticker.Name)) &&
+                    ticker.Name != row.Name)
                 {
-                    t.Name = row.Name;
+                    ticker.Name = row.Name;
                     updated++;
                 }
+
+                continue;
             }
-            else
+
+            if (!createIfMissing)
             {
-                // English: Symbol not present in DB -> candidate for insert
-                wouldInsert++;
-                if (createIfMissing)
-                {
-                    toInsert.Add(new Ticker
-                    {
-                        Symbol = row.Symbol,
-                        Name = row.Name
-                    });
-                }
-                // else: skip insert intentionally (safety)
+                skippedInserts++;
+                continue;
             }
+
+            tickersToInsert.Add(new Ticker
+            {
+                Symbol = row.Symbol,
+                Name = row.Name ?? row.Symbol
+            });
         }
 
-        // English: If inserts are disabled but candidates exist, log for visibility
-        if (!createIfMissing && wouldInsert > 0)
+        if (skippedInserts > 0)
         {
-            _log.LogInformation("UpsertTickers: {Count} symbols skipped (createIfMissing=false).", wouldInsert);
+            _logger.LogInformation(
+                "Skipped {Count} ticker insert(s) because createIfMissing is false.",
+                skippedInserts);
         }
 
-        if (toInsert.Count > 0)
-            await _db.Set<Ticker>().AddRangeAsync(toInsert, ct);
+        if (tickersToInsert.Count > 0)
+        {
+            await _db.Tickers.AddRangeAsync(tickersToInsert, ct);
+        }
 
-        if (toInsert.Count > 0 || updated > 0)
+        if (tickersToInsert.Count > 0 || updated > 0)
+        {
             await _db.SaveChangesAsync(ct);
+        }
 
-        return toInsert.Count + updated;
+        return tickersToInsert.Count + updated;
     }
 
-    // MaintenanceService.cs
-    /// <summary>
-    /// Sets <c>Ticker.Sector</c> to <c>NULL</c> for all rows.
-    /// Useful to "reset" sectors before refilling them from an external source.
-    /// </summary>
-    /// <returns>Number of affected rows.</returns>
     public async Task<int> ClearAllTickerSectorsAsync(CancellationToken ct = default)
     {
-        return await _db.Database.ExecuteSqlRawAsync("UPDATE Tickers SET Sector = NULL;", ct);
+        return await _db.Tickers
+            .ExecuteUpdateAsync(
+                setters => setters.SetProperty(ticker => ticker.Sector, (string?)null),
+                ct);
     }
 
+    public async Task<DeleteTickerResult> DeleteTickerAsync(
+        string symbol,
+        CancellationToken ct = default)
+    {
+        string normalizedSymbol = NormalizeSymbol(symbol);
 
-    /// <summary>
-    /// Result payload for a ticker hard-delete operation.
-    /// English: Summarizes how many rows were removed across all related tables,
-    /// allowing callers to log, assert in tests, or show UI feedback.
-    /// </summary>
-    /// <param name="Symbol">English: Normalized ticker symbol (uppercase) that was requested to delete.</param>
-    /// <param name="PricesDeleted">English: Count of deleted daily price rows (child table by TickerId).</param>
-    /// <param name="IncomeDeleted">English: Count of deleted income statement rows (filtered by Symbol).</param>
-    /// <param name="BalanceDeleted">English: Count of deleted balance sheet rows (filtered by Symbol).</param>
-    /// <param name="CashDeleted">English: Count of deleted cash flow rows (filtered by Symbol).</param>
-    /// <param name="TickerDeleted">English: 1 if the Ticker row itself was deleted; 0 if it did not exist.</param>
+        if (string.IsNullOrWhiteSpace(normalizedSymbol))
+        {
+            return new DeleteTickerResult(
+                Symbol: string.Empty,
+                PricesDeleted: 0,
+                IncomeDeleted: 0,
+                BalanceDeleted: 0,
+                CashDeleted: 0,
+                TickerDeleted: 0);
+        }
+
+        _logger.LogInformation(
+            "Deleting ticker data for {Symbol}.",
+            normalizedSymbol);
+
+        Ticker? ticker = await _db.Tickers
+            .AsNoTracking()
+            .SingleOrDefaultAsync(t => t.Symbol == normalizedSymbol, ct);
+
+        await using var transaction = await _db.Database.BeginTransactionAsync(ct);
+
+        int pricesDeleted = 0;
+
+        if (ticker is not null)
+        {
+            pricesDeleted = await _db.Prices
+                .Where(price => price.TickerId == ticker.Id)
+                .ExecuteDeleteAsync(ct);
+        }
+
+        int incomeDeleted = await _db.IncomeStatements
+            .Where(row => row.Symbol == normalizedSymbol)
+            .ExecuteDeleteAsync(ct);
+
+        int balanceDeleted = await _db.BalanceSheets
+            .Where(row => row.Symbol == normalizedSymbol)
+            .ExecuteDeleteAsync(ct);
+
+        int cashDeleted = await _db.CashFlows
+            .Where(row => row.Symbol == normalizedSymbol)
+            .ExecuteDeleteAsync(ct);
+
+        int tickerDeleted = 0;
+
+        if (ticker is not null)
+        {
+            tickerDeleted = await _db.Tickers
+                .Where(row => row.Id == ticker.Id)
+                .ExecuteDeleteAsync(ct);
+        }
+
+        await transaction.CommitAsync(ct);
+
+        return new DeleteTickerResult(
+            Symbol: normalizedSymbol,
+            PricesDeleted: pricesDeleted,
+            IncomeDeleted: incomeDeleted,
+            BalanceDeleted: balanceDeleted,
+            CashDeleted: cashDeleted,
+            TickerDeleted: tickerDeleted);
+    }
+
     public sealed record DeleteTickerResult(
         string Symbol,
         int PricesDeleted,
         int IncomeDeleted,
         int BalanceDeleted,
         int CashDeleted,
-        int TickerDeleted
-    );
+        int TickerDeleted);
 
-    /// <summary>
-    /// Deletes all persisted data for a given ticker symbol in one transaction.
-    /// English: Hard-delete a symbol (prices + fundamentals + ticker) atomically.
-    /// </summary>https://chatgpt.com/c/68c11e64-5bcc-8330-a8f8-8b57a3e7f781
-    public async Task<DeleteTickerResult> DeleteTickerAsync(string symbol, CancellationToken ct = default)
+    private static string NormalizeSymbol(string? symbol)
     {
-        // English: Normalize input (case-insensitive handling)
-        var sym = (symbol ?? string.Empty).Trim().ToUpperInvariant();
+        return string.IsNullOrWhiteSpace(symbol)
+            ? string.Empty
+            : symbol.Trim().ToUpperInvariant();
+    }
 
-        // English: Log both original input and normalized symbol for safety
-        _log.LogInformation("Requested delete for symbol={Input}, normalized={Normalized}", symbol, sym);
-
-        // English: Find ticker (needed to delete Prices by TickerId)
-        var ticker = await _db.Tickers
-            .AsNoTracking()
-            .SingleOrDefaultAsync(t => t.Symbol == sym, ct);
-
-        // English: Start provider-agnostic transaction (avoids SqliteTransaction cast issues)
-        await using var tx = await _db.Database.BeginTransactionAsync(ct);
-
-        int prices = 0;
-        if (ticker is not null)
-        {
-            // English: Delete daily prices via foreign key (faster than loading entities)
-            prices = await _db.Prices
-                .Where(p => p.TickerId == ticker.Id)
-                .ExecuteDeleteAsync(ct);
-        }
-
-        // English: Fundamentals store Symbol (string) → delete by symbol
-        var income = await _db.IncomeStatements
-            .Where(x => x.Symbol == sym)
-            .ExecuteDeleteAsync(ct);
-
-        var balance = await _db.BalanceSheets
-            .Where(x => x.Symbol == sym)
-            .ExecuteDeleteAsync(ct);
-
-        var cash = await _db.CashFlows
-            .Where(x => x.Symbol == sym)
-            .ExecuteDeleteAsync(ct);
-
-        var tick = 0;
-        if (ticker is not null)
-        {
-            // English: Finally remove the Ticker row
-            tick = await _db.Tickers
-                .Where(t => t.Id == ticker.Id)
-                .ExecuteDeleteAsync(ct);
-        }
-
-        await tx.CommitAsync(ct);
-
-        return new DeleteTickerResult(sym, prices, income, balance, cash, tick);
+    private static string? NormalizeNullableText(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value)
+            ? null
+            : value.Trim();
     }
 }

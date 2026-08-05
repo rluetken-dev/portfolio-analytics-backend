@@ -1,647 +1,470 @@
-//using System.Text.Json;
-using Microsoft.AspNetCore.WebUtilities;     // QueryHelpers.AddQueryString
-using Portfolio.Api.Models;
-using Newtonsoft.Json;
+using System.Net.Http.Json;
+using System.Text.Json;
+using Microsoft.AspNetCore.WebUtilities;
 using Portfolio.Api.DTOs;
 using Portfolio.Api.Exceptions;
+using Portfolio.Api.Models;
 
-namespace Portfolio.Api.Services
+namespace Portfolio.Api.Services;
+
+public sealed class FmpClient
 {
-    /// <summary>
-    /// Thin HTTP client for Financial Modeling Prep (FMP) fundamentals.
-    /// Reads the API key from configuration key "Fmp:ApiKey".
-    /// </summary>
-    public class FmpClient
+    private const string DefaultBaseAddress = "https://financialmodelingprep.com/";
+    private const string PlaceholderApiKey = "demo-local-placeholder";
+
+    private static readonly JsonSerializerOptions JsonOptions = new()
     {
-        private readonly HttpClient _http;
-        private readonly ILogger<FmpClient> _log;
-        private readonly string _apiKey;
-        private readonly FallbackData _fallback;
-        private readonly string _fallbackPath;
+        PropertyNameCaseInsensitive = true
+    };
 
-        private bool HasApiKey =>
-            !string.IsNullOrWhiteSpace(_apiKey) &&
-            !_apiKey.Equals("demo-local-placeholder", StringComparison.OrdinalIgnoreCase);
+    private readonly HttpClient _httpClient;
+    private readonly ILogger<FmpClient> _logger;
+    private readonly FallbackData _fallback;
+    private readonly string _apiKey;
 
-        /// <summary>
-        /// Minimal DTO for /stable/income-statement. Add fields as you need them.
-        /// Unknown JSON properties are ignored by System.Text.Json.
-        /// </summary>
-        public record IncomeStatementStableRow(
-            string? Date,
-            string? Symbol,
-            long? Revenue,
-            long? NetIncome,
-            double? Eps,
-            double? EpsDiluted,
-            long? WeightedAverageShsOut,
-            long? WeightedAverageShsOutDil,
-            string? ReportedCurrency);
+    private bool HasApiKey =>
+        !string.IsNullOrWhiteSpace(_apiKey) &&
+        !_apiKey.Equals(PlaceholderApiKey, StringComparison.OrdinalIgnoreCase);
 
-        /// <summary>
-        /// Minimal DTO for /stable/balance-sheet. Extend as needed.
-        /// Unknown JSON fields are ignored.
-        /// </summary>
-        public record BalanceSheetStableRow(
-            string? Date,
-            string? Symbol,
-            long? TotalAssets,
-            long? TotalLiabilities,
-            long? TotalStockholdersEquity,
-            long? CashAndCashEquivalents,
-            string? ReportedCurrency);
+    public FmpClient(
+        HttpClient httpClient,
+        IConfiguration configuration,
+        ILogger<FmpClient> logger,
+        FallbackData fallback)
+    {
+        _httpClient = httpClient;
+        _logger = logger;
+        _fallback = fallback;
+        _apiKey = configuration["Fmp:ApiKey"] ?? string.Empty;
 
-        // ---------------------------------------------------------------
-        // Key Metrics (TTM) – typed DTO matching /stable/key-metrics-ttm
-        // NOTE (English):
-        // - Property names are PascalCase; System.Text.Json is case-insensitive,
-        //   so they bind to JSON like "enterpriseValueTTM", "evToEBITDATTM", etc.
-        // - Add/remove fields as needed; unknown JSON properties are ignored.
-        // ---------------------------------------------------------------
-        public record KeyMetricsTtm(
-            string? Symbol,
-            double? MarketCap,
-            double? EnterpriseValueTtm,
-            double? EvToSalesTtm,
-            double? EvToOperatingCashFlowTtm,
-            double? EvToFreeCashFlowTtm,
-            double? EvToEbitdaTtm,
-            double? ReturnOnAssetsTtm,
-            double? ReturnOnEquityTtm,
-            double? ReturnOnInvestedCapitalTtm,
-            double? EarningsYieldTtm,
-            double? FreeCashFlowYieldTtm,
-            double? CurrentRatioTtm
-        )
+        if (_httpClient.BaseAddress is null)
         {
-            // English: Map-friendly constructor for common JSON field spellings.
-            // If you prefer, you can annotate with [JsonPropertyName("jsonName")] instead.
-            // The case-insensitive option already handles most differences like TTM vs Ttm.
+            _httpClient.BaseAddress = new Uri(DefaultBaseAddress);
         }
 
-        /// <summary>
-        /// Minimal DTO for /stable/cash-flow-statement. Extend as needed.
-        /// Unknown JSON properties are ignored.
-        /// </summary>
-        public record CashFlowStableRow(
-            string? Date,
-            string? Symbol,
-            long? OperatingCashFlow,
-            long? CapitalExpenditure,
-            long? FreeCashFlow,
-            long? NetIncome,
-            long? DepreciationAndAmortization,
-            long? ChangeInWorkingCapital,
-            string? ReportedCurrency);
-
-        /// <summary>
-        /// Raw shape returned by /api/v3/profile/{symbol}
-        /// </summary>
-        private sealed class FmpProfileRaw
+        if (!_httpClient.DefaultRequestHeaders.Accept.Any())
         {
-            public string? symbol { get; set; }
-            public string? companyName { get; set; }
-            public string? sector { get; set; }
+            _httpClient.DefaultRequestHeaders.Accept.ParseAdd("application/json");
         }
 
-        /// <summary>
-        /// Stable DTO we return to the rest of the app
-        /// </summary>
-        public sealed class CompanyProfile
+        if (!_httpClient.DefaultRequestHeaders.UserAgent.Any())
         {
-            public string Symbol { get; init; } = "";
-            public string? Name { get; init; }
-            public string? Sector { get; init; }
+            _httpClient.DefaultRequestHeaders.UserAgent.ParseAdd(
+                "Portfolio.Api (+https://github.com/rluetken-dev/portfolio-analytics-backend)");
         }
 
-        /// <summary>
-        /// Fetches company profile (name, sector) for a given symbol using FMP v3 API.
-        /// Returns null if not found.
-        /// </summary>
-        public async Task<CompanyProfile?> GetCompanyProfileAsync(string symbol, CancellationToken ct = default)
+        if (!HasApiKey)
         {
-            if (string.IsNullOrWhiteSpace(symbol))
+            _logger.LogInformation("FMP API key is not configured. Live FMP calls are disabled.");
+        }
+    }
+
+    public sealed record IncomeStatementStableRow(
+        string? Date,
+        string? Symbol,
+        long? Revenue,
+        long? NetIncome,
+        double? Eps,
+        double? EpsDiluted,
+        long? WeightedAverageShsOut,
+        long? WeightedAverageShsOutDil,
+        string? ReportedCurrency);
+
+    public sealed record BalanceSheetStableRow(
+        string? Date,
+        string? Symbol,
+        long? TotalAssets,
+        long? TotalLiabilities,
+        long? TotalStockholdersEquity,
+        long? CashAndCashEquivalents,
+        string? ReportedCurrency);
+
+    public sealed record CashFlowStableRow(
+        string? Date,
+        string? Symbol,
+        long? OperatingCashFlow,
+        long? CapitalExpenditure,
+        long? FreeCashFlow,
+        long? NetIncome,
+        long? DepreciationAndAmortization,
+        long? ChangeInWorkingCapital,
+        string? ReportedCurrency);
+
+    public sealed record KeyMetricsTtm(
+        string? Symbol,
+        double? MarketCap,
+        double? EnterpriseValueTtm,
+        double? EvToSalesTtm,
+        double? EvToOperatingCashFlowTtm,
+        double? EvToFreeCashFlowTtm,
+        double? EvToEbitdaTtm,
+        double? ReturnOnAssetsTtm,
+        double? ReturnOnEquityTtm,
+        double? ReturnOnInvestedCapitalTtm,
+        double? EarningsYieldTtm,
+        double? FreeCashFlowYieldTtm,
+        double? CurrentRatioTtm);
+
+    public sealed record RevenuePoint(DateOnly PeriodEnd, decimal Revenue, string? Currency);
+
+    public sealed class CompanyProfile
+    {
+        public string Symbol { get; init; } = string.Empty;
+        public string? Name { get; init; }
+        public string? Sector { get; init; }
+    }
+
+    private sealed class FmpProfileRaw
+    {
+        public string? Symbol { get; set; }
+        public string? CompanyName { get; set; }
+        public string? Sector { get; set; }
+    }
+
+    private sealed class FmpSp500Row
+    {
+        public string? Symbol { get; set; }
+        public string? Name { get; set; }
+    }
+
+    public async Task<CompanyProfile?> GetCompanyProfileAsync(
+        string symbol,
+        CancellationToken ct = default)
+    {
+        string normalizedSymbol = NormalizeSymbol(symbol);
+        if (string.IsNullOrWhiteSpace(normalizedSymbol))
+        {
+            throw new ArgumentException("Symbol is required.", nameof(symbol));
+        }
+
+        var rows = await GetJsonAsync<List<FmpProfileRaw>>(
+            $"api/v3/profile/{normalizedSymbol}",
+            new Dictionary<string, string?>(),
+            ct);
+
+        FmpProfileRaw? first = rows.FirstOrDefault();
+        if (first is null)
+        {
+            return null;
+        }
+
+        return new CompanyProfile
+        {
+            Symbol = normalizedSymbol,
+            Name = NormalizeNullableText(first.CompanyName),
+            Sector = NormalizeNullableText(first.Sector)
+        };
+    }
+
+    public async Task<IReadOnlyList<RevenuePoint>> GetQuarterlyRevenueAsync(
+        string symbol,
+        int limit = 8,
+        CancellationToken ct = default)
+    {
+        return await GetRevenueAsync(symbol, period: "quarter", limit, maxLimit: 40, ct);
+    }
+
+    public async Task<IReadOnlyList<RevenuePoint>> GetAnnualRevenueAsync(
+        string symbol,
+        int limit = 8,
+        CancellationToken ct = default)
+    {
+        return await GetRevenueAsync(symbol, period: "annual", limit, maxLimit: 12, ct);
+    }
+
+    public Task<List<IncomeStatementStableRow>> GetIncomeStatementStableAsync(
+        string symbol,
+        int limit = 5,
+        CancellationToken ct = default)
+    {
+        return GetIncomeStatementStableAsync(symbol, limit, period: "annual", ct);
+    }
+
+    public Task<List<IncomeStatementStableRow>> GetIncomeStatementStableAsync(
+        string symbol,
+        int limit = 5,
+        string period = "annual",
+        CancellationToken ct = default)
+    {
+        string normalizedSymbol = RequireSymbol(symbol);
+        int normalizedLimit = Math.Clamp(limit, 1, 40);
+
+        return GetJsonAsync<List<IncomeStatementStableRow>>(
+            "stable/income-statement",
+            new Dictionary<string, string?>
             {
-                throw new ArgumentException("symbol is required", nameof(symbol));
+                ["symbol"] = normalizedSymbol,
+                ["limit"] = normalizedLimit.ToString(),
+                ["period"] = NormalizePeriod(period)
+            },
+            ct);
+    }
+
+    public Task<List<BalanceSheetStableRow>> GetBalanceSheetStableAsync(
+        string symbol,
+        int limit = 5,
+        string period = "annual",
+        CancellationToken ct = default)
+    {
+        string normalizedSymbol = RequireSymbol(symbol);
+        int normalizedLimit = Math.Clamp(limit, 1, 40);
+
+        return GetJsonAsync<List<BalanceSheetStableRow>>(
+            "stable/balance-sheet-statement",
+            new Dictionary<string, string?>
+            {
+                ["symbol"] = normalizedSymbol,
+                ["limit"] = normalizedLimit.ToString(),
+                ["period"] = NormalizePeriod(period)
+            },
+            ct);
+    }
+
+    public Task<List<CashFlowStableRow>> GetCashFlowStableAsync(
+        string symbol,
+        int limit = 5,
+        string period = "annual",
+        CancellationToken ct = default)
+    {
+        string normalizedSymbol = RequireSymbol(symbol);
+        int normalizedLimit = Math.Clamp(limit, 1, 40);
+
+        return GetJsonAsync<List<CashFlowStableRow>>(
+            "stable/cash-flow-statement",
+            new Dictionary<string, string?>
+            {
+                ["symbol"] = normalizedSymbol,
+                ["limit"] = normalizedLimit.ToString(),
+                ["period"] = NormalizePeriod(period)
+            },
+            ct);
+    }
+
+    public async Task<KeyMetricsTtm?> GetKeyMetricsTtmAsync(
+        string symbol,
+        CancellationToken ct = default)
+    {
+        string normalizedSymbol = RequireSymbol(symbol);
+
+        var rows = await GetJsonAsync<List<KeyMetricsTtm>>(
+            "stable/key-metrics-ttm",
+            new Dictionary<string, string?>
+            {
+                ["symbol"] = normalizedSymbol
+            },
+            ct);
+
+        return rows.FirstOrDefault();
+    }
+
+    public async Task<IReadOnlyList<(string Symbol, string? Name)>> GetSp500ConstituentsAsync(
+        CancellationToken ct = default)
+    {
+        var rows = await GetJsonAsync<List<FmpSp500Row>>(
+            "api/v3/sp500_constituent",
+            new Dictionary<string, string?>(),
+            ct);
+
+        return rows
+            .Where(row => !string.IsNullOrWhiteSpace(row.Symbol))
+            .Select(row => (
+                Symbol: row.Symbol!.Trim().ToUpperInvariant(),
+                Name: NormalizeNullableText(row.Name)))
+            .ToList();
+    }
+
+    public async Task<List<CompanySearchResult>> SearchCompaniesAsync(
+        string query,
+        int limit,
+        CancellationToken ct = default)
+    {
+        string normalizedQuery = query.Trim();
+
+        if (string.IsNullOrWhiteSpace(normalizedQuery))
+        {
+            return [];
+        }
+
+        int normalizedLimit = Math.Clamp(limit, 1, 50);
+
+        List<CompanySearchResult> localMatches = SearchFallbackCompanies(
+            normalizedQuery,
+            normalizedLimit);
+
+        if (localMatches.Count > 0 || !HasApiKey)
+        {
+            if (!HasApiKey && localMatches.Count == 0)
+            {
+                _logger.LogInformation(
+                    "FMP API key is not configured. No fallback search results found for query {Query}.",
+                    normalizedQuery);
             }
 
-            if (!HasApiKey)
-            {
-                throw new ServiceUnavailableException(
-                    "FMP API key is not configured. Live FMP provider calls are disabled.");
-            }
-
-            var sym = symbol.Trim().ToUpperInvariant();
-
-            // Build relative URL: /api/v3/profile/{symbol}?apikey=...
-            var relative = QueryHelpers.AddQueryString($"api/v3/profile/{sym}", new Dictionary<string, string?>
-            {
-                ["apikey"] = _apiKey
-            });
-
-            using var res = await _http.GetAsync(relative, ct);
-            var body = await res.Content.ReadAsStringAsync(ct);
-            if (!res.IsSuccessStatusCode)
-                throw new HttpRequestException($"FMP GET {relative} failed: {(int)res.StatusCode} {res.ReasonPhrase}. Body: {body}");
-
-            await using var stream = await res.Content.ReadAsStreamAsync(ct);
-            using var reader = new StreamReader(stream);
-            var json = await reader.ReadToEndAsync();
-            var arr = JsonConvert.DeserializeObject<FmpProfileRaw[]>(json);
-
-
-            var first = arr?.FirstOrDefault();
-            if (first is null) return null;
-
-            return new CompanyProfile
-            {
-                Symbol = sym,
-                Name = string.IsNullOrWhiteSpace(first.companyName) ? null : first.companyName,
-                Sector = string.IsNullOrWhiteSpace(first.sector) ? null : first.sector
-            };
+            return localMatches;
         }
 
-        public FmpClient(HttpClient http, IConfiguration config, ILogger<FmpClient> log, FallbackData fallback, string fallbackPath)
+        try
         {
-            _http = http;
-            _log = log;
-            _fallback = fallback;
-            _fallbackPath = fallbackPath;
-
-            _apiKey = config["Fmp:ApiKey"] ?? string.Empty;
-
-            if (!HasApiKey)
-            {
-                _log.LogInformation("FMP API key is not configured. Live FMP calls are disabled.");
-            }
-
-            // Use root base address so we can call /stable/... and other routes cleanly.
-            // IMPORTANT: keep trailing slash to avoid bad relative joins.
-            if (_http.BaseAddress is null)
-            {
-                _http.BaseAddress = new Uri("https://financialmodelingprep.com/");
-            }
-
-            // Set polite defaults once on the typed HttpClient.
-            // English: Some APIs reject requests without Accept/User-Agent.
-            if (!_http.DefaultRequestHeaders.Accept.Any())
-                _http.DefaultRequestHeaders.Accept.ParseAdd("application/json");
-
-            if (!_http.DefaultRequestHeaders.UserAgent.Any())
-                _http.DefaultRequestHeaders.UserAgent.ParseAdd("Portfolio.Api (+https://github.com/rluetken-dev)");
-        }
-
-        /// <summary>
-        /// Small DTO for quarterly revenue points returned by FMP.
-        /// </summary>
-        public record RevenuePoint(DateOnly PeriodEnd, decimal Revenue, string? Currency);
-
-        /// <summary>
-        /// Fetches QUARTERLY revenue via the modern /stable API.
-        /// English:
-        /// - Calls stable/income-statement with period=quarter
-        /// - Maps the response to your lightweight RevenuePoint model
-        /// - Returns newest-first (defensive ordering)
-        /// </summary>
-        public async Task<IReadOnlyList<RevenuePoint>> GetQuarterlyRevenueAsync(
-            string symbol,
-            int limit = 8,
-            CancellationToken ct = default)
-        {
-            if (string.IsNullOrWhiteSpace(symbol))
-                throw new ArgumentException("symbol is required", nameof(symbol));
-
-            // Keep a reasonable bound; FMP typically supports up to ~40
-            limit = Math.Clamp(limit, 1, 40);
-            var sym = symbol.ToUpperInvariant();
-
-            // 1) Fetch raw rows from the /stable endpoint
-            //    NOTE: /stable uses query parameters for symbol/limit/period.
-            var rows = await GetStableAsync<List<IncomeStatementStableRow>>(
-                path: "stable/income-statement",
-                query: new Dictionary<string, string?>
+            var remoteResults = await GetJsonAsync<List<CompanySearchResult>>(
+                "api/v3/search",
+                new Dictionary<string, string?>
                 {
-                    ["symbol"] = sym,
-                    ["limit"] = limit.ToString(),
-                    ["period"] = "quarter"
+                    ["query"] = normalizedQuery,
+                    ["limit"] = normalizedLimit.ToString()
                 },
                 ct);
 
-            // 2) Map to your compact RevenuePoint (date + revenue + currency)
-            var list = new List<RevenuePoint>(rows?.Count ?? 0);
-
-            if (rows != null)
-            {
-                foreach (var r in rows)
-                {
-                    // Defensive parsing: skip invalid rows
-                    if (r is null || string.IsNullOrWhiteSpace(r.Date) || r.Revenue is null)
-                        continue;
-
-                    if (!DateOnly.TryParse(r.Date, out var asOf))
-                        continue;
-
-                    // FMP returns revenue as long?; convert to decimal for your DTO
-                    list.Add(new RevenuePoint(
-                        PeriodEnd: asOf,
-                        Revenue: (decimal)r.Revenue.Value,
-                        Currency: r.ReportedCurrency
-                    ));
-                }
-            }
-
-            // 3) Ensure newest-first and cap by 'limit' (defensive)
-            return list
-                .OrderByDescending(x => x.PeriodEnd)
-                .Take(limit)
+            return remoteResults
+                .Where(result => !string.IsNullOrWhiteSpace(result.Symbol))
+                .Take(normalizedLimit)
                 .ToList();
         }
-
-        /// <summary>
-        /// Fetches ANNUAL revenue via the modern /stable API.
-        /// English:
-        /// - Calls stable/income-statement with period=annual
-        /// - Maps the response to your lightweight RevenuePoint model
-        /// - Returns newest-first (defensive ordering)
-        /// </summary>
-        public async Task<IReadOnlyList<RevenuePoint>> GetAnnualRevenueAsync(
-            string symbol,
-            int limit = 8,
-            CancellationToken ct = default)
+        catch (Exception ex) when (ex is HttpRequestException or JsonException)
         {
-            if (string.IsNullOrWhiteSpace(symbol))
-                throw new ArgumentException("symbol is required", nameof(symbol));
+            _logger.LogError(ex, "FMP company search failed for query {Query}.", normalizedQuery);
+            return [];
+        }
+    }
 
-            // Keep a reasonable bound; annual typically needs far fewer rows.
-            limit = Math.Clamp(limit, 1, 12);
-            var sym = symbol.ToUpperInvariant();
+    private async Task<IReadOnlyList<RevenuePoint>> GetRevenueAsync(
+        string symbol,
+        string period,
+        int limit,
+        int maxLimit,
+        CancellationToken ct)
+    {
+        string normalizedSymbol = RequireSymbol(symbol);
+        int normalizedLimit = Math.Clamp(limit, 1, maxLimit);
 
-            // 1) Fetch raw rows from the /stable endpoint
-            //    NOTE: /stable uses query parameters for symbol/limit/period.
-            var rows = await GetStableAsync<List<IncomeStatementStableRow>>(
-                path: "stable/income-statement",
-                query: new Dictionary<string, string?>
-                {
-                    ["symbol"] = sym,
-                    ["limit"] = limit.ToString(),
-                    ["period"] = "annual"
-                },
-                ct);
+        List<IncomeStatementStableRow> rows = await GetIncomeStatementStableAsync(
+            normalizedSymbol,
+            normalizedLimit,
+            period,
+            ct);
 
-            // 2) Map to your compact RevenuePoint (date + revenue + currency)
-            var list = new List<RevenuePoint>(rows?.Count ?? 0);
+        return rows
+            .Where(row => !string.IsNullOrWhiteSpace(row.Date) && row.Revenue.HasValue)
+            .Select(row => TryCreateRevenuePoint(row, out RevenuePoint? point) ? point : null)
+            .Where(point => point is not null)
+            .Cast<RevenuePoint>()
+            .OrderByDescending(point => point.PeriodEnd)
+            .Take(normalizedLimit)
+            .ToList();
+    }
 
-            if (rows != null)
-            {
-                foreach (var r in rows)
-                {
-                    // Defensive parsing: skip invalid rows
-                    if (r is null || string.IsNullOrWhiteSpace(r.Date) || r.Revenue is null)
-                        continue;
+    private async Task<T> GetJsonAsync<T>(
+        string path,
+        IDictionary<string, string?> query,
+        CancellationToken ct)
+    {
+        EnsureApiKeyConfigured();
 
-                    if (!DateOnly.TryParse(r.Date, out var asOf))
-                        continue;
+        var parameters = new Dictionary<string, string?>(query)
+        {
+            ["apikey"] = _apiKey
+        };
 
-                    // FMP returns revenue as long?; convert to decimal for your DTO
-                    list.Add(new RevenuePoint(
-                        PeriodEnd: asOf,
-                        Revenue: (decimal)r.Revenue.Value,
-                        Currency: r.ReportedCurrency
-                    ));
-                }
-            }
+        string url = QueryHelpers.AddQueryString(path, parameters);
 
-            // 3) Ensure newest-first and cap by 'limit' (defensive)
-            return list
-                .OrderByDescending(x => x.PeriodEnd)
-                .Take(limit)
-                .ToList();
+        using HttpResponseMessage response = await _httpClient.GetAsync(url, ct);
+
+        if (!response.IsSuccessStatusCode)
+        {
+            string body = await response.Content.ReadAsStringAsync(ct);
+
+            throw new HttpRequestException(
+                $"FMP GET {url} failed: {(int)response.StatusCode} {response.ReasonPhrase}. Body: {body}");
         }
 
-        /// <summary>
-        /// Generic GET helper for FMP /stable endpoints.
-        /// It automatically appends the API key and deserializes the JSON payload.
-        /// </summary>
-        private async Task<T> GetStableAsync<T>(
-            string path,
-            IDictionary<string, string?> query,
-            CancellationToken ct = default)
+        T? data = await response.Content.ReadFromJsonAsync<T>(JsonOptions, ct);
+
+        if (data is null)
         {
-            if (!HasApiKey)
-            {
-                throw new ServiceUnavailableException(
-                    "FMP API key is not configured. Live FMP provider calls are disabled.");
-            }
-
-            // Always include the API key; clone input to avoid side-effects.
-            var q = new Dictionary<string, string?>(query ?? new Dictionary<string, string?>());
-            q["apikey"] = _apiKey;
-
-            // Build the final relative URL against HttpClient.BaseAddress
-            var url = QueryHelpers.AddQueryString(path, q);
-
-            // Execute GET; on non-success, include response body for easier debugging.
-            using var res = await _http.GetAsync(url, ct);
-            var body = await res.Content.ReadAsStringAsync(ct);
-            if (!res.IsSuccessStatusCode)
-            {
-                throw new HttpRequestException(
-                    $"FMP GET {url} failed: {(int)res.StatusCode} {res.ReasonPhrase}. Body: {body}");
-            }
-
-            // Deserialize the JSON stream into the requested type.
-            await using var stream = await res.Content.ReadAsStreamAsync(ct);
-            using var reader = new StreamReader(stream);
-            var json = await reader.ReadToEndAsync();
-            var data = JsonConvert.DeserializeObject<T>(json);
-            if (data is null)
-                throw new InvalidOperationException($"Empty/invalid JSON returned by {url}");
-
-            return data;
+            throw new JsonException($"FMP GET {url} returned empty or invalid JSON.");
         }
 
-        /// <summary>
-        /// Fetches the Income Statement from the new /stable API (most recent first).
-        /// NOTE: /stable uses query parameters (symbol, limit) instead of the legacy path segment.
-        /// Example: stable/income-statement?symbol=AAPL&amp;limit=5&amp;apikey=...
-        /// </summary>
-        /// <param name="symbol">Ticker, e.g., "AAPL". Will be uppercased defensively.</param>
-        /// <param name="limit">Max rows to return (typical 1..20).</param>
-        /// <param name="ct">Cancellation token.</param>
-        public Task<List<IncomeStatementStableRow>> GetIncomeStatementStableAsync(
-            string symbol,
-            int limit = 5,
-            CancellationToken ct = default)
-        {
-            if (string.IsNullOrWhiteSpace(symbol))
-                throw new ArgumentException("symbol is required", nameof(symbol));
+        return data;
+    }
 
-            limit = Math.Clamp(limit, 1, 40);
-
-            return GetStableAsync<List<IncomeStatementStableRow>>(
-                path: "stable/income-statement",
-                query: new Dictionary<string, string?>
-                {
-                    ["symbol"] = symbol.ToUpperInvariant(),
-                    ["limit"] = limit.ToString()
-                    // Optional: ["period"] = "annual" | "quarter"  (plan-dependent)
-                },
-                ct);
-        }
-
-        /// <summary>
-        /// Fetches TTM key metrics for a single symbol from the /stable API.
-        /// Example: stable/key-metrics-ttm?symbol=AAPL&amp;apikey=...
-        /// Returns the first (most recent) item or null if none.
-        /// </summary>
-        /// <param name="symbol">Ticker, e.g., "AAPL" (uppercased defensively).</param>
-        /// <param name="ct">Cancellation token.</param>
-        /// <returns>The latest <see cref="KeyMetricsTtm"/> or null.</returns>
-        /// <exception cref="ArgumentException">Thrown if symbol is null/whitespace.</exception>
-        /// <exception cref="HttpRequestException">Propagated on non-success HTTP responses.</exception>
-        /// <exception cref="InvalidOperationException">Thrown on empty/invalid JSON.</exception>
-        public async Task<KeyMetricsTtm?> GetKeyMetricsTtmAsync(
-            string symbol,
-            CancellationToken ct = default)
-        {
-            if (string.IsNullOrWhiteSpace(symbol))
-                throw new ArgumentException("symbol is required", nameof(symbol));
-
-            var list = await GetStableAsync<List<KeyMetricsTtm>>(
-                path: "stable/key-metrics-ttm",
-                query: new Dictionary<string, string?>
-                {
-                    ["symbol"] = symbol.ToUpperInvariant()
-                },
-                ct);
-
-            // English: Return the first element if present; otherwise null.
-            return list?.FirstOrDefault();
-        }
-
-        /// <summary>
-        /// Fetches Balance Sheet rows from the /stable API (most recent first).
-        /// Example: stable/balance-sheet?symbol=AAPL&amp;period=annual&amp;limit=5&amp;apikey=...
-        /// </summary>
-        /// <param name="symbol">Ticker, e.g., "AAPL" (uppercased defensively).</param>
-        /// <param name="limit">Max rows to return (typical 1–20).</param>
-        /// <param name="period">"annual" or "quarter" (plan-dependent).</param>
-        /// <param name="ct">Cancellation token.</param>
-        /// <returns>List of balance sheet rows (newest first).</returns>
-        public Task<List<BalanceSheetStableRow>> GetBalanceSheetStableAsync(
-            string symbol,
-            int limit = 5,
-            string period = "annual",
-            CancellationToken ct = default)
-        {
-            if (string.IsNullOrWhiteSpace(symbol))
-                throw new ArgumentException("symbol is required", nameof(symbol));
-
-            limit = Math.Clamp(limit, 1, 40);
-
-            // FIX (English): Use the correct stable endpoint path.
-            // Old: path: "stable/balance-sheet"
-            // New: path: "stable/balance-sheet-statement"
-            return GetStableAsync<List<BalanceSheetStableRow>>(
-                path: "stable/balance-sheet-statement",
-                query: new Dictionary<string, string?>
-                {
-                    ["symbol"] = symbol.ToUpperInvariant(),
-                    ["limit"] = limit.ToString(),
-                    ["period"] = period
-                },
-                ct);
-        }
-
-        /// <summary>
-        /// Fetches Cash Flow rows from the /stable API (most recent first).
-        /// Example: stable/cash-flow-statement?symbol=AAPL&amp;period=annual&amp;limit=5&amp;apikey=…
-        /// </summary>
-        /// <param name="symbol">Ticker, e.g., "AAPL" (uppercased defensively).</param>
-        /// <param name="limit">Max rows to return (typical 1–20).</param>
-        /// <param name="period">"annual" or "quarter" (plan-dependent).</param>
-        /// <param name="ct">Cancellation token.</param>
-        /// <returns>List of cash flow rows (newest first).</returns>
-        public Task<List<CashFlowStableRow>> GetCashFlowStableAsync(
-            string symbol,
-            int limit = 5,
-            string period = "annual",
-            CancellationToken ct = default)
-        {
-            if (string.IsNullOrWhiteSpace(symbol))
-                throw new ArgumentException("symbol is required", nameof(symbol));
-
-            limit = Math.Clamp(limit, 1, 40);
-
-            // English: /stable uses query parameters; we keep the pattern consistent.
-            return GetStableAsync<List<CashFlowStableRow>>(
-                path: "stable/cash-flow-statement",
-                query: new Dictionary<string, string?>
-                {
-                    ["symbol"] = symbol.ToUpperInvariant(),
-                    ["limit"] = limit.ToString(),
-                    ["period"] = period
-                },
-                ct);
-        }
-
-        /// <summary>
-        /// Fetches Income Statement rows from the /stable API (most recent first).
-        /// Example: stable/income-statement?symbol=AAPL&amp;period=annual&amp;limit=5&amp;apikey=...
-        /// </summary>
-        /// <param name="symbol">Ticker, e.g., "AAPL" (uppercased defensively).</param>
-        /// <param name="limit">Max rows to return (typical 1–20).</param>
-        /// <param name="period">"annual" or "quarter" (plan-dependent).</param>
-        /// <param name="ct">Cancellation token.</param>
-        /// <returns>List of income statement rows (newest first).</returns>
-        public Task<List<IncomeStatementStableRow>> GetIncomeStatementStableAsync(
-            string symbol,
-            int limit = 5,
-            string period = "annual",
-            CancellationToken ct = default)
-        {
-            if (string.IsNullOrWhiteSpace(symbol))
-                throw new ArgumentException("symbol is required", nameof(symbol));
-
-            limit = Math.Clamp(limit, 1, 40);
-
-            return GetStableAsync<List<IncomeStatementStableRow>>(
-                path: "stable/income-statement",
-                query: new Dictionary<string, string?>
-                {
-                    ["symbol"] = symbol.ToUpperInvariant(),
-                    ["limit"] = limit.ToString(),
-                    ["period"] = period
-                },
-                ct);
-        }
-
-        /// <summary>
-        /// Minimal DTO for FMP v3 /api/v3/sp500_constituent (only used fields).
-        /// </summary>
-        private sealed class FmpSp500Row
-        {
-            /// <summary>Ticker (e.g., "AAPL").</summary>
-            public string? symbol { get; set; }
-
-            /// <summary>Company name.</summary>
-            public string? name { get; set; }
-        }
-
-        /// <summary>
-        /// Fetch S&amp;P 500 constituents (symbol + optional name) from FMP v3.
-        /// </summary>
-        public async Task<IReadOnlyList<(string Symbol, string? Name)>> GetSp500ConstituentsAsync(
-            CancellationToken ct = default)
-        {
-            if (!HasApiKey)
+    private List<CompanySearchResult> SearchFallbackCompanies(string query, int limit)
+    {
+        return _fallback.Companies
+            .Where(company =>
+                company.Symbol.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+                company.Name.Contains(query, StringComparison.OrdinalIgnoreCase))
+            .Take(limit)
+            .Select(company => new CompanySearchResult
             {
-                throw new ServiceUnavailableException(
-                    "FMP API key is not configured. Live FMP provider calls are disabled.");
-            }
+                Symbol = company.Symbol,
+                Name = company.Name,
+                Exchange = "Local fallback",
+                Sector = company.Sector,
+                IsInDatabase = false,
+                IsInUserPortfolio = false
+            })
+            .ToList();
+    }
 
-            var relative = QueryHelpers.AddQueryString("api/v3/sp500_constituent", new Dictionary<string, string?>
-            {
-                ["apikey"] = _apiKey
-            });
+    private static bool TryCreateRevenuePoint(
+        IncomeStatementStableRow row,
+        out RevenuePoint? point)
+    {
+        point = null;
 
-            using var res = await _http.GetAsync(relative, ct);
-            var body = await res.Content.ReadAsStringAsync(ct);
-            if (!res.IsSuccessStatusCode)
-                throw new HttpRequestException($"FMP GET {relative} failed: {(int)res.StatusCode} {res.ReasonPhrase}. Body: {body}");
-
-            await using var stream = await res.Content.ReadAsStreamAsync(ct);
-            using var reader = new StreamReader(stream);
-            var json = await reader.ReadToEndAsync();
-            var arr = JsonConvert.DeserializeObject<FmpSp500Row[]>(json);
-
-
-            var list = new List<(string Symbol, string? Name)>(arr?.Length ?? 0);
-            if (arr != null)
-            {
-                foreach (var r in arr)
-                {
-                    if (string.IsNullOrWhiteSpace(r.symbol)) continue;
-                    var sym = r.symbol.Trim().ToUpperInvariant();
-                    var name = string.IsNullOrWhiteSpace(r.name) ? null : r.name.Trim();
-                    list.Add((sym, name));
-                }
-            }
-            return list;
-        }
-
-        /// <summary>
-        /// Extended mock search with 100+ popular stocks
-        /// </summary>
-        public async Task<List<CompanySearchResult>> SearchCompaniesAsync(
-            string query,
-            int limit,
-            CancellationToken ct = default)
+        if (!DateOnly.TryParse(row.Date, out DateOnly periodEnd) || row.Revenue is null)
         {
-            if (string.IsNullOrWhiteSpace(query))
-                return new List<CompanySearchResult>();
-
-            // First: try to find matches in local fallback data (fast & no API usage)
-            var localMatches = _fallback.Companies
-                .Where(c =>
-                    c.Symbol.Contains(query, StringComparison.OrdinalIgnoreCase) ||
-                    c.Name.Contains(query, StringComparison.OrdinalIgnoreCase))
-                .Take(limit)
-                .Select(c => new CompanySearchResult
-                {
-                    Symbol = c.Symbol,
-                    Name = c.Name,
-                    Exchange = "Fallback",
-                    Sector = c.Sector
-                })
-                .ToList();
-
-            if (localMatches.Any())
-            {
-                return localMatches;
-            }
-
-            if (!HasApiKey)
-            {
-                _log.LogInformation("FMP API key is not configured. Returning fallback search results only for query {Query}.", query);
-                return new List<CompanySearchResult>();
-            }
-
-            // If nothing found locally → call the remote FMP API
-            try
-            {
-                var url = $"api/v3/search?query={Uri.EscapeDataString(query)}&limit={limit}&apikey={_apiKey}";
-                var response = await _http.GetFromJsonAsync<List<CompanySearchResult>>(url, ct);
-
-                if (response == null || response.Count == 0)
-                    return new List<CompanySearchResult>();
-
-                // Add newly discovered companies into fallback data for future offline use
-                foreach (var apiResult in response)
-                {
-                    if (!_fallback.Companies.Any(c => c.Symbol.Equals(apiResult.Symbol, StringComparison.OrdinalIgnoreCase)))
-                    {
-                        _fallback.Companies.Add(new CompanyFallbackInfo
-                        {
-                            Symbol = apiResult.Symbol,
-                            Name = apiResult.Name,
-                            Sector = apiResult.Sector
-                        });
-                    }
-                }
-
-                // Persist updated fallback data back into JSON file
-                var json = JsonConvert.SerializeObject(_fallback, Formatting.Indented);
-                await File.WriteAllTextAsync(_fallbackPath, json, ct);
-
-                return response;
-            }
-            catch (Exception ex)
-            {
-                // Log errors but return empty list (avoid breaking client flow)
-                _log.LogError(ex, "FMP search failed for query {Query}", query);
-                return new List<CompanySearchResult>();
-            }
+            return false;
         }
+
+        point = new RevenuePoint(
+            PeriodEnd: periodEnd,
+            Revenue: row.Revenue.Value,
+            Currency: row.ReportedCurrency);
+
+        return true;
+    }
+
+    private void EnsureApiKeyConfigured()
+    {
+        if (HasApiKey)
+        {
+            return;
+        }
+
+        throw new ServiceUnavailableException(
+            "FMP API key is not configured. Live FMP provider calls are disabled.");
+    }
+
+    private static string RequireSymbol(string symbol)
+    {
+        string normalizedSymbol = NormalizeSymbol(symbol);
+
+        if (string.IsNullOrWhiteSpace(normalizedSymbol))
+        {
+            throw new ArgumentException("Symbol is required.", nameof(symbol));
+        }
+
+        return normalizedSymbol;
+    }
+
+    private static string NormalizeSymbol(string symbol)
+    {
+        return string.IsNullOrWhiteSpace(symbol)
+            ? string.Empty
+            : symbol.Trim().ToUpperInvariant();
+    }
+
+    private static string NormalizePeriod(string period)
+    {
+        return string.Equals(period, "quarter", StringComparison.OrdinalIgnoreCase)
+            ? "quarter"
+            : "annual";
+    }
+
+    private static string? NormalizeNullableText(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value)
+            ? null
+            : value.Trim();
     }
 }

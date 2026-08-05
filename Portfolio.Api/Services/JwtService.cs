@@ -8,39 +8,46 @@ namespace Portfolio.Api.Services;
 
 public sealed class JwtService
 {
+    private const int AccessTokenLifetimeMinutes = 15;
+
     private readonly string _secretKey;
 
     public JwtService(IConfiguration configuration)
     {
-        // Read the signing key from configuration so secrets are not hardcoded in source control.
-        _secretKey = configuration["Jwt:Secret"]
-            ?? throw new InvalidOperationException("JWT secret is not configured.");
+        _secretKey = configuration["Jwt:Secret"] ?? string.Empty;
+
+        if (string.IsNullOrWhiteSpace(_secretKey))
+        {
+            throw new InvalidOperationException("JWT secret is not configured.");
+        }
     }
 
     public string GenerateToken(User user)
     {
-        var tokenHandler = new JwtSecurityTokenHandler();
-        var key = Encoding.UTF8.GetBytes(_secretKey);
+        ArgumentNullException.ThrowIfNull(user);
 
-        // Keep the claims small and explicit. The frontend uses isAdmin for simple UI decisions.
-        var claims = new[]
-        {
-            new Claim(ClaimTypes.Name, user.Username),
+        var tokenHandler = new JwtSecurityTokenHandler();
+        byte[] key = Encoding.UTF8.GetBytes(_secretKey);
+
+        Claim[] claims =
+        [
             new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
-            new Claim("isAdmin", user.IsAdmin.ToString().ToLowerInvariant()),
-            new Claim(ClaimTypes.Role, user.IsAdmin ? "Admin" : "User")
-        };
+            new Claim(ClaimTypes.Name, user.Username),
+            new Claim(ClaimTypes.Role, user.IsAdmin ? "Admin" : "User"),
+            new Claim("isAdmin", user.IsAdmin.ToString().ToLowerInvariant())
+        ];
 
         var tokenDescriptor = new SecurityTokenDescriptor
         {
             Subject = new ClaimsIdentity(claims),
-            Expires = DateTime.UtcNow.AddMinutes(15),
+            Expires = DateTime.UtcNow.AddMinutes(AccessTokenLifetimeMinutes),
             SigningCredentials = new SigningCredentials(
                 new SymmetricSecurityKey(key),
                 SecurityAlgorithms.HmacSha256Signature)
         };
 
-        var token = tokenHandler.CreateToken(tokenDescriptor);
+        SecurityToken token = tokenHandler.CreateToken(tokenDescriptor);
+
         return tokenHandler.WriteToken(token);
     }
 }

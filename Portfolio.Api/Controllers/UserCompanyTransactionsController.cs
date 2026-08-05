@@ -1,17 +1,16 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using Portfolio.Api.Models;
-using Portfolio.Api.DTOs;
-using System.Security.Claims;
 using Portfolio.Api.Data;
+using Portfolio.Api.DTOs;
 using Portfolio.Api.Exceptions;
+using Portfolio.Api.Models;
+using System.Security.Claims;
 
 namespace Portfolio.Api.Controllers
 {
     /// <summary>
     /// Provides API endpoints for recording and retrieving user stock transactions.
-    /// Each record represents a single buy or sell operation performed by an authenticated user.
     /// </summary>
     [ApiController]
     [Route("api/[controller]")]
@@ -21,7 +20,9 @@ namespace Portfolio.Api.Controllers
         private readonly AppDbContext _context;
         private readonly ILogger<UserCompanyTransactionsController> _logger;
 
-        public UserCompanyTransactionsController(AppDbContext context, ILogger<UserCompanyTransactionsController> logger)
+        public UserCompanyTransactionsController(
+            AppDbContext context,
+            ILogger<UserCompanyTransactionsController> logger)
         {
             _context = context;
             _logger = logger;
@@ -29,40 +30,53 @@ namespace Portfolio.Api.Controllers
 
         /// <summary>
         /// Records a new buy or sell transaction for the currently authenticated user.
-        /// Positive share quantities represent a "buy" action, while negative values indicate a "sell".
         /// </summary>
-        /// <param name="dto">The transaction object containing TickerId, Shares, Price, and optional Notes.</param>
+        /// <remarks>
+        /// Positive share quantities represent buys. Negative share quantities represent sells.
+        /// The portfolio entry stores the latest transaction price as purchase price.
+        /// </remarks>
+        /// <param name="dto">The transaction details.</param>
         /// <param name="ct">Cancellation token for the request.</param>
-        /// <response code="201">The transaction was successfully recorded and created.</response>
-        /// <response code="400">If the TickerId is invalid or request data is malformed.</response>
-        /// <response code="401">If the user is not authenticated.</response>
+        /// <response code="201">Transaction was recorded successfully.</response>
+        /// <response code="400">Ticker symbol is invalid or the user tries to sell more shares than owned.</response>
+        /// <response code="401">User is not authenticated.</response>
         [HttpPost]
-        [ProducesResponseType(typeof(UserCompanyTransaction), StatusCodes.Status201Created)]
+        [ProducesResponseType(typeof(TransactionDto), StatusCodes.Status201Created)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-        public async Task<ActionResult<UserCompanyTransaction>> AddTransaction(
+        public async Task<ActionResult<TransactionDto>> AddTransaction(
             [FromBody] CreateUserCompanyTransactionDto dto,
             CancellationToken ct)
         {
             var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+
             if (userId == null)
+            {
                 return Unauthorized("User not authorized.");
+            }
 
-            // Convert string claim to integer user id
             if (!int.TryParse(userId, out var uid))
+            {
                 throw new BadRequestException("Invalid user identifier.");
+            }
 
-            _logger.LogInformation("Recording transaction for user {UserId}, Symbol={Symbol}, Shares={Shares}, Price={Price}",
-                uid, dto.Symbol, dto.Shares, dto.Price);
+            _logger.LogInformation(
+                "Recording transaction for user {UserId}, Symbol={Symbol}, Shares={Shares}, Price={Price}",
+                uid,
+                dto.Symbol,
+                dto.Shares,
+                dto.Price);
 
-            // Find ticker by symbol (case-insensitive)
             var ticker = await _context.Tickers
-                .FirstOrDefaultAsync(t => t.Symbol.ToLower() == dto.Symbol.ToLower(), ct);
+                .FirstOrDefaultAsync(
+                    ticker => ticker.Symbol.ToLower() == dto.Symbol.ToLower(),
+                    ct);
+
             if (ticker == null)
+            {
                 throw new BadRequestException($"Invalid Symbol: {dto.Symbol}");
+            }
 
-
-            // Create transaction record
             var transaction = new UserCompanyTransaction
             {
                 UserId = uid,
@@ -75,46 +89,51 @@ namespace Portfolio.Api.Controllers
 
             _context.UserCompanyTransactions.Add(transaction);
 
-            // Find existing portfolio entry for this user and ticker
             var userCompany = await _context.UserCompanies
-                .FirstOrDefaultAsync(uc => uc.UserId == uid && uc.TickerId == ticker.Id, ct);
+                .FirstOrDefaultAsync(
+                    userCompany => userCompany.UserId == uid && userCompany.TickerId == ticker.Id,
+                    ct);
 
-            // Prevent selling more shares than currently owned
-           if (userCompany != null && dto.Shares < 0 && userCompany.Shares + dto.Shares < 0)
+            if (userCompany != null && dto.Shares < 0 && userCompany.Shares + dto.Shares < 0)
             {
-                _logger.LogWarning("User {UserId} attempted to sell {SellShares} shares of {TickerId}, but only owns {CurrentShares}",
-                    uid, Math.Abs(dto.Shares), ticker.Id, userCompany.Shares);
+                _logger.LogWarning(
+                    "User {UserId} attempted to sell {SellShares} shares of {TickerId}, but only owns {CurrentShares}",
+                    uid,
+                    Math.Abs(dto.Shares),
+                    ticker.Id,
+                    userCompany.Shares);
 
                 throw new BadRequestException("Insufficient shares to sell. You cannot sell more shares than you currently own.");
             }
 
             if (userCompany != null)
             {
-                // Update portfolio position
                 userCompany.Shares += dto.Shares;
-                userCompany.PurchasePrice = dto.Price; // TODO: implement average cost later
-                userCompany.Notes = (userCompany.Notes ?? "") + $"\n[{DateTime.UtcNow:yyyy-MM-dd}] {dto.Notes}";
+                userCompany.PurchasePrice = dto.Price;
+                userCompany.Notes = AppendTransactionNote(userCompany.Notes, dto.Notes);
             }
             else
             {
-                // Create new portfolio entry if not existing
                 userCompany = new UserCompany
                 {
                     UserId = uid,
                     TickerId = ticker.Id,
                     Shares = dto.Shares,
                     PurchasePrice = dto.Price,
-                    Notes = $"[{DateTime.UtcNow:yyyy-MM-dd}] {dto.Notes}"
+                    Notes = FormatTransactionNote(dto.Notes)
                 };
+
                 _context.UserCompanies.Add(userCompany);
             }
 
             await _context.SaveChangesAsync(ct);
 
-            _logger.LogInformation("Transaction saved for user {UserId}: {Shares} shares @ {Price}",
-                uid, dto.Shares, dto.Price);
+            _logger.LogInformation(
+                "Transaction saved for user {UserId}: {Shares} shares at {Price}",
+                uid,
+                dto.Shares,
+                dto.Price);
 
-            // Map to lightweight DTO to avoid serialization cycles
             var result = new TransactionDto
             {
                 CreatedAt = transaction.CreatedAt,
@@ -127,96 +146,121 @@ namespace Portfolio.Api.Controllers
         }
 
         /// <summary>
-        /// Retrieves a specific transaction by its unique ID.
+        /// Retrieves a specific transaction by ID.
         /// </summary>
-        /// <param name="id">The unique transaction ID.</param>
+        /// <param name="id">The transaction ID.</param>
         /// <param name="ct">Cancellation token for the request.</param>
-        /// <response code="200">The requested transaction was found and returned.</response>
-        /// <response code="401">If the user is not authenticated.</response>
-        /// <response code="404">If the transaction with the specified ID does not exist.</response>
+        /// <response code="200">Transaction was found.</response>
+        /// <response code="401">User is not authenticated.</response>
+        /// <response code="404">Transaction was not found.</response>
         [HttpGet("{id:int}")]
         [ProducesResponseType(typeof(UserCompanyTransaction), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status401Unauthorized)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
-        public async Task<ActionResult<UserCompanyTransaction>> GetTransactionById(int id, CancellationToken ct)
+        public async Task<ActionResult<UserCompanyTransaction>> GetTransactionById(
+            int id,
+            CancellationToken ct)
         {
-            var transaction = await _context.UserCompanyTransactions.FindAsync(new object?[] { id }, ct);
+            var transaction = await _context.UserCompanyTransactions
+                .FindAsync(new object?[] { id }, ct);
+
             if (transaction == null)
+            {
                 return NotFound();
+            }
 
             return transaction;
         }
 
         /// <summary>
-        /// Retrieves all recorded transactions for the currently authenticated user.
-        /// Transactions are returned in descending order by creation date.
+        /// Retrieves all transactions for the currently authenticated user.
         /// </summary>
         /// <param name="ct">Cancellation token for the request.</param>
-        /// <response code="200">Returns a list of transactions associated with the current user.</response>
-        /// <response code="401">If the user is not authenticated.</response>
+        /// <response code="200">Returns the current user's transactions.</response>
+        /// <response code="401">User is not authenticated.</response>
         [HttpGet("mine")]
         [ProducesResponseType(typeof(IEnumerable<UserCompanyTransaction>), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status401Unauthorized)]
         public async Task<ActionResult<IEnumerable<UserCompanyTransaction>>> GetUserTransactions(CancellationToken ct)
         {
             var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+
             if (userId == null)
+            {
                 return Unauthorized("User not authorized.");
+            }
 
             var uid = int.Parse(userId);
 
             var transactions = await _context.UserCompanyTransactions
-                .Include(t => t.Ticker)
-                .Where(t => t.UserId == uid)
-                .OrderByDescending(t => t.CreatedAt)
+                .Include(transaction => transaction.Ticker)
+                .Where(transaction => transaction.UserId == uid)
+                .OrderByDescending(transaction => transaction.CreatedAt)
                 .ToListAsync(ct);
 
             return transactions;
         }
 
         /// <summary>
-        /// Retrieves all transactions for a specific company symbol belonging to the currently authenticated user.
-        /// Results are returned in descending order by creation date.
+        /// Retrieves all transactions for a company symbol belonging to the current user.
         /// </summary>
-        /// <param name="symbol">The ticker symbol (e.g., "AAPL") identifying the company.</param>
-        /// <response code="200">Returns a list of transactions for the specified symbol.</response>
-        /// <response code="401">If the user is not authenticated.</response>
-        /// <response code="404">If the provided symbol does not exist.</response>
+        /// <param name="symbol">The ticker symbol.</param>
+        /// <response code="200">Returns transactions for the specified symbol.</response>
+        /// <response code="401">User is not authenticated.</response>
+        /// <response code="404">Ticker symbol was not found.</response>
         [HttpGet("by-symbol/{symbol}")]
         [ProducesResponseType(typeof(IEnumerable<TransactionDto>), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status401Unauthorized)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
         public async Task<ActionResult<IEnumerable<TransactionDto>>> GetTransactionsBySymbol(string symbol)
         {
-            // Get current user's ID from JWT claims
             var userIdString = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+
             if (userIdString == null)
+            {
                 return Unauthorized();
+            }
 
             var userId = int.Parse(userIdString);
 
-            // Find ticker by symbol (case-insensitive)
             var ticker = await _context.Tickers
-                .FirstOrDefaultAsync(t => t.Symbol.ToLower() == symbol.ToLower());
+                .FirstOrDefaultAsync(ticker => ticker.Symbol.ToLower() == symbol.ToLower());
 
             if (ticker == null)
+            {
                 return NotFound($"Ticker '{symbol}' not found.");
+            }
 
-            // Query all transactions for this user + ticker, newest first
             var transactions = await _context.UserCompanyTransactions
-                .Where(t => t.UserId == userId && t.TickerId == ticker.Id)
-                .OrderByDescending(t => t.CreatedAt)
-                .Select(t => new TransactionDto
+                .Where(transaction => transaction.UserId == userId && transaction.TickerId == ticker.Id)
+                .OrderByDescending(transaction => transaction.CreatedAt)
+                .Select(transaction => new TransactionDto
                 {
-                    CreatedAt = t.CreatedAt,
-                    Shares = t.Shares,
-                    Price = t.Price ?? 0m,
-                    Notes = t.Notes
+                    CreatedAt = transaction.CreatedAt,
+                    Shares = transaction.Shares,
+                    Price = transaction.Price ?? 0m,
+                    Notes = transaction.Notes
                 })
                 .ToListAsync();
 
-            // Return list of DTOs
             return Ok(transactions);
+        }
+
+        private static string AppendTransactionNote(string? existingNotes, string? newNote)
+        {
+            var formattedNote = FormatTransactionNote(newNote);
+
+            if (string.IsNullOrWhiteSpace(existingNotes))
+            {
+                return formattedNote;
+            }
+
+            return $"{existingNotes}{Environment.NewLine}{formattedNote}";
+        }
+
+        private static string FormatTransactionNote(string? note)
+        {
+            return $"[{DateTime.UtcNow:yyyy-MM-dd}] {note}";
         }
     }
 }

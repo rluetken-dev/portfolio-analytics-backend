@@ -1,14 +1,14 @@
 namespace Portfolio.Api.Models;
 
-public class FallbackData
+public sealed class FallbackData
 {
     public Dictionary<string, List<string>> PopularLists { get; set; } = new();
     public List<CompanyFallbackInfo> Companies { get; set; } = new();
 }
 
-public class CompanyFallbackInfo
+public sealed class CompanyFallbackInfo
 {
-    public string Symbol { get; set; } = "";
-    public string Name { get; set; } = "";
+    public string Symbol { get; set; } = string.Empty;
+    public string Name { get; set; } = string.Empty;
     public string? Sector { get; set; }
 }

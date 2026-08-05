@@ -1,154 +1,261 @@
 using System.Globalization;
 using System.Text.Json;
-using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Logging;
 using Portfolio.Api.Seed.Dto;
 
-namespace Portfolio.Api.Seed
+namespace Portfolio.Api.Seed;
+
+/// <summary>
+/// Loads and validates company seed files from SeedData/companies.
+/// </summary>
+public sealed class SeedFileService : ISeedFileService
 {
-    /// <summary>
-    /// Reads JSON seed files from SeedData/companies/{SYMBOL}.json and validates fields.
-    /// </summary>
-    public sealed class SeedFileService : ISeedFileService
+    private const string SeedDataDirectory = "SeedData";
+    private const string CompaniesDirectory = "companies";
+    private const string DateFormat = "yyyy-MM-dd";
+
+    private static readonly JsonSerializerOptions JsonOptions = new()
     {
-        private readonly ILogger<SeedFileService> _log;
-        private readonly IHostEnvironment _env;
+        PropertyNameCaseInsensitive = true,
+        ReadCommentHandling = JsonCommentHandling.Skip,
+        AllowTrailingCommas = true
+    };
 
-        private static readonly JsonSerializerOptions _json = new()
-        {
-            // English: resilient JSON parsing
-            PropertyNameCaseInsensitive = true,
-            ReadCommentHandling = JsonCommentHandling.Skip,
-            AllowTrailingCommas = true
-        };
+    private readonly IHostEnvironment _environment;
 
-        public SeedFileService(ILogger<SeedFileService> log, IHostEnvironment env)
-        {
-            _log = log;
-            _env = env;
-        }
-
-        public async Task<SeedLoadResult<CompanySeedFile>> LoadCompanyAsync(string symbol)
-        {
-            var sym = (symbol ?? "").Trim().ToUpperInvariant();
-            if (string.IsNullOrWhiteSpace(sym))
-                return SeedLoadResult<CompanySeedFile>.Fail("Symbol is empty.");
-
-            try
-            {
-                var path = Path.Combine(_env.ContentRootPath, "SeedData", "companies", $"{sym}.json");
-                if (!File.Exists(path))
-                    return SeedLoadResult<CompanySeedFile>.Fail($"Seed file not found: {path}");
-
-                await using var fs = File.OpenRead(path);
-                var model = await JsonSerializer.DeserializeAsync<CompanySeedFile>(fs, _json);
-                if (model is null)
-                    return SeedLoadResult<CompanySeedFile>.Fail("Failed to parse JSON (null).");
-
-                if (!string.Equals(model.Symbol?.Trim(), sym, StringComparison.OrdinalIgnoreCase))
-                    return SeedLoadResult<CompanySeedFile>.Fail($"Symbol mismatch: file '{model.Symbol}', requested '{sym}'.");
-
-                var errors = Validate(model);
-                if (!string.IsNullOrEmpty(errors))
-                    return SeedLoadResult<CompanySeedFile>.Fail(errors);
-
-                return SeedLoadResult<CompanySeedFile>.Ok(model);
-            }
-            catch (JsonException jx)
-            {
-                return SeedLoadResult<CompanySeedFile>.Fail($"JSON error: {jx.Message}");
-            }
-            catch (Exception ex)
-            {
-                return SeedLoadResult<CompanySeedFile>.Fail($"Unexpected error: {ex.Message}");
-            }
-        }
-
-        // English: basic field/date validation; return empty string if OK
-        private static string Validate(CompanySeedFile m)
-        {
-            var errs = new List<string>();
-
-            if (m.Profile is null) errs.Add("profile: missing object");
-            else
-            {
-                if (string.IsNullOrWhiteSpace(m.Profile.Name)) errs.Add("profile.name is required");
-                if (string.IsNullOrWhiteSpace(m.Profile.Sector)) errs.Add("profile.sector is required");
-            }
-
-            if (m.Quotes is null) errs.Add("quotes: missing object");
-            else
-            {
-                if (string.IsNullOrWhiteSpace(m.Quotes.Currency)) errs.Add("quotes.currency is required");
-
-                if (m.Quotes.Rows is null || m.Quotes.Rows.Count == 0)
-                    errs.Add("quotes.rows must contain at least one row");
-                else
-                {
-                    for (int i = 0; i < m.Quotes.Rows.Count; i++)
-                    {
-                        var r = m.Quotes.Rows[i];
-                        var p = $"quotes.rows[{i}]";
-
-                        if (string.IsNullOrWhiteSpace(r.Date)) errs.Add($"{p}.date is required (YYYY-MM-DD)");
-                        else if (!DateOnly.TryParseExact(r.Date, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out _))
-                            errs.Add($"{p}.date invalid: '{r.Date}' (YYYY-MM-DD)");
-
-                        if (r.Open <= 0 || r.High <= 0 || r.Low <= 0 || r.Close <= 0)
-                            errs.Add($"{p}: OHLC must be > 0");
-                        if (r.High < r.Low)
-                            errs.Add($"{p}: high < low");
-                        if (r.Volume < 0)
-                            errs.Add($"{p}.volume must be >= 0");
-                    }
-                }
-            }
-
-            // --- Fundamentals (optional, annual rows) -----------------------------------
-            if (m.Fundamentals is not null)
-            {
-                var f = m.Fundamentals;
-
-                // English: require at least one annual row if the block exists
-                if (f.Annual is null || f.Annual.Count == 0)
-                {
-                    errs.Add("fundamentals.annual must contain at least one row when fundamentals is present");
-                }
-                else
-                {
-                    for (int i = 0; i < f.Annual.Count; i++)
-                    {
-                        var a = f.Annual[i];
-                        var p = $"fundamentals.annual[{i}]";
-
-                        // English: year sanity range
-                        if (a.Year < 1900 || a.Year > 2100)
-                            errs.Add($"{p}.year out of range (1900..2100): {a.Year}");
-
-                        // English: at least one metric should be provided
-                        bool anyMetric =
-                            a.Revenue.HasValue || a.NetIncome.HasValue || a.TotalAssets.HasValue ||
-                            a.TotalLiabilities.HasValue || a.Equity.HasValue || a.Shares.HasValue ||
-                            a.OperatingCashFlow.HasValue || a.CapitalExpenditures.HasValue;
-
-                        if (!anyMetric)
-                            errs.Add($"{p}: at least one metric required (revenue/netIncome/totalAssets/totalLiabilities/equity/shares)");
-
-                        // English: non-negative checks
-                        if (a.Revenue is < 0) errs.Add($"{p}.revenue < 0");
-                        if (a.NetIncome is < 0) errs.Add($"{p}.netIncome < 0");
-                        if (a.TotalAssets is < 0) errs.Add($"{p}.totalAssets < 0");
-                        if (a.TotalLiabilities is < 0) errs.Add($"{p}.totalLiabilities < 0");
-                        if (a.Equity is < 0) errs.Add($"{p}.equity < 0");
-                        if (a.Shares is < 0) errs.Add($"{p}.shares < 0");
-                    }
-                }
-            }
-
-            return errs.Count == 0 ? string.Empty : string.Join(Environment.NewLine, errs);
-        }
-        
+    public SeedFileService(IHostEnvironment environment)
+    {
+        _environment = environment;
     }
-    
-    
+
+    public async Task<SeedLoadResult<CompanySeedFile>> LoadCompanyAsync(string symbol)
+    {
+        string normalizedSymbol = NormalizeSymbol(symbol);
+        if (string.IsNullOrWhiteSpace(normalizedSymbol))
+        {
+            return SeedLoadResult<CompanySeedFile>.Fail("Symbol is required.");
+        }
+
+        string path = GetCompanySeedFilePath(normalizedSymbol);
+
+        if (!File.Exists(path))
+        {
+            return SeedLoadResult<CompanySeedFile>.Fail($"Seed file not found: {path}");
+        }
+
+        try
+        {
+            await using FileStream stream = File.OpenRead(path);
+
+            CompanySeedFile? model = await JsonSerializer.DeserializeAsync<CompanySeedFile>(
+                stream,
+                JsonOptions);
+
+            if (model is null)
+            {
+                return SeedLoadResult<CompanySeedFile>.Fail("Seed file could not be parsed.");
+            }
+
+            if (!string.Equals(model.Symbol?.Trim(), normalizedSymbol, StringComparison.OrdinalIgnoreCase))
+            {
+                return SeedLoadResult<CompanySeedFile>.Fail(
+                    $"Symbol mismatch: file '{model.Symbol}', requested '{normalizedSymbol}'.");
+            }
+
+            List<string> errors = Validate(model);
+            if (errors.Count > 0)
+            {
+                return SeedLoadResult<CompanySeedFile>.Fail(string.Join(Environment.NewLine, errors));
+            }
+
+            return SeedLoadResult<CompanySeedFile>.Ok(model);
+        }
+        catch (JsonException ex)
+        {
+            return SeedLoadResult<CompanySeedFile>.Fail($"JSON error: {ex.Message}");
+        }
+        catch (IOException ex)
+        {
+            return SeedLoadResult<CompanySeedFile>.Fail($"File read error: {ex.Message}");
+        }
+    }
+
+    private string GetCompanySeedFilePath(string symbol)
+    {
+        return Path.Combine(
+            _environment.ContentRootPath,
+            SeedDataDirectory,
+            CompaniesDirectory,
+            $"{symbol}.json");
+    }
+
+    private static List<string> Validate(CompanySeedFile model)
+    {
+        var errors = new List<string>();
+
+        ValidateProfile(model, errors);
+        ValidateQuotes(model, errors);
+        ValidateFundamentals(model, errors);
+
+        return errors;
+    }
+
+    private static void ValidateProfile(CompanySeedFile model, List<string> errors)
+    {
+        if (model.Profile is null)
+        {
+            errors.Add("profile is required.");
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(model.Profile.Name))
+        {
+            errors.Add("profile.name is required.");
+        }
+
+        if (string.IsNullOrWhiteSpace(model.Profile.Sector))
+        {
+            errors.Add("profile.sector is required.");
+        }
+    }
+
+    private static void ValidateQuotes(CompanySeedFile model, List<string> errors)
+    {
+        if (model.Quotes is null)
+        {
+            errors.Add("quotes is required.");
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(model.Quotes.Currency))
+        {
+            errors.Add("quotes.currency is required.");
+        }
+
+        if (model.Quotes.Rows is null || model.Quotes.Rows.Count == 0)
+        {
+            errors.Add("quotes.rows must contain at least one row.");
+            return;
+        }
+
+        for (int index = 0; index < model.Quotes.Rows.Count; index++)
+        {
+            ValidateQuoteRow(model.Quotes.Rows[index], index, errors);
+        }
+    }
+
+    private static void ValidateQuoteRow(QuoteRow row, int index, List<string> errors)
+    {
+        string path = $"quotes.rows[{index}]";
+
+        if (string.IsNullOrWhiteSpace(row.Date))
+        {
+            errors.Add($"{path}.date is required.");
+        }
+        else if (!DateOnly.TryParseExact(
+            row.Date,
+            DateFormat,
+            CultureInfo.InvariantCulture,
+            DateTimeStyles.None,
+            out _))
+        {
+            errors.Add($"{path}.date must use {DateFormat}.");
+        }
+
+        if (row.Open <= 0 || row.High <= 0 || row.Low <= 0 || row.Close <= 0)
+        {
+            errors.Add($"{path}.open/high/low/close must be greater than zero.");
+        }
+
+        if (row.High < row.Low)
+        {
+            errors.Add($"{path}.high must be greater than or equal to low.");
+        }
+
+        if (row.Volume < 0)
+        {
+            errors.Add($"{path}.volume must be non-negative.");
+        }
+    }
+
+    private static void ValidateFundamentals(CompanySeedFile model, List<string> errors)
+    {
+        if (model.Fundamentals is null)
+        {
+            return;
+        }
+
+        if (model.Fundamentals.Annual is null || model.Fundamentals.Annual.Count == 0)
+        {
+            errors.Add("fundamentals.annual must contain at least one row when fundamentals is present.");
+            return;
+        }
+
+        for (int index = 0; index < model.Fundamentals.Annual.Count; index++)
+        {
+            ValidateFundamentalsAnnualRow(model.Fundamentals.Annual[index], index, errors);
+        }
+    }
+
+    private static void ValidateFundamentalsAnnualRow(
+        FundamentalsAnnualRow row,
+        int index,
+        List<string> errors)
+    {
+        string path = $"fundamentals.annual[{index}]";
+
+        if (row.Year is < 1900 or > 2100)
+        {
+            errors.Add($"{path}.year must be between 1900 and 2100.");
+        }
+
+        if (!HasAnyFundamentalMetric(row))
+        {
+            errors.Add($"{path} must contain at least one metric.");
+        }
+
+        if (row.Revenue is < 0)
+        {
+            errors.Add($"{path}.revenue must be non-negative.");
+        }
+
+        if (row.TotalAssets is < 0)
+        {
+            errors.Add($"{path}.totalAssets must be non-negative.");
+        }
+
+        if (row.TotalLiabilities is < 0)
+        {
+            errors.Add($"{path}.totalLiabilities must be non-negative.");
+        }
+
+        if (row.Equity is < 0)
+        {
+            errors.Add($"{path}.equity must be non-negative.");
+        }
+
+        if (row.Shares is < 0)
+        {
+            errors.Add($"{path}.shares must be non-negative.");
+        }
+    }
+
+    private static bool HasAnyFundamentalMetric(FundamentalsAnnualRow row)
+    {
+        return row.Revenue.HasValue ||
+               row.NetIncome.HasValue ||
+               row.TotalAssets.HasValue ||
+               row.TotalLiabilities.HasValue ||
+               row.Equity.HasValue ||
+               row.Shares.HasValue ||
+               row.OperatingCashFlow.HasValue ||
+               row.CapitalExpenditures.HasValue ||
+               row.ChangeInWorkingCapital.HasValue;
+    }
+
+    private static string NormalizeSymbol(string symbol)
+    {
+        return string.IsNullOrWhiteSpace(symbol)
+            ? string.Empty
+            : symbol.Trim().ToUpperInvariant();
+    }
 }

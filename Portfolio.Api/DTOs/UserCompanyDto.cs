@@ -1,55 +1,52 @@
 namespace Portfolio.Api.DTOs;
 
 /// <summary>
-/// Represents a portfolio entry for a user, including company info and investment data.
-/// Combines data from the UserCompany table and the related Ticker entity.
+/// Represents one portfolio entry returned to the client.
 /// </summary>
-public class UserCompanyDto
+public sealed class UserCompanyDto
 {
     /// <summary>
-    /// The unique ID of the portfolio entry.
+    /// Portfolio entry ID.
     /// </summary>
     public int Id { get; set; }
 
     /// <summary>
-    /// The related company (ticker) ID.
+    /// Related ticker ID.
     /// </summary>
     public int TickerId { get; set; }
 
     /// <summary>
-    /// The ticker symbol (e.g., AAPL, MSFT).
+    /// Ticker symbol, for example AAPL.
     /// </summary>
     public string Symbol { get; set; } = string.Empty;
 
     /// <summary>
-    /// The optional company name (e.g., "Apple Inc.").
+    /// Company display name.
     /// </summary>
     public string? Name { get; set; }
 
     /// <summary>
-    /// The sector or industry classification of the company.
-    /// Pulled directly from the Tickers table.
+    /// Sector classification.
     /// </summary>
-    public string? Sector { get; set; }   // 🟢 NEW FIELD
+    public string? Sector { get; set; }
 
     /// <summary>
-    /// The number of shares owned by the user.
+    /// Number of shares currently owned.
     /// </summary>
-    public decimal? Shares { get; set; }
+    public decimal Shares { get; set; }
 
     /// <summary>
-    /// The average purchase price per share.
+    /// Average purchase price per share.
     /// </summary>
     public decimal? PurchasePrice { get; set; }
 
     /// <summary>
-    /// Optional notes or comments from the user.
+    /// Optional user note.
     /// </summary>
     public string? Notes { get; set; }
 
     /// <summary>
-    /// The date of the most recent stored price record for this ticker.
-    /// Useful for checking data freshness in the frontend.
+    /// Date of the most recent stored price record for this ticker.
     /// </summary>
     public DateTime? LastPriceUpdate { get; set; }
 }

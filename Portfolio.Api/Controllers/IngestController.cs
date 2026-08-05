@@ -1,186 +1,200 @@
 using Microsoft.AspNetCore.Mvc;
-using Portfolio.Api.Services;
 using Polly.RateLimit;
 using Portfolio.Api.Exceptions;
+using Portfolio.Api.Services;
 
-namespace Portfolio.Api.Controllers
+namespace Portfolio.Api.Controllers;
+
+/// <summary>
+/// Provides server-side data ingestion endpoints for storing external provider data locally.
+/// </summary>
+[ApiController]
+[Route("api/ingest")]
+public sealed class IngestController : ControllerBase
 {
-    /// <summary>
-    /// Triggers server-side data ingestion into the SQL DB.
-    /// Thin endpoints that call ingest services (Upsert).
-    /// </summary>
-    [ApiController]
-    [Route("api/ingest")]
-    public class IngestController : ControllerBase
+    private const int MinLimit = 1;
+    private const int MaxLimit = 100;
+
+    private readonly IncomeIngestService _incomeIngest;
+    private readonly BalanceSheetIngestService _balanceSheetIngest;
+    private readonly CashFlowIngestService _cashFlowIngest;
+    private readonly ILogger<IngestController> _logger;
+
+    public IngestController(
+        IncomeIngestService incomeIngest,
+        BalanceSheetIngestService balanceSheetIngest,
+        CashFlowIngestService cashFlowIngest,
+        ILogger<IngestController> logger)
     {
-        private readonly IncomeIngestService _ingest;
-        private readonly BalanceSheetIngestService _balance;
-        private readonly CashFlowIngestService _cash;
-        private readonly ILogger<IngestController> _log;
+        _incomeIngest = incomeIngest;
+        _balanceSheetIngest = balanceSheetIngest;
+        _cashFlowIngest = cashFlowIngest;
+        _logger = logger;
+    }
 
-        public IngestController(
-            IncomeIngestService ingest,
-            BalanceSheetIngestService balance,
-            CashFlowIngestService cash,
-            ILogger<IngestController> log)
+    /// <summary>
+    /// Upserts income statement rows into local storage.
+    /// </summary>
+    /// <param name="symbol">Ticker symbol, for example AAPL.</param>
+    /// <param name="period">Statement frequency: annual or quarter.</param>
+    /// <param name="limit">Maximum number of rows to ingest, clamped to 1-100.</param>
+    /// <param name="ct">Cancellation token for the request.</param>
+    [HttpGet("income/{symbol}")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status429TooManyRequests)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status503ServiceUnavailable)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
+    public Task<IActionResult> IngestIncome(
+        string symbol,
+        string period = "annual",
+        int limit = 10,
+        CancellationToken ct = default)
+    {
+        return ExecuteIngestAsync(
+            symbol,
+            period,
+            limit,
+            "Income",
+            (normalizedSymbol, normalizedPeriod, normalizedLimit, token) =>
+                _incomeIngest.IngestAsync(normalizedSymbol, normalizedPeriod, normalizedLimit, token),
+            ct);
+    }
+
+    /// <summary>
+    /// Upserts balance sheet rows into local storage.
+    /// </summary>
+    /// <param name="symbol">Ticker symbol, for example AAPL.</param>
+    /// <param name="period">Statement frequency: annual or quarter.</param>
+    /// <param name="limit">Maximum number of rows to ingest, clamped to 1-100.</param>
+    /// <param name="ct">Cancellation token for the request.</param>
+    [HttpGet("balance/{symbol}")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status429TooManyRequests)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status503ServiceUnavailable)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
+    public Task<IActionResult> IngestBalance(
+        string symbol,
+        string period = "annual",
+        int limit = 5,
+        CancellationToken ct = default)
+    {
+        return ExecuteIngestAsync(
+            symbol,
+            period,
+            limit,
+            "Balance",
+            (normalizedSymbol, normalizedPeriod, normalizedLimit, token) =>
+                _balanceSheetIngest.IngestAsync(normalizedSymbol, normalizedPeriod, normalizedLimit, token),
+            ct);
+    }
+
+    /// <summary>
+    /// Upserts cash flow rows into local storage.
+    /// </summary>
+    /// <param name="symbol">Ticker symbol, for example AAPL.</param>
+    /// <param name="period">Statement frequency: annual or quarter.</param>
+    /// <param name="limit">Maximum number of rows to ingest, clamped to 1-100.</param>
+    /// <param name="ct">Cancellation token for the request.</param>
+    [HttpGet("cash/{symbol}")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status429TooManyRequests)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status503ServiceUnavailable)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
+    public Task<IActionResult> IngestCash(
+        string symbol,
+        string period = "annual",
+        int limit = 5,
+        CancellationToken ct = default)
+    {
+        return ExecuteIngestAsync(
+            symbol,
+            period,
+            limit,
+            "Cash flow",
+            (normalizedSymbol, normalizedPeriod, normalizedLimit, token) =>
+                _cashFlowIngest.IngestAsync(normalizedSymbol, normalizedPeriod, normalizedLimit, token),
+            ct);
+    }
+
+    private async Task<IActionResult> ExecuteIngestAsync(
+        string symbol,
+        string period,
+        int limit,
+        string ingestName,
+        Func<string, string, int, CancellationToken, Task<int>> ingest,
+        CancellationToken ct)
+    {
+        string normalizedSymbol = NormalizeSymbol(symbol);
+        string normalizedPeriod = NormalizePeriod(period);
+        int normalizedLimit = NormalizeLimit(limit);
+
+        try
         {
-            _ingest  = ingest;
-            _balance = balance;
-            _cash    = cash;
-            _log     = log;
+            int upserted = await ingest(normalizedSymbol, normalizedPeriod, normalizedLimit, ct);
+
+            return Ok(new
+            {
+                Symbol = normalizedSymbol,
+                Period = normalizedPeriod,
+                Upserted = upserted
+            });
+        }
+        catch (RateLimitRejectedException ex)
+        {
+            _logger.LogWarning(ex, "Rate limit reached for {IngestName} ingest ({Symbol})", ingestName, normalizedSymbol);
+
+            return Problem(
+                title: "Rate limit reached",
+                detail: $"Please retry after {ex.RetryAfter}.",
+                statusCode: StatusCodes.Status429TooManyRequests);
+        }
+        catch (ServiceUnavailableException ex)
+        {
+            return Problem(
+                title: "External provider is not configured",
+                detail: ex.Message,
+                statusCode: StatusCodes.Status503ServiceUnavailable);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "{IngestName} ingest failed for {Symbol}", ingestName, normalizedSymbol);
+
+            return Problem(
+                title: $"{ingestName} ingest failed",
+                detail: ex.Message,
+                statusCode: StatusCodes.Status500InternalServerError);
+        }
+    }
+
+    private static string NormalizeSymbol(string symbol)
+    {
+        if (string.IsNullOrWhiteSpace(symbol))
+        {
+            throw new BadRequestException("Symbol is required.");
         }
 
-        /// <summary>
-        /// Upserts Income Statement rows into SQL via FMP /stable.
-        /// Example: GET /api/ingest/income/AAPL?period=annual&amp;limit=10
-        /// </summary>
-        [HttpGet("income/{symbol}")]
-        [ProducesResponseType(StatusCodes.Status200OK)]
-        [ProducesResponseType(StatusCodes.Status429TooManyRequests)]
-        [ProducesResponseType(StatusCodes.Status503ServiceUnavailable)]
-        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-        public async Task<IActionResult> IngestIncome(
-            string symbol,
-            string period = "annual",
-            int limit = 10,
-            CancellationToken ct = default)
+        return symbol.Trim().ToUpperInvariant();
+    }
+
+    private static string NormalizePeriod(string period)
+    {
+        string normalizedPeriod = string.IsNullOrWhiteSpace(period)
+            ? "annual"
+            : period.Trim().ToLowerInvariant();
+
+        if (normalizedPeriod != "annual" && normalizedPeriod != "quarter")
         {
-            try
-            {
-                var upserted = await _ingest.IngestAsync(symbol, period, limit, ct);
-                return Ok(new { Symbol = symbol, Period = period, Upserted = upserted });
-            }
-            catch (RateLimitRejectedException ex)
-            {
-                _log.LogWarning("Rate limit reached for income ingest ({Symbol})", symbol);
-                return StatusCode(StatusCodes.Status429TooManyRequests, new
-                {
-                    title = "Rate limit reached",
-                    detail = $"Please retry after {ex.RetryAfter}",
-                    status = 429
-                });
-            }
-            catch (ServiceUnavailableException ex)
-            {
-                return StatusCode(StatusCodes.Status503ServiceUnavailable, new
-                {
-                    title = "External provider is not configured",
-                    detail = ex.Message,
-                    status = 503
-                });
-            }
-            catch (Exception ex)
-            {
-                _log.LogError(ex, "Income ingest failed for {Symbol}", symbol);
-                return StatusCode(StatusCodes.Status500InternalServerError, new
-                {
-                    title = "Income ingest failed",
-                    detail = ex.Message,
-                    status = 500
-                });
-            }
+            throw new BadRequestException("Period must be 'annual' or 'quarter'.");
         }
 
-        /// <summary>
-        /// Upserts Balance Sheet rows into SQL via FMP /stable.
-        /// Example: GET /api/ingest/balance/AAPL?period=annual&amp;limit=5
-        /// </summary>
-        [HttpGet("balance/{symbol}")]
-        [ProducesResponseType(StatusCodes.Status200OK)]
-        [ProducesResponseType(StatusCodes.Status429TooManyRequests)]
-        [ProducesResponseType(StatusCodes.Status503ServiceUnavailable)]
-        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-        public async Task<IActionResult> IngestBalance(
-            string symbol,
-            string period = "annual",
-            int limit = 5,
-            CancellationToken ct = default)
-        {
-            try
-            {
-                var upserted = await _balance.IngestAsync(symbol, period, limit, ct);
-                return Ok(new { Symbol = symbol, Period = period, Upserted = upserted });
-            }
-            catch (RateLimitRejectedException ex)
-            {
-                _log.LogWarning("Rate limit reached for balance ingest ({Symbol})", symbol);
-                return StatusCode(StatusCodes.Status429TooManyRequests, new
-                {
-                    title = "Rate limit reached",
-                    detail = $"Please retry after {ex.RetryAfter}",
-                    status = 429
-                });
-            }
-            catch (ServiceUnavailableException ex)
-            {
-                return StatusCode(StatusCodes.Status503ServiceUnavailable, new
-                {
-                    title = "External provider is not configured",
-                    detail = ex.Message,
-                    status = 503
-                });
-            }
-            catch (Exception ex)
-            {
-                _log.LogError(ex, "Balance ingest failed for {Symbol}", symbol);
-                return StatusCode(StatusCodes.Status500InternalServerError, new
-                {
-                    title = "Balance ingest failed",
-                    detail = ex.Message,
-                    status = 500
-                });
-            }
-        }
+        return normalizedPeriod;
+    }
 
-        /// <summary>
-        /// Upserts Cash Flow rows into SQL via FMP /stable.
-        /// Example: GET /api/ingest/cash/AAPL?period=annual&amp;limit=5
-        /// </summary>
-        [HttpGet("cash/{symbol}")]
-        [ProducesResponseType(StatusCodes.Status200OK)]
-        [ProducesResponseType(StatusCodes.Status429TooManyRequests)]
-        [ProducesResponseType(StatusCodes.Status503ServiceUnavailable)]
-        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-        public async Task<IActionResult> IngestCash(
-            string symbol,
-            string period = "annual",
-            int limit = 5,
-            CancellationToken ct = default)
-        {
-            try
-            {
-                var upserted = await _cash.IngestAsync(symbol, period, limit, ct);
-                return Ok(new { Symbol = symbol, Period = period, Upserted = upserted });
-            }
-            catch (RateLimitRejectedException ex)
-            {
-                _log.LogWarning("Rate limit reached for cash ingest ({Symbol})", symbol);
-                return StatusCode(StatusCodes.Status429TooManyRequests, new
-                {
-                    title = "Rate limit reached",
-                    detail = $"Please retry after {ex.RetryAfter}",
-                    status = 429
-                });
-            }
-            catch (ServiceUnavailableException ex)
-            {
-                return StatusCode(StatusCodes.Status503ServiceUnavailable, new
-                {
-                    title = "External provider is not configured",
-                    detail = ex.Message,
-                    status = 503
-                });
-            }
-            catch (Exception ex)
-            {
-                _log.LogError(ex, "Cash ingest failed for {Symbol}", symbol);
-                return StatusCode(StatusCodes.Status500InternalServerError, new
-                {
-                    title = "Cash ingest failed",
-                    detail = ex.Message,
-                    status = 500
-                });
-            }
-        }
+    private static int NormalizeLimit(int limit)
+    {
+        return Math.Clamp(limit, MinLimit, MaxLimit);
     }
 }

@@ -1,12 +1,11 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Portfolio.Api.Data;
+using Portfolio.Api.DTOs;
+using Portfolio.Api.Exceptions;
 using Portfolio.Api.Models;
 using Portfolio.Api.Services;
-using Portfolio.Api.Exceptions;
 using Portfolio.Api.Utils;
-using Portfolio.Api.DTOs;
-using System.Linq;
 
 namespace Portfolio.Api.Controllers
 {
@@ -19,9 +18,6 @@ namespace Portfolio.Api.Controllers
         private readonly ILogger<CompaniesController> _logger;
         private readonly FallbackData _fallbackData;
 
-        /// <summary>
-        /// Lightweight DTO for the frontend list.
-        /// </summary>
         public record CompanySummaryDto
         {
             public string? Id { get; init; }
@@ -43,16 +39,14 @@ namespace Portfolio.Api.Controllers
         }
 
         /// <summary>
-        /// GET /api/companies?q=AAP&amp;limit=50
-        /// Simple search (by Symbol/Name) + limit (default 50, max 200).
-        /// </summary> 
+        /// Returns companies from the local database.
+        /// </summary>
         [HttpGet]
         public async Task<ActionResult<IEnumerable<CompanySummaryDto>>> GetCompanies(
             [FromQuery] string? q,
             [FromQuery] int? limit,
             CancellationToken ct)
         {
-            // Use Set<T>() so we don't depend on a specific DbSet<Ticker> property name.
             var query = _db.Set<Ticker>().AsQueryable();
 
             if (!string.IsNullOrWhiteSpace(q))
@@ -60,20 +54,19 @@ namespace Portfolio.Api.Controllers
                 var term = q.Trim();
                 query = query.Where(t =>
                     EF.Functions.Like(t.Symbol, $"%{term}%") ||
-                    (t.Name != null && EF.Functions.Like(t.Name, $"%{term}%"))
-                );
+                    (t.Name != null && EF.Functions.Like(t.Name, $"%{term}%")));
             }
 
             var take = Math.Clamp(limit ?? 50, 1, 200);
 
             var rows = await query
-                .OrderBy(t => t.Symbol)
-                .Select(t => new CompanySearchResult
+                .OrderBy(ticker => ticker.Symbol)
+                .Select(ticker => new CompanySearchResult
                 {
-                    Id = t.Id,
-                    Symbol = t.Symbol ?? string.Empty,
-                    Name = t.Name ?? string.Empty,
-                    Sector = t.Sector ?? string.Empty,
+                    Id = ticker.Id,
+                    Symbol = ticker.Symbol ?? string.Empty,
+                    Name = ticker.Name ?? string.Empty,
+                    Sector = ticker.Sector ?? string.Empty,
                     IsInDatabase = true
                 })
                 .Take(take)
@@ -83,104 +76,94 @@ namespace Portfolio.Api.Controllers
         }
 
         /// <summary>
-        /// Refresh profile (name + sector) for a single symbol.
-        /// DEV fallback: if the upstream (FMP) rate-limit is hit (429), fill Sector from a small in-memory map
-        /// so local testing can proceed without external calls. Remove this block for production.
+        /// Refreshes profile information for a single local company.
         /// </summary>
         [HttpPost("{symbol}/refresh-profile")]
         public async Task<IActionResult> RefreshProfile([FromRoute] string symbol, CancellationToken ct)
         {
             Guard.BadRequestIf(string.IsNullOrWhiteSpace(symbol), "Symbol required.");
 
-            var sym = symbol.Trim().ToUpperInvariant();
+            var normalizedSymbol = symbol.Trim().ToUpperInvariant();
 
-            var ticker = await _db.Set<Ticker>().FirstOrDefaultAsync(t => t.Symbol == sym, ct);
+            var ticker = await _db.Set<Ticker>()
+                .FirstOrDefaultAsync(ticker => ticker.Symbol == normalizedSymbol, ct);
+
             if (ticker is null)
-                throw new NotFoundException($"Ticker '{sym}' not found.");
+            {
+                throw new NotFoundException($"Ticker '{normalizedSymbol}' not found.");
+            }
 
             try
             {
-                var profile = await _fmp.GetCompanyProfileAsync(sym, ct); // FMP v3 /profile
-                if (profile is null)
-                    throw new NotFoundException($"No profile found at FMP for '{sym}'.");
+                var profile = await _fmp.GetCompanyProfileAsync(normalizedSymbol, ct);
 
-                if (!string.IsNullOrWhiteSpace(profile.Name)) ticker.Name = profile.Name;
-                if (!string.IsNullOrWhiteSpace(profile.Sector)) ticker.Sector = profile.Sector;
+                if (profile is null)
+                {
+                    throw new NotFoundException($"No profile found at FMP for '{normalizedSymbol}'.");
+                }
+
+                if (!string.IsNullOrWhiteSpace(profile.Name))
+                {
+                    ticker.Name = profile.Name;
+                }
+
+                if (!string.IsNullOrWhiteSpace(profile.Sector))
+                {
+                    ticker.Sector = profile.Sector;
+                }
 
                 await _db.SaveChangesAsync(ct);
 
-                return Ok(new CompanySummaryDto
+                return Ok(ToSummaryDto(ticker));
+            }
+            catch (ServiceUnavailableException ex)
+            {
+                return StatusCode(StatusCodes.Status503ServiceUnavailable, new
                 {
-                    Id = ticker.Id.ToString(),
-                    Symbol = ticker.Symbol,
-                    Name = ticker.Name,
-                    Sector = ticker.Sector
+                    error = "External provider is not configured.",
+                    detail = ex.Message
                 });
             }
-            // --- Friendly mapping for common upstream issues ---
-            catch (HttpRequestException ex) when (
-                ex.Message.Contains("429") ||
-                ex.Message.Contains("Too Many Requests", StringComparison.OrdinalIgnoreCase) ||
-                ex.Message.Contains("Limit Reach", StringComparison.OrdinalIgnoreCase))
+            catch (HttpRequestException ex) when (IsRateLimitError(ex))
             {
-                // DEV-ONLY FALLBACK: sector map for quick demos/tests
-                var devSectorMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                if (TryApplyFallbackSector(ticker))
                 {
-                    ["AAPL"] = "Technology",
-                    ["MSFT"] = "Technology",
-                    ["AMZN"] = "Consumer Cyclical",
-                    ["GOOGL"] = "Communication Services",
-                    ["NVDA"] = "Technology",
-                    ["KO"] = "Consumer Defensive",
-                    ["JPM"] = "Financial Services",
-                    ["V"] = "Financial Services",
-                    // add more of your seeded symbols here as needed
-                };
-
-                if (devSectorMap.TryGetValue(sym, out var sector))
-                {
-                    // keep existing name; only set sector if missing
-                    if (string.IsNullOrWhiteSpace(ticker.Sector))
-                        ticker.Sector = sector;
-
                     await _db.SaveChangesAsync(ct);
-
-                    return Ok(new CompanySummaryDto
-                    {
-                        Id = ticker.Id.ToString(),
-                        Symbol = ticker.Symbol,
-                        Name = ticker.Name,
-                        Sector = ticker.Sector
-                    });
+                    return Ok(ToSummaryDto(ticker));
                 }
 
-                // If we have no fallback for this symbol, tell the client to try later
-                return StatusCode(StatusCodes.Status429TooManyRequests,
-                    new { error = "FMP rate limit hit. Try again later." });
+                return StatusCode(StatusCodes.Status429TooManyRequests, new
+                {
+                    error = "FMP rate limit hit. Try again later."
+                });
             }
-            catch (HttpRequestException ex) when (
-                ex.Message.Contains("403") ||
-                ex.Message.Contains("Forbidden", StringComparison.OrdinalIgnoreCase))
+            catch (HttpRequestException ex) when (IsForbiddenError(ex))
             {
-                return StatusCode(StatusCodes.Status502BadGateway,
-                    new { error = "FMP access denied (plan). Check API key/plan.", detail = "403 from FMP" });
+                return StatusCode(StatusCodes.Status502BadGateway, new
+                {
+                    error = "FMP access denied. Check API key and provider plan.",
+                    detail = "403 from FMP"
+                });
             }
             catch (HttpRequestException ex)
             {
-                return StatusCode(StatusCodes.Status502BadGateway,
-                    new { error = "Upstream FMP call failed.", detail = ex.Message });
+                return StatusCode(StatusCodes.Status502BadGateway, new
+                {
+                    error = "Upstream FMP call failed.",
+                    detail = ex.Message
+                });
             }
             catch (OperationCanceledException)
             {
-                return StatusCode(StatusCodes.Status408RequestTimeout,
-                    new { error = "Request cancelled or timed out." });
+                return StatusCode(StatusCodes.Status408RequestTimeout, new
+                {
+                    error = "Request cancelled or timed out."
+                });
             }
         }
 
         /// <summary>
-        /// Refresh profile (name + sector) for up to {limit} tickers that are missing data.
-        /// DEV: if FMP returns 429 (rate limit), fill Sector from a small local map and
-        /// throttle between calls to avoid hammering the API. Remove the fallback for prod.
+        /// Refreshes profile information for local companies with missing data.
         /// </summary>
         [HttpPost("refresh-profiles")]
         public async Task<IActionResult> RefreshProfiles([FromQuery] int? limit, CancellationToken ct)
@@ -188,53 +171,53 @@ namespace Portfolio.Api.Controllers
             var take = Math.Clamp(limit ?? 25, 1, 100);
 
             var candidates = await _db.Set<Ticker>()
-                .Where(t => t.Name == null || t.Sector == null)
-                .OrderBy(t => t.Symbol)
+                .Where(ticker => ticker.Name == null || ticker.Sector == null)
+                .OrderBy(ticker => ticker.Symbol)
                 .Take(take)
                 .ToListAsync(ct);
 
             var updated = new List<CompanySummaryDto>();
+            var providerUnavailable = false;
 
-            // DEV-ONLY fallback map for sectors
-            var devSectorMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
-            {
-                ["AAPL"] = "Technology",
-                ["MSFT"] = "Technology",
-                ["AMZN"] = "Consumer Cyclical",
-                ["GOOGL"] = "Communication Services",
-                ["NVDA"] = "Technology",
-                ["KO"] = "Consumer Defensive",
-                ["JPM"] = "Financial Services",
-                ["V"] = "Financial Services",
-                // add more of your seeded symbols here if you like
-            };
-
-            foreach (var t in candidates)
+            foreach (var ticker in candidates)
             {
                 try
                 {
-                    var p = await _fmp.GetCompanyProfileAsync(t.Symbol, ct);
-                    if (p is null) continue;
+                    var profile = await _fmp.GetCompanyProfileAsync(ticker.Symbol, ct);
 
-                    if (!string.IsNullOrWhiteSpace(p.Name)) t.Name = p.Name;
-                    if (!string.IsNullOrWhiteSpace(p.Sector)) t.Sector = p.Sector;
-
-                    updated.Add(new CompanySummaryDto { Id = t.Id.ToString(), Symbol = t.Symbol, Name = t.Name, Sector = t.Sector });
-                }
-                catch (HttpRequestException ex) when (
-                    ex.Message.Contains("429") ||
-                    ex.Message.Contains("Too Many Requests", StringComparison.OrdinalIgnoreCase) ||
-                    ex.Message.Contains("Limit Reach", StringComparison.OrdinalIgnoreCase))
-                {
-                    // DEV fallback: fill sector if we have a local mapping
-                    if (string.IsNullOrWhiteSpace(t.Sector) && devSectorMap.TryGetValue(t.Symbol, out var sector))
+                    if (profile is null)
                     {
-                        t.Sector = sector;
-                        updated.Add(new CompanySummaryDto { Id = t.Id.ToString(), Symbol = t.Symbol, Name = t.Name, Sector = t.Sector });
+                        continue;
                     }
-                    // else: keep silently; user can retry later
+
+                    if (!string.IsNullOrWhiteSpace(profile.Name))
+                    {
+                        ticker.Name = profile.Name;
+                    }
+
+                    if (!string.IsNullOrWhiteSpace(profile.Sector))
+                    {
+                        ticker.Sector = profile.Sector;
+                    }
+
+                    updated.Add(ToSummaryDto(ticker));
                 }
-                // small delay between calls to be nice to the upstream (also smooths rate limits)
+                catch (ServiceUnavailableException)
+                {
+                    providerUnavailable = true;
+
+                    if (TryApplyFallbackSector(ticker))
+                    {
+                        updated.Add(ToSummaryDto(ticker));
+                    }
+                }
+                catch (HttpRequestException ex) when (IsRateLimitError(ex))
+                {
+                    if (TryApplyFallbackSector(ticker))
+                    {
+                        updated.Add(ToSummaryDto(ticker));
+                    }
+                }
                 finally
                 {
                     await Task.Delay(350, ct);
@@ -242,102 +225,77 @@ namespace Portfolio.Api.Controllers
             }
 
             if (updated.Count > 0)
+            {
                 await _db.SaveChangesAsync(ct);
+            }
 
-            // 🧮 Count remaining tickers that are still missing data
             var remaining = await _db.Set<Ticker>()
-                .CountAsync(t => t.Name == null || t.Sector == null, ct);
+                .CountAsync(ticker => ticker.Name == null || ticker.Sector == null, ct);
 
-            // ✅ Return structured response with count, remaining, and updated items
             return Ok(new
             {
                 count = updated.Count,
                 remaining,
+                providerUnavailable,
                 items = updated
             });
         }
 
         /// <summary>
-        /// Search external API for companies (not in local DB yet)
+        /// Searches companies by local fallback data and optional external provider data.
         /// </summary>
-      [HttpGet("search")]
+        [HttpGet("search")]
         public async Task<ActionResult<CompanySearchResponse>> SearchCompanies(
             [FromQuery] string? q,
             [FromQuery] int? limit,
             CancellationToken ct)
         {
-            // ✅ Validate input
             if (string.IsNullOrWhiteSpace(q) || q.Trim().Length < 2)
+            {
                 throw new BadRequestException("Query must be at least 2 characters long.");
+            }
 
             var query = q.Trim();
             var take = Math.Clamp(limit ?? 10, 1, 50);
 
             try
             {
-                // 1️⃣ Search the external API (FMP)
                 var searchResults = await _fmp.SearchCompaniesAsync(query, take, ct);
 
-                // 2️⃣ Normalize symbols to uppercase
                 var symbols = searchResults
-                    .Select(r => r.Symbol.ToUpperInvariant())
-                    .Where(s => !string.IsNullOrWhiteSpace(s))
+                    .Select(result => result.Symbol.ToUpperInvariant())
+                    .Where(symbol => !string.IsNullOrWhiteSpace(symbol))
                     .Distinct()
                     .ToList();
 
-                _logger.LogInformation("SearchCompanies: Checking symbols [{Symbols}] for query {Query}",
-                    string.Join(", ", symbols), query);
-
-                // 3️⃣ Load existing tickers from the global DB (case-insensitive)
                 var dbTickers = await _db.Tickers
                     .AsNoTracking()
-                    .Where(t => symbols.Contains(t.Symbol.ToUpper()))
-                    .Select(t => new
+                    .Where(ticker => symbols.Contains(ticker.Symbol.ToUpper()))
+                    .Select(ticker => new
                     {
-                        t.Id,
-                        Symbol = t.Symbol.ToUpper(),
-                        t.Sector
+                        ticker.Id,
+                        Symbol = ticker.Symbol.ToUpper(),
+                        ticker.Sector
                     })
-                    .ToDictionaryAsync(t => t.Symbol, t => new { t.Id, t.Sector }, ct);
+                    .ToDictionaryAsync(
+                        ticker => ticker.Symbol,
+                        ticker => new { ticker.Id, ticker.Sector },
+                        ct);
 
-                _logger.LogInformation("SearchCompanies: Found {Count} tickers in global DB for query {Query}. Symbols: {Symbols}",
-                    dbTickers.Count, query, string.Join(", ", dbTickers.Keys));
+                var userSymbols = await GetCurrentUserPortfolioSymbolsAsync(ct);
 
-                // 4️⃣ Check which ones are already in the user's portfolio
-                var userSymbols = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
-
-                if (userId != null)
+                var results = searchResults.Select(result =>
                 {
-                    var uid = int.Parse(userId);
-                    var userTickerSymbols = await _db.UserCompanies
-                        .Include(uc => uc.Ticker)
-                        .Where(uc => uc.UserId == uid)
-                        .Select(uc => uc.Ticker.Symbol.ToUpper())
-                        .ToListAsync(ct);
-
-                    userSymbols = new HashSet<string>(userTickerSymbols, StringComparer.OrdinalIgnoreCase);
-
-                    _logger.LogInformation("SearchCompanies: Found {Count} symbols in user portfolio for user {UserId}: {Symbols}",
-                        userSymbols.Count, uid, string.Join(", ", userSymbols));
-                }
-                else
-                {
-                    _logger.LogWarning("SearchCompanies: No userId found in JWT claims.");
-                }
-
-                // 5️⃣ Assemble response objects
-                var results = searchResults.Select(r =>
-                {
-                    var upperSymbol = r.Symbol.ToUpperInvariant();
+                    var upperSymbol = result.Symbol.ToUpperInvariant();
                     var existsInDb = dbTickers.TryGetValue(upperSymbol, out var local);
+
                     return new CompanySearchResult
                     {
                         Id = local?.Id ?? 0,
-                        Symbol = r.Symbol,
-                        Name = r.Name,
-                        Exchange = r.Exchange,
-                        Sector = local?.Sector ?? r.Sector,
+                        Symbol = result.Symbol,
+                        Name = result.Name,
+                        Exchange = result.Exchange,
+                        Sector = local?.Sector ?? result.Sector,
                         IsInDatabase = existsInDb,
                         IsInUserPortfolio = userSymbols.Contains(upperSymbol)
                     };
@@ -350,19 +308,26 @@ namespace Portfolio.Api.Controllers
                     TotalFound = results.Count
                 });
             }
-            catch (HttpRequestException ex) when (ex.Message.Contains("429"))
+            catch (HttpRequestException ex) when (IsRateLimitError(ex))
             {
-                return StatusCode(429, new { error = "API rate limit exceeded. Try again later." });
+                return StatusCode(StatusCodes.Status429TooManyRequests, new
+                {
+                    error = "API rate limit exceeded. Try again later."
+                });
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "SearchCompanies failed for query: {Query}", query);
-                return StatusCode(500, new { error = "Search failed. Please try again later." });
+
+                return StatusCode(StatusCodes.Status500InternalServerError, new
+                {
+                    error = "Search failed. Please try again later."
+                });
             }
         }
 
         /// <summary>
-        /// Add single company to local database
+        /// Adds a single company to the local database.
         /// </summary>
         [HttpPost("add")]
         public async Task<ActionResult<CompanySummaryDto>> AddCompany(
@@ -373,19 +338,44 @@ namespace Portfolio.Api.Controllers
 
             var symbol = request.Symbol.Trim().ToUpperInvariant();
 
-            // check for duplicates
-            var existing = await _db.Tickers.FirstOrDefaultAsync(t => t.Symbol == symbol, ct);
+            var existing = await _db.Tickers
+                .FirstOrDefaultAsync(ticker => ticker.Symbol == symbol, ct);
+
             if (existing != null)
-                return Conflict(new { error = $"Company {symbol} already exists" });
+            {
+                return Conflict(new { error = $"Company {symbol} already exists." });
+            }
+
+            var fallbackCompany = _fallbackData.Companies
+                .FirstOrDefault(company => string.Equals(company.Symbol, symbol, StringComparison.OrdinalIgnoreCase));
+
+            if (fallbackCompany != null)
+            {
+                var fallbackTicker = new Ticker
+                {
+                    Symbol = symbol,
+                    Name = fallbackCompany.Name,
+                    Sector = fallbackCompany.Sector
+                };
+
+                _db.Tickers.Add(fallbackTicker);
+                await _db.SaveChangesAsync(ct);
+
+                return CreatedAtAction(
+                    nameof(GetCompanies),
+                    new { q = symbol },
+                    ToSummaryDto(fallbackTicker));
+            }
 
             try
             {
-                // fetch from external API
                 var profile = await _fmp.GetCompanyProfileAsync(symbol, ct);
-                if (profile == null)
-                    throw new NotFoundException($"Company {symbol} not found in external API.");
 
-                // create and save ticker
+                if (profile == null)
+                {
+                    throw new NotFoundException($"Company {symbol} not found in external API.");
+                }
+
                 var ticker = new Ticker
                 {
                     Symbol = symbol,
@@ -399,28 +389,36 @@ namespace Portfolio.Api.Controllers
                 return CreatedAtAction(
                     nameof(GetCompanies),
                     new { q = symbol },
-                    new CompanySummaryDto
-                    {
-                        Id = ticker.Id.ToString(),
-                        Symbol = ticker.Symbol,
-                        Name = ticker.Name,
-                        Sector = ticker.Sector
-                    });
+                    ToSummaryDto(ticker));
             }
-            catch (HttpRequestException ex) when (ex.Message.Contains("429"))
+            catch (ServiceUnavailableException ex)
             {
-                return StatusCode(429, new { error = "API rate limit exceeded" });
+                return StatusCode(StatusCodes.Status503ServiceUnavailable, new
+                {
+                    error = "External provider is not configured.",
+                    detail = ex.Message
+                });
+            }
+            catch (HttpRequestException ex) when (IsRateLimitError(ex))
+            {
+                return StatusCode(StatusCodes.Status429TooManyRequests, new
+                {
+                    error = "API rate limit exceeded."
+                });
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Failed to add company: {Symbol}", symbol);
-                return StatusCode(500, new { error = "Failed to add company" });
+
+                return StatusCode(StatusCodes.Status500InternalServerError, new
+                {
+                    error = "Failed to add company."
+                });
             }
         }
 
         /// <summary>
-        /// Bulk add popular companies from predefined lists.
-        /// Creates missing tickers and returns both new and existing ones.
+        /// Adds popular companies from predefined local lists.
         /// </summary>
         [HttpPost("add-popular")]
         public async Task<ActionResult<BulkAddResponse>> AddPopularCompanies(
@@ -436,25 +434,15 @@ namespace Portfolio.Api.Controllers
             {
                 try
                 {
-                    // Check if ticker already exists
-                    var ticker = await _db.Tickers.FirstOrDefaultAsync(t => t.Symbol == symbol, ct);
+                    var ticker = await _db.Tickers
+                        .FirstOrDefaultAsync(ticker => ticker.Symbol == symbol, ct);
 
                     if (ticker != null)
                     {
-                        // Already exists → add to "Existing" list
-                        existing.Add(new CompanySearchResult
-                        {
-                            Id = ticker.Id,
-                            Symbol = ticker.Symbol ?? string.Empty,
-                            Name = ticker.Name ?? string.Empty,
-                            Sector = ticker.Sector ?? string.Empty,
-                            Exchange = null,
-                            IsInDatabase = true
-                        });
+                        existing.Add(ToSearchResult(ticker));
                         continue;
                     }
 
-                    // Create a new ticker (fallback data to avoid API dependency)
                     ticker = new Ticker
                     {
                         Symbol = symbol,
@@ -463,19 +451,11 @@ namespace Portfolio.Api.Controllers
                     };
 
                     _db.Tickers.Add(ticker);
-                    await _db.SaveChangesAsync(ct); // Save immediately to get ID
+                    await _db.SaveChangesAsync(ct);
 
-                    added.Add(new CompanySearchResult
-                    {
-                        Id = ticker.Id,
-                        Symbol = ticker.Symbol ?? string.Empty,
-                        Name = ticker.Name ?? string.Empty,
-                        Sector = ticker.Sector ?? string.Empty,
-                        Exchange = null,
-                        IsInDatabase = true
-                    });
+                    added.Add(ToSearchResult(ticker));
 
-                    await Task.Delay(100, ct); // Be polite to APIs
+                    await Task.Delay(100, ct);
                 }
                 catch (Exception ex)
                 {
@@ -483,7 +463,6 @@ namespace Portfolio.Api.Controllers
                 }
             }
 
-            // Return both newly created and existing tickers
             return Ok(new BulkAddResponse
             {
                 Added = added,
@@ -492,110 +471,141 @@ namespace Portfolio.Api.Controllers
             });
         }
 
-
         /// <summary>
-        /// Remove company (with safety checks for existing data)
+        /// Removes a company if no related financial data exists.
         /// </summary>
         [HttpDelete("{symbol}")]
         public async Task<IActionResult> RemoveCompany([FromRoute] string symbol, CancellationToken ct)
         {
             Guard.BadRequestIf(string.IsNullOrWhiteSpace(symbol), "Symbol is required.");
 
-            var sym = symbol.Trim().ToUpperInvariant();
-            var ticker = await _db.Tickers.FirstOrDefaultAsync(t => t.Symbol == sym, ct);
+            var normalizedSymbol = symbol.Trim().ToUpperInvariant();
+            var ticker = await _db.Tickers
+                .FirstOrDefaultAsync(ticker => ticker.Symbol == normalizedSymbol, ct);
 
             if (ticker == null)
-                throw new NotFoundException($"Company {sym} not found.");
+            {
+                throw new NotFoundException($"Company {normalizedSymbol} not found.");
+            }
 
-            // safety check: don't delete if has financial data
-            var hasData = await _db.IncomeStatements.AnyAsync(i => i.Symbol == sym, ct) ||
-                         await _db.BalanceSheets.AnyAsync(b => b.Symbol == sym, ct) ||
-                         await _db.CashFlows.AnyAsync(c => c.Symbol == sym, ct) ||
-                         await _db.Prices.AnyAsync(p => p.TickerId == ticker.Id, ct);
+            var hasData =
+                await _db.IncomeStatements.AnyAsync(statement => statement.Symbol == normalizedSymbol, ct) ||
+                await _db.BalanceSheets.AnyAsync(statement => statement.Symbol == normalizedSymbol, ct) ||
+                await _db.CashFlows.AnyAsync(statement => statement.Symbol == normalizedSymbol, ct) ||
+                await _db.Prices.AnyAsync(price => price.TickerId == ticker.Id, ct);
 
             if (hasData)
-                return Conflict(new { error = $"Cannot delete {sym}: has financial data" });
+            {
+                return Conflict(new { error = $"Cannot delete {normalizedSymbol}: has financial data." });
+            }
 
             _db.Tickers.Remove(ticker);
             await _db.SaveChangesAsync(ct);
 
-            return Ok(new { message = $"Company {sym} removed successfully" });
+            return Ok(new { message = $"Company {normalizedSymbol} removed successfully." });
         }
 
-        // ============= HELPER METHODS =============
+        private async Task<HashSet<string>> GetCurrentUserPortfolioSymbolsAsync(CancellationToken ct)
+        {
+            var userSymbols = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
 
-        /// <summary>
-        /// Get predefined lists of popular stocks by category
-        /// </summary>
+            if (userId == null || !int.TryParse(userId, out var parsedUserId))
+            {
+                return userSymbols;
+            }
+
+            var symbols = await _db.UserCompanies
+                .Include(userCompany => userCompany.Ticker)
+                .Where(userCompany => userCompany.UserId == parsedUserId)
+                .Select(userCompany => userCompany.Ticker.Symbol.ToUpper())
+                .ToListAsync(ct);
+
+            return new HashSet<string>(symbols, StringComparer.OrdinalIgnoreCase);
+        }
+
         private List<string> GetPopularStocksList(string? category = null)
         {
-            if (string.IsNullOrEmpty(category)) 
+            if (string.IsNullOrEmpty(category))
+            {
                 return _fallbackData.PopularLists.GetValueOrDefault("default") ?? new List<string>();
+            }
 
-            var key = category.ToLower();
+            var key = category.ToLowerInvariant();
+
             return _fallbackData.PopularLists.GetValueOrDefault(key) ?? new List<string>();
         }
 
-        /// <summary>
-        /// Fallback company names to avoid API calls for well-known stocks
-        /// </summary>
         private string GetFallbackCompanyName(string symbol)
         {
             var company = _fallbackData.Companies
-                .FirstOrDefault(c => string.Equals(c.Symbol, symbol, StringComparison.OrdinalIgnoreCase));
+                .FirstOrDefault(company => string.Equals(company.Symbol, symbol, StringComparison.OrdinalIgnoreCase));
 
             return company?.Name ?? symbol;
         }
 
-        /// <summary>
-        /// Fallback sector mapping for popular stocks
-        /// </summary>
         private string? GetFallbackSector(string symbol)
         {
             var company = _fallbackData.Companies
-                .FirstOrDefault(c => string.Equals(c.Symbol, symbol, StringComparison.OrdinalIgnoreCase));
+                .FirstOrDefault(company => string.Equals(company.Symbol, symbol, StringComparison.OrdinalIgnoreCase));
 
             return company?.Sector;
         }
 
+        private bool TryApplyFallbackSector(Ticker ticker)
+        {
+            if (!string.IsNullOrWhiteSpace(ticker.Sector))
+            {
+                return false;
+            }
 
-        // // ============= NEW DTOs - Create file: Portfolio.Api/Models/CompanyDiscoveryDtos.cs =============
+            var sector = GetFallbackSector(ticker.Symbol);
 
-        // public record AddCompanyRequest
-        // {
-        //     public string Symbol { get; init; } = string.Empty;
-        // }
+            if (string.IsNullOrWhiteSpace(sector))
+            {
+                return false;
+            }
 
-        // public record AddPopularRequest
-        // {
-        //     public string? Category { get; init; }
-        //     public int? Limit { get; init; } = 20;
-        // }
+            ticker.Sector = sector;
 
-        // public record CompanySearchResult
-        // {
-        //     public string Symbol { get; init; } = string.Empty;
-        //     public string Name { get; init; } = string.Empty;
-        //     public string? Exchange { get; init; }
-        //     public string? Sector { get; init; }
-        //     public bool IsInDatabase { get; init; }
-        // }
+            return true;
+        }
 
-        // public record CompanySearchResponse
-        // {
-        //     public string Query { get; init; } = string.Empty;
-        //     public List<CompanySearchResult> Results { get; init; } = new();
-        //     public int TotalFound { get; init; }
-        // }
+        private static bool IsRateLimitError(HttpRequestException ex)
+        {
+            return ex.Message.Contains("429") ||
+                ex.Message.Contains("Too Many Requests", StringComparison.OrdinalIgnoreCase) ||
+                ex.Message.Contains("Limit Reach", StringComparison.OrdinalIgnoreCase);
+        }
 
-        // public record BulkAddResponse
-        // {
-        //     public List<CompanySummaryDto> Added { get; init; } = new();
-        //     public List<string> Errors { get; init; } = new();
-        //     public int TotalAdded { get; init; }
-        // }
+        private static bool IsForbiddenError(HttpRequestException ex)
+        {
+            return ex.Message.Contains("403") ||
+                ex.Message.Contains("Forbidden", StringComparison.OrdinalIgnoreCase);
+        }
 
-       
+        private static CompanySummaryDto ToSummaryDto(Ticker ticker)
+        {
+            return new CompanySummaryDto
+            {
+                Id = ticker.Id.ToString(),
+                Symbol = ticker.Symbol,
+                Name = ticker.Name,
+                Sector = ticker.Sector
+            };
+        }
 
+        private static CompanySearchResult ToSearchResult(Ticker ticker)
+        {
+            return new CompanySearchResult
+            {
+                Id = ticker.Id,
+                Symbol = ticker.Symbol ?? string.Empty,
+                Name = ticker.Name ?? string.Empty,
+                Sector = ticker.Sector ?? string.Empty,
+                Exchange = null,
+                IsInDatabase = true
+            };
+        }
     }
 }

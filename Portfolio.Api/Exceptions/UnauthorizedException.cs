@@ -1,15 +1,14 @@
 using System.Net;
 
-namespace Portfolio.Api.Exceptions
+namespace Portfolio.Api.Exceptions;
+
+/// <summary>
+/// Represents an HTTP 401 Unauthorized error.
+/// </summary>
+public sealed class UnauthorizedException : AppException
 {
-    /// <summary>
-    /// Exception for unauthorized access (returns HTTP 401).
-    /// </summary>
-    public class UnauthorizedException : AppException
+    public UnauthorizedException(string message)
+        : base(message, (int)HttpStatusCode.Unauthorized)
     {
-        public UnauthorizedException(string message)
-            : base(message, (int)HttpStatusCode.Unauthorized)
-        {
-        }
     }
 }

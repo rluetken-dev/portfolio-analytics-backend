@@ -1,258 +1,205 @@
 using Microsoft.EntityFrameworkCore;
+using Portfolio.Api.Data.Entities;
 using Portfolio.Api.Models;
-using Portfolio.Api.Data.Entities; // for IncomeStatementEntity
- 
+
 namespace Portfolio.Api.Data;
 
 /// <summary>
-/// Entity Framework Core DbContext:
-/// - Manages access to the database.
-/// - Exposes DbSet&lt;T&gt; for each table (aggregate root).
-/// - Configures schema (indexes, constraints, conversions) in OnModelCreating.
+/// Entity Framework Core database context for portfolio data, users, transactions, and cached market data.
 /// </summary>
-public class AppDbContext : DbContext
+public sealed class AppDbContext : DbContext
 {
-    public AppDbContext(DbContextOptions<AppDbContext> options) : base(options) { }
-
-    /// <summary>
-    /// Table of tradable instruments (tickers).
-    /// </summary>
+    public AppDbContext(DbContextOptions<AppDbContext> options)
+        : base(options)
+    {
+    }
+    
     public DbSet<Ticker> Tickers => Set<Ticker>();
-
-    /// <summary>
-    /// Table of income statement observations (annual + quarterly).
-    /// </summary>
-    public DbSet<IncomeStatementEntity> IncomeStatements => Set<IncomeStatementEntity>();
-
-    /// <summary>
-    /// Table of balance sheet observations (annual + quarterly).
-    /// </summary>
-    public DbSet<Portfolio.Api.Data.Entities.BalanceSheetEntity> BalanceSheets => Set<Portfolio.Api.Data.Entities.BalanceSheetEntity>();
-
-    /// <summary>
-    /// Table of daily OHLCV price records.
-    /// </summary>
     public DbSet<Price> Prices => Set<Price>();
-
-    /// <summary>
-    /// Table of cash flow observations (annual + quarterly).
-    /// </summary>
-    public DbSet<Portfolio.Api.Data.Entities.CashFlowEntity> CashFlows => Set<Portfolio.Api.Data.Entities.CashFlowEntity>();
-
-    /// <summary>
-    /// Users table for authentication and account management
-    /// </summary>
-    public DbSet<Portfolio.Api.Models.User> Users => Set<Portfolio.Api.Models.User>();
-
-    /// <summary>
-    /// Table for storing refresh tokens linked to users
-    /// </summary>
-    public DbSet<RefreshToken> RefreshTokens { get; set; }
-
-    /// <summary>
-    /// Table linking users to companies (tickers) they hold in their portfolio.
-    /// Contains user-specific metadata such as shares, purchase price, and notes.
-    /// </summary>
+    public DbSet<IncomeStatementEntity> IncomeStatements => Set<IncomeStatementEntity>();
+    public DbSet<BalanceSheetEntity> BalanceSheets => Set<BalanceSheetEntity>();
+    public DbSet<CashFlowEntity> CashFlows => Set<CashFlowEntity>();
+    public DbSet<User> Users => Set<User>();
+    public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
     public DbSet<UserCompany> UserCompanies => Set<UserCompany>();
-
-    /// <summary>
-    /// Table recording individual buy and sell operations performed by users.
-    /// Each record represents a discrete transaction linked to a company (ticker),
-    /// capturing the number of shares, the price at execution time, and optional notes.
-    /// Used for historical tracking, analytics, and calculating performance over time.
-    /// </summary>
-    public DbSet<UserCompanyTransaction> UserCompanyTransactions { get; set; } = null!;
+    public DbSet<UserCompanyTransaction> UserCompanyTransactions => Set<UserCompanyTransaction>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
 
-        // --- Ticker configuration ---
-        modelBuilder.Entity<Ticker>()
-            .HasIndex(t => t.Symbol)
-            .IsUnique(); // Prevent duplicate ticker symbols
+        ConfigureTicker(modelBuilder);
+        ConfigurePrice(modelBuilder);
+        ConfigureIncomeStatement(modelBuilder);
+        ConfigureBalanceSheet(modelBuilder);
+        ConfigureCashFlow(modelBuilder);
+        ConfigureUserCompany(modelBuilder);
+    }
 
-        modelBuilder.Entity<Ticker>()
-            .Property(t => t.Symbol)
-            .IsRequired()
-            .HasMaxLength(16);
-
-        modelBuilder.Entity<Ticker>()
-            .Property(t => t.Name)
-            .HasMaxLength(128);
-
-        // --- Price configuration ---
-        modelBuilder.Entity<Price>()
-            .HasIndex(p => new { p.TickerId, p.TradingDate })
-            .IsUnique(); // Only one record per ticker per day
-
-        // Monetary precision: 18 digits total, 6 decimals
-        modelBuilder.Entity<Price>()
-            .Property(p => p.Close)
-            .HasColumnType("decimal(18,6)");
-
-        modelBuilder.Entity<Price>()
-            .Property(p => p.AdjustedClose)
-            .HasColumnType("decimal(18,6)");
-
-        modelBuilder.Entity<Price>()
-            .Property(p => p.Open)
-            .HasColumnType("decimal(18,6)");
-
-        modelBuilder.Entity<Price>()
-            .Property(p => p.High)
-            .HasColumnType("decimal(18,6)");
-
-        modelBuilder.Entity<Price>()
-            .Property(p => p.Low)
-            .HasColumnType("decimal(18,6)");
-
-        // Provider/source info
-        modelBuilder.Entity<Price>()
-            .Property(p => p.Source)
-            .IsRequired()
-            .HasMaxLength(64);
-
-        // Map DateOnly <-> DateTime for SQLite
-        modelBuilder.Entity<Price>()
-            .Property(p => p.TradingDate)
-            .HasConversion(
-                d => d.ToDateTime(TimeOnly.MinValue),
-                dt => DateOnly.FromDateTime(DateTime.SpecifyKind(dt, DateTimeKind.Utc))
-            );
-
-        // --- IncomeStatement configuration ---
-        modelBuilder.Entity<IncomeStatementEntity>(e =>
+    private static void ConfigureTicker(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<Ticker>(entity =>
         {
-            // Table name: keep it simple and readable.
-            e.ToTable("income_statements");
-
-            // PK
-            e.HasKey(x => x.Id);
-
-            // Uniqueness: (Symbol, Date, Frequency) must be unique
-            e.HasIndex(x => new { x.Symbol, x.Date, x.Frequency })
-             .IsUnique();
-
-            // Basic constraints
-            e.Property(x => x.Symbol)
-             .IsRequired()
-             .HasMaxLength(20);
-
-            e.Property(x => x.Frequency)
-             .IsRequired()
-             .HasMaxLength(10); // "annual" | "quarter"
-
-            e.Property(x => x.ReportedCurrency)
-             .HasMaxLength(8);
-
-            // Map DateOnly <-> DateTime for SQLite
-            e.Property(x => x.Date)
-             .HasConversion(
-                 d => d.ToDateTime(TimeOnly.MinValue),                           // store as UTC date
-                 dt => DateOnly.FromDateTime(DateTime.SpecifyKind(dt, DateTimeKind.Utc))
-             );
-        });
-
-        // --- BalanceSheet configuration ---
-        modelBuilder.Entity<Portfolio.Api.Data.Entities.BalanceSheetEntity>(e =>
-        {
-            // Table name kept simple and readable.
-            e.ToTable("balance_sheets");
-
-            // PK
-            e.HasKey(x => x.Id);
-
-            // Uniqueness: (Symbol, Date, Frequency) prevents duplicates
-            e.HasIndex(x => new { x.Symbol, x.Date, x.Frequency })
-             .IsUnique();
-
-            // Basic constraints
-            e.Property(x => x.Symbol)
-             .IsRequired()
-             .HasMaxLength(20);
-
-            e.Property(x => x.Frequency)
-             .IsRequired()
-             .HasMaxLength(10); // "annual" | "quarter"
-
-            e.Property(x => x.ReportedCurrency)
-             .HasMaxLength(8);
-
-            // Map DateOnly <-> DateTime for SQLite
-            e.Property(x => x.Date)
-             .HasConversion(
-                 d => d.ToDateTime(TimeOnly.MinValue),
-                 dt => DateOnly.FromDateTime(DateTime.SpecifyKind(dt, DateTimeKind.Utc))
-             );
-        });
-
-        // --- CashFlow configuration ---
-        modelBuilder.Entity<Portfolio.Api.Data.Entities.CashFlowEntity>(e =>
-        {
-            // Table name kept simple and readable.
-            e.ToTable("cash_flows");
-
-            // PK
-            e.HasKey(x => x.Id);
-
-            // Uniqueness: (Symbol, Date, Frequency) prevents duplicates
-            e.HasIndex(x => new { x.Symbol, x.Date, x.Frequency })
-             .IsUnique();
-
-            // Basic constraints
-            e.Property(x => x.Symbol)
-             .IsRequired()
-             .HasMaxLength(20);
-
-            e.Property(x => x.Frequency)
-             .IsRequired()
-             .HasMaxLength(10); // "annual" | "quarter"
-
-            e.Property(x => x.ReportedCurrency)
-             .HasMaxLength(8);
-
-            // Map DateOnly <-> DateTime for SQLite
-            e.Property(x => x.Date)
-             .HasConversion(
-                 d => d.ToDateTime(TimeOnly.MinValue),
-                 dt => DateOnly.FromDateTime(DateTime.SpecifyKind(dt, DateTimeKind.Utc))
-             );
-        });
-
-        // --- UserCompany configuration ---
-        modelBuilder.Entity<UserCompany>(e =>
-        {
-            // Table name
-            e.ToTable("user_companies");
-
-            // PK
-            e.HasKey(x => x.Id);
-
-            // Foreign keys
-            e.HasOne(x => x.User)
-                .WithMany(u => u.UserCompanies)
-                .HasForeignKey(x => x.UserId)
-                .OnDelete(DeleteBehavior.Cascade);
-
-            e.HasOne(x => x.Ticker)
-                .WithMany(t => t.UserCompanies)
-                .HasForeignKey(x => x.TickerId)
-                .OnDelete(DeleteBehavior.Cascade);
-
-            // Enforce uniqueness per User + Ticker (prevent duplicate portfolio entries)
-            e.HasIndex(x => new { x.UserId, x.TickerId })
+            entity.HasIndex(ticker => ticker.Symbol)
                 .IsUnique();
 
-            // Monetary precision for financial fields
-            e.Property(x => x.Shares)
+            entity.Property(ticker => ticker.Symbol)
+                .IsRequired()
+                .HasMaxLength(16);
+
+            entity.Property(ticker => ticker.Name)
+                .HasMaxLength(128);
+        });
+    }
+
+    private static void ConfigurePrice(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<Price>(entity =>
+        {
+            entity.HasIndex(price => new { price.TickerId, price.TradingDate })
+                .IsUnique();
+
+            entity.Property(price => price.Open)
+                .HasColumnType("decimal(18,6)");
+
+            entity.Property(price => price.High)
+                .HasColumnType("decimal(18,6)");
+
+            entity.Property(price => price.Low)
+                .HasColumnType("decimal(18,6)");
+
+            entity.Property(price => price.Close)
+                .HasColumnType("decimal(18,6)");
+
+            entity.Property(price => price.AdjustedClose)
+                .HasColumnType("decimal(18,6)");
+
+            entity.Property(price => price.Source)
+                .IsRequired()
+                .HasMaxLength(64);
+
+            entity.Property(price => price.TradingDate)
+                .HasConversion(
+                    date => date.ToDateTime(TimeOnly.MinValue),
+                    dateTime => DateOnly.FromDateTime(DateTime.SpecifyKind(dateTime, DateTimeKind.Utc)));
+        });
+    }
+
+    private static void ConfigureIncomeStatement(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<IncomeStatementEntity>(entity =>
+        {
+            entity.ToTable("income_statements");
+
+            entity.HasKey(statement => statement.Id);
+
+            entity.HasIndex(statement => new { statement.Symbol, statement.Date, statement.Frequency })
+                .IsUnique();
+
+            entity.Property(statement => statement.Symbol)
+                .IsRequired()
+                .HasMaxLength(20);
+
+            entity.Property(statement => statement.Frequency)
+                .IsRequired()
+                .HasMaxLength(10);
+
+            entity.Property(statement => statement.ReportedCurrency)
+                .HasMaxLength(8);
+
+            entity.Property(statement => statement.Date)
+                .HasConversion(
+                    date => date.ToDateTime(TimeOnly.MinValue),
+                    dateTime => DateOnly.FromDateTime(DateTime.SpecifyKind(dateTime, DateTimeKind.Utc)));
+        });
+    }
+
+    private static void ConfigureBalanceSheet(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<BalanceSheetEntity>(entity =>
+        {
+            entity.ToTable("balance_sheets");
+
+            entity.HasKey(statement => statement.Id);
+
+            entity.HasIndex(statement => new { statement.Symbol, statement.Date, statement.Frequency })
+                .IsUnique();
+
+            entity.Property(statement => statement.Symbol)
+                .IsRequired()
+                .HasMaxLength(20);
+
+            entity.Property(statement => statement.Frequency)
+                .IsRequired()
+                .HasMaxLength(10);
+
+            entity.Property(statement => statement.ReportedCurrency)
+                .HasMaxLength(8);
+
+            entity.Property(statement => statement.Date)
+                .HasConversion(
+                    date => date.ToDateTime(TimeOnly.MinValue),
+                    dateTime => DateOnly.FromDateTime(DateTime.SpecifyKind(dateTime, DateTimeKind.Utc)));
+        });
+    }
+    
+    private static void ConfigureCashFlow(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<CashFlowEntity>(entity =>
+        {
+            entity.ToTable("cash_flows");
+
+            entity.HasKey(statement => statement.Id);
+
+            entity.HasIndex(statement => new { statement.Symbol, statement.Date, statement.Frequency })
+                .IsUnique();
+
+            entity.Property(statement => statement.Symbol)
+                .IsRequired()
+                .HasMaxLength(20);
+
+            entity.Property(statement => statement.Frequency)
+                .IsRequired()
+                .HasMaxLength(10);
+
+            entity.Property(statement => statement.ReportedCurrency)
+                .HasMaxLength(8);
+
+            entity.Property(statement => statement.Date)
+                .HasConversion(
+                    date => date.ToDateTime(TimeOnly.MinValue),
+                    dateTime => DateOnly.FromDateTime(DateTime.SpecifyKind(dateTime, DateTimeKind.Utc)));
+        });
+    }
+
+    private static void ConfigureUserCompany(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<UserCompany>(entity =>
+        {
+            entity.ToTable("user_companies");
+
+            entity.HasKey(userCompany => userCompany.Id);
+
+            entity.HasOne(userCompany => userCompany.User)
+                .WithMany(user => user.UserCompanies)
+                .HasForeignKey(userCompany => userCompany.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(userCompany => userCompany.Ticker)
+                .WithMany(ticker => ticker.UserCompanies)
+                .HasForeignKey(userCompany => userCompany.TickerId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasIndex(userCompany => new { userCompany.UserId, userCompany.TickerId })
+                .IsUnique();
+
+            entity.Property(userCompany => userCompany.Shares)
                 .HasColumnType("decimal(18,4)");
 
-            e.Property(x => x.PurchasePrice)
+            entity.Property(userCompany => userCompany.PurchasePrice)
                 .HasColumnType("decimal(18,4)");
 
-            // Notes length restriction
-            e.Property(x => x.Notes)
+            entity.Property(userCompany => userCompany.Notes)
                 .HasMaxLength(500);
         });
     }

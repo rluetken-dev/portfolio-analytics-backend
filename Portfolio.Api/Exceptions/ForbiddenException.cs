@@ -1,15 +1,14 @@
 using System.Net;
 
-namespace Portfolio.Api.Exceptions
+namespace Portfolio.Api.Exceptions;
+
+/// <summary>
+/// Represents an HTTP 403 Forbidden error.
+/// </summary>
+public sealed class ForbiddenException : AppException
 {
-    /// <summary>
-    /// Exception for forbidden actions (returns HTTP 403).
-    /// </summary>
-    public class ForbiddenException : AppException
+    public ForbiddenException(string message)
+        : base(message, (int)HttpStatusCode.Forbidden)
     {
-        public ForbiddenException(string message)
-            : base(message, (int)HttpStatusCode.Forbidden)
-        {
-        }
     }
 }

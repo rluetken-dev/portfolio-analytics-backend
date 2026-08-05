@@ -4,12 +4,7 @@ using Portfolio.Api.Services;
 using Portfolio.Api.Data;
 using Microsoft.EntityFrameworkCore;
 using Portfolio.Api.Models;
-using Microsoft.Data.Sqlite;
-using Microsoft.Extensions.Configuration;
-using System.Globalization;
-using System.Text.Json;
-using Portfolio.Api.Seed;      // ISeedFileService
-using Portfolio.Api.Seed.Dto;  // CompanySeedFile etc.
+using Portfolio.Api.Seed;
 using Microsoft.AspNetCore.Authorization;
 using Portfolio.Api.Extensions;
 using Portfolio.Api.Exceptions;
@@ -19,14 +14,13 @@ namespace Portfolio.Api.Controllers;
 
 /// <summary>
 /// Administrative endpoints for database housekeeping.
-/// ⚠️ Important: Secure these endpoints (authentication/authorization) in production.
+///  Important: Secure these endpoints (authentication/authorization) in production.
 /// </summary>
 [ApiController]
 [Route("api/admin")]
-[Authorize(Policy = "AdminOnly")] // ✅ only users with isAdmin=true in their JWT
-public class AdminController : ControllerBase
+[Authorize(Policy = "AdminOnly")]
+public sealed class AdminController : ControllerBase
 {
-
     private readonly AppDbContext _db;
     private readonly MaintenanceService _maintenance;
     private readonly ISeedFileService _files;
@@ -43,13 +37,13 @@ public class AdminController : ControllerBase
 
     /// <summary>
     /// Prunes daily price rows only (does not touch fundamentals).
-    /// English: Deletes old price rows based on maxAgeDays and/or caps rows per symbol.
+    /// Deletes old price rows based on maxAgeDays and/or caps rows per symbol.
     /// </summary>
     [HttpPost("prune")]
     [SwaggerOperation(
         Summary = "Prune old price data",
         Description = "Deletes outdated daily price rows based on retention settings. Does not affect fundamentals.",
-        Tags = new[] { "Admin – Maintenance" }
+        Tags = new[] { "Admin - Maintenance" }
     )]
     public async Task<IActionResult> Prune(
         [FromQuery] int? maxAgeDays = 3 * 365,
@@ -65,14 +59,14 @@ public class AdminController : ControllerBase
 
     /// <summary>
     /// Runs SQLite VACUUM and ANALYZE for the entire database file (not only Prices).
-    /// English: Reclaims free space and refreshes query planner statistics.
+    /// Reclaims free space and refreshes query planner statistics.
     /// Should be run after large deletes/truncates.
     /// </summary>
     [HttpPost("vacuum")]
     [SwaggerOperation(
         Summary = "Run VACUUM + ANALYZE",
         Description = "Runs SQLite VACUUM and ANALYZE for the entire database file to reclaim space and refresh query planner stats.",
-        Tags = new[] { "Admin – Maintenance" }
+        Tags = new[] { "Admin - Maintenance" }
     )]
     public async Task<IActionResult> Vacuum(CancellationToken ct = default)
     {
@@ -93,8 +87,8 @@ public class AdminController : ControllerBase
     [HttpPost("truncate")]
     [SwaggerOperation(
         Summary = "Truncate database tables",
-        Description = "Deletes all rows in selected tables (prices, fundamentals, tickers, or all). ⚠️ Destructive operation.",
-        Tags = new[] { "Admin – Maintenance" }
+        Description = "Deletes all rows in selected tables (prices, fundamentals, tickers, or all). Destructive operation.",
+        Tags = new[] { "Admin - Maintenance" }
     )]
     public async Task<IActionResult> Truncate(
         [FromQuery] string? scope,
@@ -102,14 +96,11 @@ public class AdminController : ControllerBase
         [FromServices] AppDbContext db,
         CancellationToken ct = default)
     {
-        // Optional: protect with DemoMode like your seed endpoints
         if (!cfg.GetValue<bool>("DemoMode"))
             throw new NotFoundException("Resource not found.");
-
-        // Normalize scope
         var s = (scope ?? "all").Trim().ToLowerInvariant();
 
-        // English: we delete in an order that respects FK constraints.
+        // we delete in an order that respects FK constraints.
         // Prices -> Fundamentals -> Tickers.
         var deleted = new Dictionary<string, int>();
 
@@ -157,7 +148,7 @@ public class AdminController : ControllerBase
 
     /// <summary>
     /// Diagnostics: shows DB provider, file path/connection string, and row counts per table.
-    /// English: Use this to quickly inspect if tables are populated (Prices, Income, Balance, CashFlow, Tickers).
+    /// Use this to quickly inspect if tables are populated (Prices, Income, Balance, CashFlow, Tickers).
     /// Also includes a compact per-symbol fundamentals snapshot (annual) to see ROE-readiness at a glance.
     /// </summary>
     [HttpGet("info")]
@@ -165,7 +156,7 @@ public class AdminController : ControllerBase
     [SwaggerOperation(
         Summary = "Database diagnostics overview",
         Description = "Displays DB provider, file path, table row counts, and compact fundamentals summary per symbol.",
-        Tags = new[] { "Admin – Maintenance" }
+        Tags = new[] { "Admin - Maintenance" }
     )]
     public async Task<IActionResult> Info(
         [FromServices] AppDbContext db,
@@ -212,7 +203,7 @@ public class AdminController : ControllerBase
             .ToListAsync(ct);
 
         // --- Fundamentals snapshot (annual) --------------------------------------
-        // English: For each symbol, show counts and latest period end for Income and Balance.
+        // For each symbol, show counts and latest period end for Income and Balance.
         // "roeReady" is true if latest annual dates exist on both sides and match (so ROE can be computed directly).
         var incomeAgg = await db.IncomeStatements.AsNoTracking()
             .Where(i => i.Frequency == "annual")
@@ -272,19 +263,19 @@ public class AdminController : ControllerBase
 
     /// <summary>
     /// Ingests annual Income &amp; Balance from FMP and upserts into DB.
-    /// English: real-data equivalent of our seed endpoints. Respects FMP free-tier limit.
+    /// real-data equivalent of our seed endpoints. Respects FMP free-tier limit.
     /// </summary>
     [HttpPost("ingest/fmp-annual")]
     [SwaggerOperation(
         Summary = "Ingest FMP annual fundamentals",
         Description = "Fetches annual Income & Balance data from FMP and upserts them into the database.",
-        Tags = new[] { "Admin – Data Ingest" }
+        Tags = new[] { "Admin - Data Ingest" }
     )]
     public async Task<IActionResult> IngestFmpAnnual(
         [FromQuery] string symbol,
         [FromServices] IncomeIngestService incomeIngest,
         [FromServices] BalanceSheetIngestService balanceIngest,
-        [FromQuery] int limit = 5,               // English: FMP low tiers allow up to 5 rows
+        [FromQuery] int limit = 5,               // FMP low tiers allow up to 5 rows
         CancellationToken ct = default)
     {
         Guard.BadRequestIf(string.IsNullOrWhiteSpace(symbol), "Missing ?symbol=...");
@@ -293,7 +284,7 @@ public class AdminController : ControllerBase
 
         try
         {
-            // English: pass limit explicitly to avoid 402 on low-tier plans
+            // pass limit explicitly to avoid 402 on low-tier plans
             await incomeIngest.IngestAsync(ticker, "annual", limit, ct);
             await balanceIngest.IngestAsync(ticker, "annual", limit, ct);
 
@@ -301,25 +292,25 @@ public class AdminController : ControllerBase
         }
         catch (HttpRequestException ex)
         {
-            // English: surface upstream error without stack trace
+            // surface upstream error without stack trace
             return StatusCode(502, new { ticker, error = "FMP request failed", detail = ex.Message });
         }
     }
 
     /// <summary>
     /// Ingests annual Cash Flow statements from FMP and upserts into DB.
-    /// English: complements income &amp; balance so we can compute FCF.
+    /// complements income &amp; balance so we can compute FCF.
     /// </summary>
     [HttpPost("ingest/fmp-cashflow-annual")]
     [SwaggerOperation(
         Summary = "Ingest FMP annual cash flow",
         Description = "Fetches annual Cash Flow data from FMP and upserts them into the database.",
-        Tags = new[] { "Admin – Data Ingest" }
+        Tags = new[] { "Admin - Data Ingest" }
     )]
     public async Task<IActionResult> IngestFmpCashflowAnnual(
         [FromQuery] string symbol,
         [FromServices] CashFlowIngestService cashflowIngest,
-        [FromQuery] int limit = 5,               // English: FMP low tiers allow up to ~5 rows
+        [FromQuery] int limit = 5,               // FMP low tiers allow up to ~5 rows
         CancellationToken ct = default)
     {
         Guard.BadRequestIf(string.IsNullOrWhiteSpace(symbol), "Missing ?symbol=...");
@@ -328,7 +319,7 @@ public class AdminController : ControllerBase
 
         try
         {
-            // English: ask service to fetch+upsert annual cashflows
+            // ask service to fetch+upsert annual cashflows
             await cashflowIngest.IngestAsync(ticker, "annual", limit, ct);
             return Ok(new { ticker, limit, ok = true });
         }
@@ -354,7 +345,7 @@ public class AdminController : ControllerBase
     [SwaggerOperation(
         Summary = "Bulk upsert tickers",
         Description = "Upserts multiple tickers; optionally overwrites existing Name and Sector values.",
-        Tags = new[] { "Admin – Tickers" }
+        Tags = new[] { "Admin - Tickers" }
     )]
     public async Task<IActionResult> UpsertTickers(
         [FromQuery] bool overwrite,
@@ -394,15 +385,15 @@ public class AdminController : ControllerBase
 
     // AdminController.cs
     /// <summary>
-    /// Admin-only: clears the <c>Sector</c> column for all tickers by setting it to <c>NULL</c>.
+    /// Clears the <c>Sector</c> column for all tickers by setting it to <c>NULL</c>.
     /// Intended as a destructive reset before running a fresh profile refresh.
     /// </summary>
     /// <response code="200">Returns JSON like <c>{ cleared: N }</c>.</response>
     [HttpPost("tickers/clear-sectors")]
-        [SwaggerOperation(
+    [SwaggerOperation(
         Summary = "Clear all ticker sectors",
-        Description = "Sets the Sector column to NULL for all tickers. ⚠️ Destructive reset before reclassification.",
-        Tags = new[] { "Admin – Tickers" }
+        Description = "Sets the Sector column to NULL for all tickers. Destructive reset before reclassification.",
+        Tags = new[] { "Admin - Tickers" }
     )]
     public async Task<IActionResult> ClearTickerSectors(CancellationToken ct)
     {
@@ -412,8 +403,8 @@ public class AdminController : ControllerBase
 
 
     /// <summary>
-    /// Admin-only: deletes a company by ticker symbol, including prices and fundamentals.
-    /// English: Hard-delete all data for {symbol} in one atomic operation.
+    /// Deletes a company by ticker symbol, including prices and fundamentals.
+    /// Hard-delete all data for {symbol} in one atomic operation.
     /// </summary>
     /// <response code="200">
     /// Returns JSON: { symbol, pricesDeleted, incomeDeleted, balanceDeleted, cashDeleted, tickerDeleted }
@@ -422,7 +413,7 @@ public class AdminController : ControllerBase
     [SwaggerOperation(
         Summary = "Delete company by symbol",
         Description = "Deletes a ticker and all related prices and fundamentals. Operation is idempotent.",
-        Tags = new[] { "Admin – Tickers" }
+        Tags = new[] { "Admin - Tickers" }
     )]
     public async Task<IActionResult> DeleteTicker([FromRoute] string symbol, CancellationToken ct)
     {
@@ -431,18 +422,18 @@ public class AdminController : ControllerBase
         if (result is null || result.TickerDeleted == 0)
             throw new NotFoundException($"Ticker '{symbol}' not found in database.");
 
-        return Ok(result); // English: idempotent — returns zeros if symbol not found
+        return Ok(result);
     }
 
     /// <summary>
     /// Lists all registered users (admin-only).
     /// </summary>
-    [HttpGet("users")]    
+    [HttpGet("users")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [SwaggerOperation(
         Summary = "List all registered users",
         Description = "Returns all user accounts including admin flag. Admin-only access.",
-        Tags = new[] { "Admin – Users" }
+        Tags = new[] { "Admin - Users" }
     )]
     public async Task<ActionResult<IEnumerable<object>>> GetAllUsers()
     {
@@ -469,7 +460,7 @@ public class AdminController : ControllerBase
     [SwaggerOperation(
         Summary = "Delete user account",
         Description = "Deletes a user by ID. Prevents deleting the last admin or self-deletion.",
-        Tags = new[] { "Admin – Users" }
+        Tags = new[] { "Admin - Users" }
     )]
     public async Task<IActionResult> DeleteUser(int id)
     {
@@ -482,7 +473,7 @@ public class AdminController : ControllerBase
         if (user == null)
             throw new NotFoundException("Resource not found.");
 
-        // 👇 Prevent deletion if this is the last remaining admin
+        // Prevent deleting the last remaining admin user.
         if (user.IsAdmin)
         {
             var otherAdminsExist = await _db.Users.AnyAsync(u => u.IsAdmin && u.Id != id);
@@ -508,7 +499,7 @@ public class AdminController : ControllerBase
     [SwaggerOperation(
         Summary = "Promote or demote a user",
         Description = "Sets admin privileges for a user. Prevents demoting the last admin or self-demotion.",
-        Tags = new[] { "Admin – Users" }
+        Tags = new[] { "Admin - Users" }
     )]
     public async Task<IActionResult> SetAdminStatus(int id, [FromQuery] bool makeAdmin)
     {
@@ -541,39 +532,23 @@ public class AdminController : ControllerBase
         });
     }
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
     /// <summary>
     /// Seed dry-run: parse &amp; validate seed JSON; no DB writes.
-    /// English: Reads SeedData/companies/{SYMBOL}.json and returns a compact summary (symbol, profile, quotes range, fundamentals snapshot).
+    /// Reads SeedData/companies/{SYMBOL}.json and returns a compact summary (symbol, profile, quotes range, fundamentals snapshot).
     /// </summary>
     [HttpPost("seed/company-file/{symbol}")]
     [SwaggerOperation(
         Summary = "Validate seed file (dry-run)",
         Description = "Parses SeedData/companies/{SYMBOL}.json and returns a compact summary without writing to the DB.",
         OperationId = "Seed_ValidateCompanyFile",
-        Tags = new[] { "Admin – Seed Tools" }
-    )]   
-    #if !DEBUG
+        Tags = new[] { "Admin - Seed Tools" }
+    )]
+#if !DEBUG
         [ApiExplorerSettings(IgnoreApi = true)]
-    #endif
+#endif
     public async Task<IActionResult> SeedCompanyFileDryRun([FromRoute] string symbol, CancellationToken ct)
     {
-        // English: load + validate file (no DB writes)
+        // load + validate file (no DB writes)
         var res = await _files.LoadCompanyAsync(symbol);
         if (!res.Success || res.Data is null)
             throw new BadRequestException($"Seed validation failed: {res.Error}");
@@ -581,7 +556,7 @@ public class AdminController : ControllerBase
 
         var m = res.Data;
 
-        // English: optional fundamentals summary
+        // optional fundamentals summary
         var fundamentalsSummary = (m.Fundamentals is null || m.Fundamentals.Annual.Count == 0)
             ? null
             : new
@@ -592,7 +567,7 @@ public class AdminController : ControllerBase
                 currency = m.Fundamentals.Currency
             };
 
-        // English: brief summary for caller
+        // brief summary for caller
         var summary = new
         {
             symbol = m.Symbol,
@@ -609,31 +584,31 @@ public class AdminController : ControllerBase
         };
 
         return Ok(new { title = "Seed file OK (dry-run)", summary });
-    }  
+    }
 
     [HttpPost("seed/company-file/{symbol}/apply")]
     [SwaggerOperation(
         Summary = "Apply seed file to database",
         Description = "Loads SeedData/companies/{symbol}.json and inserts all data (ticker, prices, fundamentals).",
-        Tags = new[] { "Admin – Seed Tools" }
+        Tags = new[] { "Admin - Seed Tools" }
     )]
-    #if !DEBUG
+#if !DEBUG
         [ApiExplorerSettings(IgnoreApi = true)]
-    #endif
+#endif
     public async Task<IActionResult> SeedCompanyFileApply([FromRoute] string symbol, CancellationToken ct)
     {
-        // English: 1) load + validate JSON first
+        // 1) load + validate JSON first
         var res = await _files.LoadCompanyAsync(symbol);
         if (!res.Success || res.Data is null)
             throw new BadRequestException($"Seed validation failed: {res.Error}");
 
         var m = res.Data;
 
-        // English: 2) upsert ticker profile (name + sector)
+        // 2) upsert ticker profile (name + sector)
         var (created, updated) = await _seed.SeedTickerProfileAsync(
             m.Symbol, m.Profile.Name, m.Profile.Sector, ct);
 
-        // English: 3) upsert full OHLCV for each trading day
+        // 3) upsert full OHLCV for each trading day
         int priceInsertedOrUpdated = 0;
         foreach (var r in m.Quotes.Rows)
         {
@@ -648,13 +623,13 @@ public class AdminController : ControllerBase
 
             await _seed.SeedFullPriceAsync(
                 m.Symbol, d,
-                r.Open, r.High, r.Low, r.Close, r.Volume, // English: write full OHLCV
+                r.Open, r.High, r.Low, r.Close, r.Volume, // write full OHLCV
                 ct
             );
             priceInsertedOrUpdated++;
         }
 
-        // English: 4) optionally apply fundamentals (annual rows)
+        // 4) optionally apply fundamentals (annual rows)
         int yearsTouched = 0;
         int annualPairs = 0;        // years where (NetIncome + Equity) were both set via SeedAnnualAsync
         int revenueCount = 0;
@@ -663,6 +638,7 @@ public class AdminController : ControllerBase
         int sharesCount = 0;
         int cfoCount = 0;           // Operating Cash Flow rows written
         int capexCount = 0;         // Capital Expenditures rows written
+        int workingCapitalCount = 0;
 
         if (m.Fundamentals?.Annual is not null && m.Fundamentals.Annual.Count > 0)
         {
@@ -670,7 +646,7 @@ public class AdminController : ControllerBase
             {
                 bool touchedThisYear = false;
 
-                // English: set revenue if provided
+                // set revenue if provided
                 if (a.Revenue.HasValue)
                 {
                     await _seed.SeedRevenueAsync(m.Symbol, a.Year, a.Revenue.Value, ct);
@@ -678,7 +654,7 @@ public class AdminController : ControllerBase
                     touchedThisYear = true;
                 }
 
-                // English: set assets if provided
+                // set assets if provided
                 if (a.TotalAssets.HasValue)
                 {
                     await _seed.SeedAssetsAsync(m.Symbol, a.Year, a.TotalAssets.Value, ct);
@@ -686,7 +662,7 @@ public class AdminController : ControllerBase
                     touchedThisYear = true;
                 }
 
-                // English: set liabilities if provided
+                // set liabilities if provided
                 if (a.TotalLiabilities.HasValue)
                 {
                     await _seed.SeedLiabilitiesAsync(m.Symbol, a.Year, a.TotalLiabilities.Value, ct);
@@ -694,7 +670,7 @@ public class AdminController : ControllerBase
                     touchedThisYear = true;
                 }
 
-                // English: set shares if provided
+                // set shares if provided
                 if (a.Shares.HasValue)
                 {
                     await _seed.SeedSharesAsync(m.Symbol, a.Year, a.Shares.Value, ct);
@@ -702,7 +678,7 @@ public class AdminController : ControllerBase
                     touchedThisYear = true;
                 }
 
-                // English: set operating cash flow if provided (negative allowed)
+                // set operating cash flow if provided (negative allowed)
                 if (a.OperatingCashFlow.HasValue)
                 {
                     await _seed.SeedOperatingCashFlowAsync(m.Symbol, a.Year, a.OperatingCashFlow.Value, ct);
@@ -710,7 +686,7 @@ public class AdminController : ControllerBase
                     touchedThisYear = true;
                 }
 
-                // English: set capital expenditures if provided (negative allowed)
+                // set capital expenditures if provided (negative allowed)
                 if (a.CapitalExpenditures.HasValue)
                 {
                     await _seed.SeedCapitalExpendituresAsync(m.Symbol, a.Year, a.CapitalExpenditures.Value, ct);
@@ -718,7 +694,19 @@ public class AdminController : ControllerBase
                     touchedThisYear = true;
                 }
 
-                // English: only set netIncome+equity together if both are present
+                if (a.ChangeInWorkingCapital.HasValue)
+                {
+                    await _seed.SeedChangeInWorkingCapitalAsync(
+                        m.Symbol,
+                        a.Year,
+                        a.ChangeInWorkingCapital.Value,
+                        ct);
+
+                    workingCapitalCount++;
+                    touchedThisYear = true;
+                }
+
+                // only set netIncome+equity together if both are present
                 if (a.NetIncome.HasValue && a.Equity.HasValue)
                 {
                     await _seed.SeedAnnualAsync(m.Symbol, a.Year, a.NetIncome.Value, a.Equity.Value, ct);
@@ -730,7 +718,7 @@ public class AdminController : ControllerBase
             }
         }
 
-        // English: 5) summary response
+        // 5) summary response
         return Ok(new
         {
             title = "Seed applied",
@@ -749,22 +737,21 @@ public class AdminController : ControllerBase
                     shares = sharesCount,
                     cfo = cfoCount,
                     capex = capexCount,
+                    workingCapital = workingCapitalCount,
                     currency = m.Fundamentals.Currency
                 }
         });
     }
 
-
-
     [HttpGet("seed/inspect/{symbol}")]
     [SwaggerOperation(
         Summary = "Inspect existing ticker data",
         Description = "Shows ticker profile and basic price range information for a given symbol.",
-        Tags = new[] { "Admin – Seed Tools" }
+        Tags = new[] { "Admin - Seed Tools" }
     )]
-    #if !DEBUG
+#if !DEBUG
         [ApiExplorerSettings(IgnoreApi = true)]
-    #endif
+#endif
     public async Task<IActionResult> InspectSeed([FromRoute] string symbol, CancellationToken ct)
     {
         var s = (symbol ?? string.Empty).Trim().ToUpperInvariant();
@@ -776,7 +763,9 @@ public class AdminController : ControllerBase
             .FirstOrDefaultAsync(ct);
 
         if (ticker is null)
-            throw new NotFoundException($"No annual income row for {ticker}.");
+        {
+            throw new NotFoundException($"Ticker '{s}' not found.");
+        }
 
         var priceInfo = await _db.Prices
             .Where(p => p.TickerId == ticker.Id)
@@ -789,7 +778,7 @@ public class AdminController : ControllerBase
             })
             .FirstOrDefaultAsync(ct);
 
-        // English: build a single anonymous object; null-safe per field
+        // build a single anonymous object; null-safe per field
         var prices = new
         {
             count = priceInfo?.count ?? 0,
@@ -805,11 +794,11 @@ public class AdminController : ControllerBase
     [SwaggerOperation(
         Summary = "Seed single ticker (demo)",
         Description = "Creates or updates a ticker record. DemoMode only.",
-        Tags = new[] { "Admin – Seed Tools" }
+        Tags = new[] { "Admin - Seed Tools" }
     )]
-    #if !DEBUG
+#if !DEBUG
         [ApiExplorerSettings(IgnoreApi = true)]
-    #endif
+#endif
     public async Task<IActionResult> SeedTicker(
         [FromQuery] string symbol,
         [FromQuery] string? name,
@@ -818,7 +807,7 @@ public class AdminController : ControllerBase
         CancellationToken ct = default)
     {
         if (!cfg.GetValue<bool>("DemoMode")) throw new NotFoundException("Resource not found.");
-        if (string.IsNullOrWhiteSpace(symbol)) 
+        if (string.IsNullOrWhiteSpace(symbol))
             Guard.BadRequestIf(string.IsNullOrWhiteSpace(symbol), "Query ?symbol=... is required.");
 
         var (created, updated) = await seeder.SeedTickerAsync(symbol, name, ct);
@@ -830,33 +819,46 @@ public class AdminController : ControllerBase
     [SwaggerOperation(
         Summary = "Seed annual data (demo)",
         Description = "Sets net income and equity for one year. DemoMode only.",
-        Tags = new[] { "Admin – Seed Tools" }
+        Tags = new[] { "Admin - Seed Tools" }
     )]
-    #if !DEBUG
+#if !DEBUG
         [ApiExplorerSettings(IgnoreApi = true)]
-    #endif
+#endif
     public async Task<IActionResult> SeedAnnual(
-        [FromQuery] string symbol,
-        [FromQuery] int year,
-        [FromQuery] long netIncome,
-        [FromQuery] long equity,
-        [FromServices] IConfiguration cfg,
-        [FromServices] ISeedService seeder,
-        CancellationToken ct = default)
+    [FromQuery] string symbol,
+    [FromQuery] int year,
+    [FromQuery] long netIncome,
+    [FromQuery] long equity,
+    [FromServices] IConfiguration cfg,
+    [FromServices] ISeedService seeder,
+    CancellationToken ct = default)
     {
-        if (year < 1900 || year > DateTime.UtcNow.Year)
-            throw new BadRequestException($"Invalid year '{year}' — out of range.");
-
+        if (!cfg.GetValue<bool>("DemoMode"))
+        {
+            throw new NotFoundException("Resource not found.");
+        }
 
         if (string.IsNullOrWhiteSpace(symbol))
-            Guard.BadRequestIf(string.IsNullOrWhiteSpace(symbol), "Missing ?symbol=...");
+        {
+            throw new BadRequestException("Missing ?symbol=...");
+        }
 
-        if (!cfg.GetValue<bool>("DemoMode")) throw new NotFoundException("Resource not found.");
-        if (string.IsNullOrWhiteSpace(symbol)) 
-            Guard.BadRequestIf(string.IsNullOrWhiteSpace(symbol), "Missing ?symbol=...");
+        if (year < 1900 || year > DateTime.UtcNow.Year)
+        {
+            throw new BadRequestException($"Invalid year '{year}' - out of range.");
+        }
 
-        await seeder.SeedAnnualAsync(symbol, year, netIncome, equity, ct);
-        return Ok(new { ticker = symbol.Trim().ToUpperInvariant(), year, netIncome, equity });
+        string ticker = symbol.Trim().ToUpperInvariant();
+
+        await seeder.SeedAnnualAsync(ticker, year, netIncome, equity, ct);
+
+        return Ok(new
+        {
+            ticker,
+            year,
+            netIncome,
+            equity
+        });
     }
 
     // POST /api/admin/seed/liabilities
@@ -864,11 +866,11 @@ public class AdminController : ControllerBase
     [SwaggerOperation(
         Summary = "Seed liabilities (demo)",
         Description = "Adds or updates total liabilities for one year. DemoMode only.",
-        Tags = new[] { "Admin – Seed Tools" }
+        Tags = new[] { "Admin - Seed Tools" }
     )]
-    #if !DEBUG
+#if !DEBUG
         [ApiExplorerSettings(IgnoreApi = true)]
-    #endif
+#endif
     public async Task<IActionResult> SeedLiabilities(
         [FromQuery] string symbol,
         [FromQuery] int year,
@@ -878,7 +880,7 @@ public class AdminController : ControllerBase
         CancellationToken ct = default)
     {
         if (!cfg.GetValue<bool>("DemoMode")) throw new NotFoundException("Resource not found.");
-        if (string.IsNullOrWhiteSpace(symbol)) 
+        if (string.IsNullOrWhiteSpace(symbol))
             Guard.BadRequestIf(string.IsNullOrWhiteSpace(symbol), "Missing ?symbol=...");
 
         await seeder.SeedLiabilitiesAsync(symbol, year, totalLiabilities, ct);
@@ -890,11 +892,11 @@ public class AdminController : ControllerBase
     [SwaggerOperation(
         Summary = "Seed revenue (demo)",
         Description = "Adds or updates revenue for one year. DemoMode only.",
-        Tags = new[] { "Admin – Seed Tools" }
+        Tags = new[] { "Admin - Seed Tools" }
     )]
-    #if !DEBUG
+#if !DEBUG
         [ApiExplorerSettings(IgnoreApi = true)]
-    #endif
+#endif
     public async Task<IActionResult> SeedRevenue(
         [FromQuery] string symbol,
         [FromQuery] int year,
@@ -904,7 +906,7 @@ public class AdminController : ControllerBase
         CancellationToken ct = default)
     {
         if (!cfg.GetValue<bool>("DemoMode")) throw new NotFoundException("Resource not found.");
-        if (string.IsNullOrWhiteSpace(symbol)) 
+        if (string.IsNullOrWhiteSpace(symbol))
             Guard.BadRequestIf(string.IsNullOrWhiteSpace(symbol), "Missing ?symbol=...");
 
         await seeder.SeedRevenueAsync(symbol, year, revenue, ct);
@@ -916,11 +918,11 @@ public class AdminController : ControllerBase
     [SwaggerOperation(
         Summary = "Seed assets (demo)",
         Description = "Adds or updates total assets for one year. DemoMode only.",
-        Tags = new[] { "Admin – Seed Tools" }
+        Tags = new[] { "Admin - Seed Tools" }
     )]
-    #if !DEBUG
+#if !DEBUG
         [ApiExplorerSettings(IgnoreApi = true)]
-    #endif
+#endif
     public async Task<IActionResult> SeedAssets(
         [FromQuery] string symbol,
         [FromQuery] int year,
@@ -930,7 +932,7 @@ public class AdminController : ControllerBase
         CancellationToken ct = default)
     {
         if (!cfg.GetValue<bool>("DemoMode")) throw new NotFoundException("Resource not found.");
-        if (string.IsNullOrWhiteSpace(symbol)) 
+        if (string.IsNullOrWhiteSpace(symbol))
             Guard.BadRequestIf(string.IsNullOrWhiteSpace(symbol), "Missing ?symbol=...");
 
         await seeder.SeedAssetsAsync(symbol, year, totalAssets, ct);
@@ -942,11 +944,11 @@ public class AdminController : ControllerBase
     [SwaggerOperation(
         Summary = "Seed price (demo)",
         Description = "Sets a closing price for a specific date. DemoMode only.",
-        Tags = new[] { "Admin – Seed Tools" }
+        Tags = new[] { "Admin - Seed Tools" }
     )]
-    #if !DEBUG
+#if !DEBUG
         [ApiExplorerSettings(IgnoreApi = true)]
-    #endif
+#endif
     public async Task<IActionResult> SeedPrice(
         [FromQuery] string symbol,
         [FromQuery] DateOnly date,
@@ -956,7 +958,7 @@ public class AdminController : ControllerBase
         CancellationToken ct = default)
     {
         if (!cfg.GetValue<bool>("DemoMode")) throw new NotFoundException("Resource not found.");
-        if (string.IsNullOrWhiteSpace(symbol)) 
+        if (string.IsNullOrWhiteSpace(symbol))
             Guard.BadRequestIf(string.IsNullOrWhiteSpace(symbol), "Missing ?symbol=...");
 
         await seeder.SeedPriceAsync(symbol, date, close, ct);
@@ -968,11 +970,11 @@ public class AdminController : ControllerBase
     [SwaggerOperation(
         Summary = "Seed shares (demo)",
         Description = "Sets outstanding shares for a given year. DemoMode only.",
-        Tags = new[] { "Admin – Seed Tools" }
+        Tags = new[] { "Admin - Seed Tools" }
     )]
-    #if !DEBUG
+#if !DEBUG
         [ApiExplorerSettings(IgnoreApi = true)]
-    #endif
+#endif
     public async Task<IActionResult> SeedShares(
         [FromQuery] string symbol,
         [FromQuery] int year,
@@ -982,7 +984,7 @@ public class AdminController : ControllerBase
         CancellationToken ct = default)
     {
         if (!cfg.GetValue<bool>("DemoMode")) throw new NotFoundException("Resource not found.");
-        if (string.IsNullOrWhiteSpace(symbol)) 
+        if (string.IsNullOrWhiteSpace(symbol))
             Guard.BadRequestIf(string.IsNullOrWhiteSpace(symbol), "Missing ?symbol=...");
 
         await seeder.SeedSharesAsync(symbol, year, shares, ct);
@@ -990,3 +992,5 @@ public class AdminController : ControllerBase
     }
 
 }
+
+

@@ -1,51 +1,47 @@
 namespace Portfolio.Api.DTOs;
 
 /// <summary>
-/// Represents a summarized view of the user's entire portfolio,
-/// combining cash balance and holdings information.
+/// Represents an aggregated portfolio summary for the authenticated user.
 /// </summary>
-public class PortfolioSummaryDto
+public sealed class PortfolioSummaryDto
 {
     /// <summary>
-    /// Current available cash balance for the user (in USD).
+    /// Current available cash balance in USD.
     /// </summary>
     public decimal CashBalance { get; set; }
 
     /// <summary>
-    /// Total current value of all held stocks (in USD).
+    /// Current market value of all open holdings in USD.
     /// </summary>
     public decimal PortfolioValue { get; set; }
 
     /// <summary>
-    /// Combined total of cash and portfolio value.
+    /// Combined cash and portfolio value in USD.
     /// </summary>
     public decimal TotalValue => CashBalance + PortfolioValue;
 
     /// <summary>
-    /// List of individual holdings in the user's portfolio.
+    /// Current open holdings.
     /// </summary>
     public List<HoldingDto> Holdings { get; set; } = new();
 
     /// <summary>
-    /// Total realized profit or loss (sum of all closed transactions) in USD.
+    /// Total realized profit or loss in USD.
     /// </summary>
     public decimal? RealizedPLTotalUSD { get; set; }
 
     /// <summary>
-    /// Total unrealized profit or loss (current open positions) in USD.
+    /// Total unrealized profit or loss in USD.
     /// </summary>
     public decimal? UnrealizedPLTotalUSD { get; set; }
 
     /// <summary>
-    /// Combined profit or loss (realized + unrealized) in USD.
+    /// Combined realized and unrealized profit or loss in USD.
     /// </summary>
     public decimal? TotalProfitLossUSD { get; set; }
 
     /// <summary>
-    /// Overall portfolio performance as a percentage.
+    /// Combined portfolio profit or loss as a percentage.
     /// </summary>
     public decimal? TotalProfitLossPercent { get; set; }
-
 }
-
-
