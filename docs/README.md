@@ -115,6 +115,9 @@ Default local configuration:
     "BaseUrl": "https://www.alphavantage.co",
     "ApiKey": ""
   },
+  "Fmp": {
+    "ApiKey": ""
+  },
   "Jwt": {
     "Secret": "CHANGE_ME_USE_USER_SECRETS"
   },
@@ -207,6 +210,15 @@ The seed files contain selected company profiles, quote rows, and fundamentals. 
 Available seed companies currently include AAPL, MSFT, NVDA, GOOGL, AMZN, TSLA, KO, JPM, JNJ, DIS, XOM, PLD, NEE, LMT, and LIN.
 
 Admin seed endpoints can validate and apply seed files in development/demo scenarios.
+
+To apply demo data locally, start the API, authenticate as an admin user, and run the seed apply endpoint for selected symbols, for example:
+
+```http
+POST /api/admin/seed/company-file/AAPL/apply
+POST /api/admin/seed/company-file/MSFT/apply
+```
+
+Seed endpoints require admin authorization.
 
 ## API Areas
 

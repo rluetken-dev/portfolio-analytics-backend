@@ -88,6 +88,16 @@ Default local configuration uses SQLite:
   "ConnectionStrings": {
     "Default": "Data Source=portfolio.db"
   },
+  "AlphaVantage": {
+    "BaseUrl": "https://www.alphavantage.co",
+    "ApiKey": ""
+  },
+  "Fmp": {
+    "ApiKey": ""
+  },
+  "Jwt": {
+    "Secret": "CHANGE_ME_USE_USER_SECRETS"
+  },
   "DemoMode": true
 }
 ```
