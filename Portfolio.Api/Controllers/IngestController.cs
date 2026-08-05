@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Portfolio.Api.Services;
 using Polly.RateLimit;
+using Portfolio.Api.Exceptions;
 
 namespace Portfolio.Api.Controllers
 {
@@ -34,6 +35,10 @@ namespace Portfolio.Api.Controllers
         /// Example: GET /api/ingest/income/AAPL?period=annual&amp;limit=10
         /// </summary>
         [HttpGet("income/{symbol}")]
+        [ProducesResponseType(StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status429TooManyRequests)]
+        [ProducesResponseType(StatusCodes.Status503ServiceUnavailable)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
         public async Task<IActionResult> IngestIncome(
             string symbol,
             string period = "annual",
@@ -55,6 +60,15 @@ namespace Portfolio.Api.Controllers
                     status = 429
                 });
             }
+            catch (ServiceUnavailableException ex)
+            {
+                return StatusCode(StatusCodes.Status503ServiceUnavailable, new
+                {
+                    title = "External provider is not configured",
+                    detail = ex.Message,
+                    status = 503
+                });
+            }
             catch (Exception ex)
             {
                 _log.LogError(ex, "Income ingest failed for {Symbol}", symbol);
@@ -72,6 +86,10 @@ namespace Portfolio.Api.Controllers
         /// Example: GET /api/ingest/balance/AAPL?period=annual&amp;limit=5
         /// </summary>
         [HttpGet("balance/{symbol}")]
+        [ProducesResponseType(StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status429TooManyRequests)]
+        [ProducesResponseType(StatusCodes.Status503ServiceUnavailable)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
         public async Task<IActionResult> IngestBalance(
             string symbol,
             string period = "annual",
@@ -93,6 +111,15 @@ namespace Portfolio.Api.Controllers
                     status = 429
                 });
             }
+            catch (ServiceUnavailableException ex)
+            {
+                return StatusCode(StatusCodes.Status503ServiceUnavailable, new
+                {
+                    title = "External provider is not configured",
+                    detail = ex.Message,
+                    status = 503
+                });
+            }
             catch (Exception ex)
             {
                 _log.LogError(ex, "Balance ingest failed for {Symbol}", symbol);
@@ -110,6 +137,10 @@ namespace Portfolio.Api.Controllers
         /// Example: GET /api/ingest/cash/AAPL?period=annual&amp;limit=5
         /// </summary>
         [HttpGet("cash/{symbol}")]
+        [ProducesResponseType(StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status429TooManyRequests)]
+        [ProducesResponseType(StatusCodes.Status503ServiceUnavailable)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
         public async Task<IActionResult> IngestCash(
             string symbol,
             string period = "annual",
@@ -129,6 +160,15 @@ namespace Portfolio.Api.Controllers
                     title = "Rate limit reached",
                     detail = $"Please retry after {ex.RetryAfter}",
                     status = 429
+                });
+            }
+            catch (ServiceUnavailableException ex)
+            {
+                return StatusCode(StatusCodes.Status503ServiceUnavailable, new
+                {
+                    title = "External provider is not configured",
+                    detail = ex.Message,
+                    status = 503
                 });
             }
             catch (Exception ex)

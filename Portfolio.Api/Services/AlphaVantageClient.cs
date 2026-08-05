@@ -1,8 +1,7 @@
 // File: Services/AlphaVantageClient.cs
-using System.Net.Http.Json;
 using System.Text.Json;
-using System.Runtime.CompilerServices;
 using Microsoft.Extensions.Caching.Memory;
+using Portfolio.Api.Exceptions;
 
 namespace Portfolio.Api.Services
 {
@@ -29,13 +28,21 @@ namespace Portfolio.Api.Services
         private readonly ILogger<AlphaVantageClient> _log;
         private readonly IMemoryCache _cache;
 
+        private bool HasApiKey => !string.IsNullOrWhiteSpace(_apiKey);
+
         public AlphaVantageClient(HttpClient http, IConfiguration cfg, ILogger<AlphaVantageClient> log, IMemoryCache cache)
         {
             _http = http;
             _log = log;
             _cache = cache;
             _baseUrl = cfg["AlphaVantage:BaseUrl"] ?? "https://www.alphavantage.co";
-            _apiKey = cfg["AlphaVantage:ApiKey"] ?? throw new InvalidOperationException("AlphaVantage:ApiKey is missing.");
+
+            _apiKey = cfg["AlphaVantage:ApiKey"] ?? string.Empty;
+
+            if (!HasApiKey)
+            {
+                _log.LogInformation("Alpha Vantage API key is not configured. Live Alpha Vantage calls are disabled.");
+            }
         }
 
         /// <summary>
@@ -60,7 +67,15 @@ namespace Portfolio.Api.Services
                 bool fullHistory = false)
         {
             if (string.IsNullOrWhiteSpace(symbol))
+            {
                 throw new ArgumentException("symbol is required", nameof(symbol));
+            }
+               
+            if (!HasApiKey)
+            {
+                throw new ServiceUnavailableException(
+                    "Alpha Vantage API key is not configured. Live Alpha Vantage provider calls are disabled.");
+            }
 
             // Clamp to a reasonable range when not requesting full history.
             days = fullHistory ? days : Math.Clamp(days, 1, 500);
@@ -203,7 +218,15 @@ namespace Portfolio.Api.Services
             CancellationToken ct = default)
         {
             if (string.IsNullOrWhiteSpace(symbol))
+            {
                 throw new ArgumentException("symbol is required", nameof(symbol));
+            }                
+
+            if (!HasApiKey)
+            {
+                throw new ServiceUnavailableException(
+                    "Alpha Vantage API key is not configured. Live Alpha Vantage provider calls are disabled.");
+            }
 
             var url = $"{_baseUrl}/query" +
                     $"?function=GLOBAL_QUOTE" +

@@ -65,6 +65,7 @@ namespace Portfolio.Api.Controllers
             Description = "Calls Alpha Vantage TIME_SERIES_DAILY for each symbol, stores only new rows, and returns inserted/skipped counts.")]
         [ProducesResponseType(typeof(RefreshResponse), StatusCodes.Status200OK)]
         [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status503ServiceUnavailable)]
         public async Task<IActionResult> Refresh(
             [FromQuery, Required] string symbols,
             [FromQuery] string range = "30d",
@@ -107,7 +108,7 @@ namespace Portfolio.Api.Controllers
                         await _db.SaveChangesAsync(ct);
                     }
                     
-                    // 🧠 Find latest known trading date for this ticker (EF-safe version)
+                    // Find latest known trading date for this ticker (EF-safe version)
                     var lastKnownDate = await _db.Prices
                         .Where(p => p.TickerId == ticker.Id)
                         .OrderByDescending(p => p.TradingDate)
@@ -163,7 +164,7 @@ namespace Portfolio.Api.Controllers
                     // Persist batched inserts once (keeps transaction short and efficient).
                     await _db.SaveChangesAsync(ct);
 
-                    // ✅ Update ticker refresh timestamp
+                    // Update ticker refresh timestamp
                     ticker.LastPriceUpdate = DateTime.UtcNow;
                     await _db.SaveChangesAsync(ct);
 
@@ -184,6 +185,15 @@ namespace Portfolio.Api.Controllers
                         Detail = $"Please retry after {ex.RetryAfter.TotalSeconds:F0} seconds."
                     });
                 }
+                catch (ServiceUnavailableException ex)
+                {
+                    return StatusCode(StatusCodes.Status503ServiceUnavailable, new ProblemDetails
+                    {
+                        Title = "External provider is not configured",
+                        Status = StatusCodes.Status503ServiceUnavailable,
+                        Detail = ex.Message
+                    });
+                }
                 catch (Exception ex)
                 {
                     _log.LogError(ex, "Fundamentals ingest failed for {Symbol}", sym);
@@ -197,7 +207,7 @@ namespace Portfolio.Api.Controllers
 
             }
 
-            // ✅ return a typed DTO instead of an anonymous object
+            // return a typed DTO instead of an anonymous object
             var response = new RefreshResponse
             {
                 Ok = true,
@@ -263,7 +273,7 @@ namespace Portfolio.Api.Controllers
                 });
             }
 
-            // ✅ just return the rows array (frontend expects this)
+            // just return the rows array (frontend expects this)
             return Ok(rows);
         }
 
@@ -297,7 +307,7 @@ namespace Portfolio.Api.Controllers
             {
                 var result = await _alpha.GetLatestPriceAsync(symbol.ToUpperInvariant(), ct);
 
-                // 🧩 Wenn AlphaVantageClient graceful null zurückgibt (Timeout, RateLimit etc.)
+                // AlphaVantageClient returns null for temporary provider failures.
                 if (result == null)
                 {
                     return StatusCode(StatusCodes.Status503ServiceUnavailable, new ProblemDetails
@@ -307,8 +317,7 @@ namespace Portfolio.Api.Controllers
                         Status = StatusCodes.Status503ServiceUnavailable
                     });
                 }
-
-                // ✅ Erfolgreicher Abruf
+               
                 return Ok(new
                 {
                     symbol = result.Value.Symbol,
@@ -337,8 +346,7 @@ namespace Portfolio.Api.Controllers
                 });
             }
             catch (TaskCanceledException)
-            {
-                // Timeout (z. B. 10s) → 503 zurückgeben
+            {              
                 return StatusCode(StatusCodes.Status503ServiceUnavailable, new ProblemDetails
                 {
                     Title = "Timeout",
@@ -347,8 +355,7 @@ namespace Portfolio.Api.Controllers
                 });
             }
             catch (HttpRequestException ex)
-            {
-                // Netzwerkfehler
+            {             
                 return StatusCode(StatusCodes.Status503ServiceUnavailable, new ProblemDetails
                 {
                     Title = "Network error",

@@ -1,11 +1,9 @@
 //using System.Text.Json;
-using System.Net.Http.Headers; // for Accept/User-Agent headers
 using Microsoft.AspNetCore.WebUtilities;     // QueryHelpers.AddQueryString
-using System.Text.Json.Serialization;        // JsonNumberHandling
-using System.Linq;
 using Portfolio.Api.Models;
 using Newtonsoft.Json;
 using Portfolio.Api.DTOs;
+using Portfolio.Api.Exceptions;
 
 namespace Portfolio.Api.Services
 {
@@ -20,6 +18,10 @@ namespace Portfolio.Api.Services
         private readonly string _apiKey;
         private readonly FallbackData _fallback;
         private readonly string _fallbackPath;
+
+        private bool HasApiKey =>
+            !string.IsNullOrWhiteSpace(_apiKey) &&
+            !_apiKey.Equals("demo-local-placeholder", StringComparison.OrdinalIgnoreCase);
 
         /// <summary>
         /// Minimal DTO for /stable/income-statement. Add fields as you need them.
@@ -119,7 +121,15 @@ namespace Portfolio.Api.Services
         public async Task<CompanyProfile?> GetCompanyProfileAsync(string symbol, CancellationToken ct = default)
         {
             if (string.IsNullOrWhiteSpace(symbol))
+            {
                 throw new ArgumentException("symbol is required", nameof(symbol));
+            }
+
+            if (!HasApiKey)
+            {
+                throw new ServiceUnavailableException(
+                    "FMP API key is not configured. Live FMP provider calls are disabled.");
+            }
 
             var sym = symbol.Trim().ToUpperInvariant();
 
@@ -158,9 +168,12 @@ namespace Portfolio.Api.Services
             _fallback = fallback;
             _fallbackPath = fallbackPath;
 
-            // Read API key from user-secrets or env vars.
-            _apiKey = config["Fmp:ApiKey"] ?? throw new InvalidOperationException(
-                "Missing Fmp:ApiKey. Set it via 'dotnet user-secrets set \"Fmp:ApiKey\" \"...\"'.");
+            _apiKey = config["Fmp:ApiKey"] ?? string.Empty;
+
+            if (!HasApiKey)
+            {
+                _log.LogInformation("FMP API key is not configured. Live FMP calls are disabled.");
+            }
 
             // Use root base address so we can call /stable/... and other routes cleanly.
             // IMPORTANT: keep trailing slash to avoid bad relative joins.
@@ -314,6 +327,12 @@ namespace Portfolio.Api.Services
             IDictionary<string, string?> query,
             CancellationToken ct = default)
         {
+            if (!HasApiKey)
+            {
+                throw new ServiceUnavailableException(
+                    "FMP API key is not configured. Live FMP provider calls are disabled.");
+            }
+
             // Always include the API key; clone input to avoid side-effects.
             var q = new Dictionary<string, string?>(query ?? new Dictionary<string, string?>());
             q["apikey"] = _apiKey;
@@ -515,6 +534,12 @@ namespace Portfolio.Api.Services
         public async Task<IReadOnlyList<(string Symbol, string? Name)>> GetSp500ConstituentsAsync(
             CancellationToken ct = default)
         {
+            if (!HasApiKey)
+            {
+                throw new ServiceUnavailableException(
+                    "FMP API key is not configured. Live FMP provider calls are disabled.");
+            }
+
             var relative = QueryHelpers.AddQueryString("api/v3/sp500_constituent", new Dictionary<string, string?>
             {
                 ["apikey"] = _apiKey
@@ -549,14 +574,14 @@ namespace Portfolio.Api.Services
         /// Extended mock search with 100+ popular stocks
         /// </summary>
         public async Task<List<CompanySearchResult>> SearchCompaniesAsync(
-     string query,
-     int limit,
-     CancellationToken ct = default)
+            string query,
+            int limit,
+            CancellationToken ct = default)
         {
             if (string.IsNullOrWhiteSpace(query))
                 return new List<CompanySearchResult>();
 
-            // 1️⃣ First: try to find matches in local fallback data (fast & no API usage)
+            // First: try to find matches in local fallback data (fast & no API usage)
             var localMatches = _fallback.Companies
                 .Where(c =>
                     c.Symbol.Contains(query, StringComparison.OrdinalIgnoreCase) ||
@@ -572,9 +597,17 @@ namespace Portfolio.Api.Services
                 .ToList();
 
             if (localMatches.Any())
+            {
                 return localMatches;
+            }
 
-            // 2️⃣ If nothing found locally → call the remote FMP API
+            if (!HasApiKey)
+            {
+                _log.LogInformation("FMP API key is not configured. Returning fallback search results only for query {Query}.", query);
+                return new List<CompanySearchResult>();
+            }
+
+            // If nothing found locally → call the remote FMP API
             try
             {
                 var url = $"api/v3/search?query={Uri.EscapeDataString(query)}&limit={limit}&apikey={_apiKey}";
@@ -583,7 +616,7 @@ namespace Portfolio.Api.Services
                 if (response == null || response.Count == 0)
                     return new List<CompanySearchResult>();
 
-                // 3️⃣ Add newly discovered companies into fallback data for future offline use
+                // Add newly discovered companies into fallback data for future offline use
                 foreach (var apiResult in response)
                 {
                     if (!_fallback.Companies.Any(c => c.Symbol.Equals(apiResult.Symbol, StringComparison.OrdinalIgnoreCase)))
@@ -597,7 +630,7 @@ namespace Portfolio.Api.Services
                     }
                 }
 
-                // 4️⃣ Persist updated fallback data back into JSON file
+                // Persist updated fallback data back into JSON file
                 var json = JsonConvert.SerializeObject(_fallback, Formatting.Indented);
                 await File.WriteAllTextAsync(_fallbackPath, json, ct);
 
@@ -605,13 +638,10 @@ namespace Portfolio.Api.Services
             }
             catch (Exception ex)
             {
-                // 5️⃣ Log errors but return empty list (avoid breaking client flow)
+                // Log errors but return empty list (avoid breaking client flow)
                 _log.LogError(ex, "FMP search failed for query {Query}", query);
                 return new List<CompanySearchResult>();
             }
         }
-
-
-
     }
 }
