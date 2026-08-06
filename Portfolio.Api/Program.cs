@@ -218,6 +218,11 @@ using (IServiceScope scope = app.Services.CreateScope())
     {
         db.Database.EnsureCreated();
     }
+
+    if (app.Configuration.GetValue<bool>("DemoMode"))
+    {
+        await SeedLocalDemoDataAsync(scope.ServiceProvider, app.Environment, app.Logger);
+    }
 }
 
 if (app.Environment.IsDevelopment())
@@ -238,3 +243,129 @@ app.MapGet("/health", () => Results.Json(new { status = "ok" }));
 app.MapControllers();
 
 app.Run();
+
+static async Task SeedLocalDemoDataAsync(
+    IServiceProvider services,
+    IWebHostEnvironment environment,
+    ILogger logger)
+{
+    var seedFileService = services.GetRequiredService<ISeedFileService>();
+    var seedService = services.GetRequiredService<ISeedService>();
+
+    string companiesPath = Path.Combine(environment.ContentRootPath, "SeedData", "companies");
+
+    if (!Directory.Exists(companiesPath))
+    {
+        logger.LogWarning("Demo seed skipped. Directory not found: {Path}", companiesPath);
+        return;
+    }
+
+    string[] files = Directory.GetFiles(companiesPath, "*.json");
+
+    foreach (string file in files)
+    {
+        string symbol = Path.GetFileNameWithoutExtension(file).ToUpperInvariant();
+        var result = await seedFileService.LoadCompanyAsync(symbol);
+
+        if (!result.Success || result.Data is null)
+        {
+            logger.LogWarning("Demo seed skipped for {Symbol}: {Error}", symbol, result.Error);
+            continue;
+        }
+
+        var company = result.Data;
+
+        await seedService.SeedTickerProfileAsync(
+            company.Symbol,
+            company.Profile.Name,
+            company.Profile.Sector,
+            CancellationToken.None);
+
+        foreach (var quote in company.Quotes.Rows)
+        {
+            if (!DateOnly.TryParse(quote.Date, out var date))
+            {
+                continue;
+            }
+
+            await seedService.SeedFullPriceAsync(
+                company.Symbol,
+                date,
+                quote.Open,
+                quote.High,
+                quote.Low,
+                quote.Close,
+                quote.Volume,
+                CancellationToken.None);
+        }
+
+        foreach (var annual in company.Fundamentals?.Annual ?? [])
+        {
+            if (annual.NetIncome.HasValue && annual.Equity.HasValue)
+            {
+                await seedService.SeedAnnualAsync(
+                    company.Symbol,
+                    annual.Year,
+                    annual.NetIncome.Value,
+                    annual.Equity.Value,
+                    CancellationToken.None);
+            }
+
+            if (annual.Revenue.HasValue)
+            {
+                await seedService.SeedRevenueAsync(
+                    company.Symbol,
+                    annual.Year,
+                    annual.Revenue.Value,
+                    CancellationToken.None);
+            }
+
+            if (annual.TotalAssets.HasValue)
+            {
+                await seedService.SeedAssetsAsync(
+                    company.Symbol,
+                    annual.Year,
+                    annual.TotalAssets.Value,
+                    CancellationToken.None);
+            }
+
+            if (annual.TotalLiabilities.HasValue)
+            {
+                await seedService.SeedLiabilitiesAsync(
+                    company.Symbol,
+                    annual.Year,
+                    annual.TotalLiabilities.Value,
+                    CancellationToken.None);
+            }
+
+            if (annual.Shares.HasValue)
+            {
+                await seedService.SeedSharesAsync(
+                    company.Symbol,
+                    annual.Year,
+                    annual.Shares.Value,
+                    CancellationToken.None);
+            }
+
+            if (annual.OperatingCashFlow.HasValue)
+            {
+                await seedService.SeedOperatingCashFlowAsync(
+                    company.Symbol,
+                    annual.Year,
+                    annual.OperatingCashFlow.Value,
+                    CancellationToken.None);
+            }
+
+            if (annual.CapitalExpenditures.HasValue)
+            {
+                await seedService.SeedCapitalExpendituresAsync(
+                    company.Symbol,
+                    annual.Year,
+                    annual.CapitalExpenditures.Value,
+                    CancellationToken.None);
+            }
+        }
+    }
+
+    logger.LogInformation("Local demo seed completed. Files processed: {Count}", files.Length);
+}
